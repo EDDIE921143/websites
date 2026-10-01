@@ -3,6 +3,9 @@ import XCTest
 final class CoreTests: XCTestCase {
     let now=Time.date("2026-10-01T10:00:00Z")!
     func database() throws -> Database { let url=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("test.sqlite");return try Database(url:url) }
+    func testMetronomeBeatHasAudibleSamplesAndTempoSizedSilence(){
+        let beat=BeatAudio.samples(bpm:120);XCTAssertEqual(beat.count,22050);XCTAssertGreaterThan(beat.prefix(2205).map{abs($0)}.max() ?? 0,0.2);XCTAssertTrue(beat.dropFirst(2205).allSatisfy{$0 == 0});XCTAssertEqual(BeatAudio.samples(bpm:60).count,44100)
+    }
     func testCreationDraftsKeepTheirOwnFieldsAndLeaveQuickCaptureAlone() throws {
         let db=try database();let quick=Record(title:"Quick thought");try db.setDraft(quick)
         var chapter=Record(space:"moshia",kind:"chapter",title:"Chapter draft");chapter.data["POV"]="Narrator";try db.setCreationDraft(chapter)

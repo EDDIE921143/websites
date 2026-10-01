@@ -85,6 +85,19 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["creation-save"].tap()
         XCTAssertTrue(app.staticTexts["Chapter: native draft"].waitForExistence(timeout:5))
     }
+    func testNativeMetronomeProducesRunningAudioAndStops(){
+        app.tabBars.buttons["Spaces"].tap();app.buttons["Songs"].tap();app.buttons["Add song"].firstMatch.tap()
+        let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch;title.tap();title.typeText("Audio test song");app.buttons["creation-save"].tap()
+        app.buttons["Rehearsal mode"].tap();app.buttons["Start metronome"].tap()
+        XCTAssertTrue(app.buttons["Stop metronome"].waitForExistence(timeout:5));snapshot("Rehearsal with running native audio")
+        app.buttons["Stop metronome"].tap();XCTAssertTrue(app.buttons["Start metronome"].waitForExistence(timeout:5))
+    }
+    func testNativeWorkspaceFocusActuallyChangesToday(){
+        app.buttons["Change focus"].tap();app.buttons["Moshia"].tap()
+        XCTAssertTrue(app.buttons["Focused on Moshia"].waitForExistence(timeout:5))
+        app.terminate();app.launchArguments=["-ui-testing"];app.launch()
+        XCTAssertTrue(app.buttons["Focused on Moshia"].waitForExistence(timeout:5))
+    }
     func ask(_ question:String){
         let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
         XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText(question)

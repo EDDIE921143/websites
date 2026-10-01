@@ -44,13 +44,16 @@ struct NativeToday:View {
     @EnvironmentObject var store:NativeStore
     @State private var review=false
     @State private var weekly=false
+    @State private var choosingFocus=false
+    var greeting:String {let hour=Calendar.current.component(.hour,from:Date());return hour<12 ? "Good morning":hour<18 ? "Good afternoon":"Good evening"}
     var upcoming:[EdizCore.Record]{store.records.filter{$0.kind == "event" || $0.kind == "rehearsal" || $0.kind == "exam"}.filter{$0.status != "done" && (Time.date($0.due).map{$0>=Date()} ?? false)}.sorted{($0.due ?? "")<($1.due ?? "")}}
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:20) {
-                VStack(alignment:.leading,spacing:6){Text(Date.now,format:.dateTime.weekday(.wide).day().month(.wide)).font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted);Text("Today, Ediz.").font(Design.font(30,weight:"DemiBold",relativeTo:.largeTitle)).foregroundStyle(Design.glassLettering)}
+                HStack(alignment:.center,spacing:18){VStack(alignment:.leading,spacing:6){Text(greeting+", Ediz.").font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted);Text("Today.").font(Design.font(34,weight:"Medium",relativeTo:.largeTitle)).foregroundStyle(Design.glassLettering);if store.preferences.focus != "all"{Button("Focused on "+Catalog.space(store.preferences.focus).name){choosingFocus=true}.font(.caption).foregroundStyle(Design.muted)}};Spacer();VStack(spacing:3){Text(Date.now,format:.dateTime.weekday(.abbreviated)).font(.caption2);Text(Date.now,format:.dateTime.day()).font(Design.font(29,weight:"Regular"));Text(Date.now,format:.dateTime.month(.abbreviated)).font(.caption2)}.foregroundStyle(Design.muted).frame(width:64,height:80).background(Design.surface,in:RoundedRectangle(cornerRadius:22))}
+
                 VStack(alignment:.leading,spacing:12) {
-                    Text("Your next move").font(Design.font(19,weight:"DemiBold",relativeTo:.headline))
+                    HStack{Text("Your next move").font(Design.font(19,weight:"Medium",relativeTo:.headline));Spacer();GlassAction{Button{choosingFocus=true}label:{Image(systemName:"slider.horizontal.3").frame(width:44,height:44)}.accessibilityLabel("Change focus")}}
                     if store.priorities.isEmpty {
                         VStack(alignment:.leading,spacing:8){Text("Nothing pressing.").font(Design.font(23,relativeTo:.title2));Text("Capture a thought or bring in your existing work.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted)}.padding(.vertical,3)
                     } else {
@@ -64,6 +67,7 @@ struct NativeToday:View {
                 HStack(spacing:12){GlassAction{Button{weekly=false;review=true}label:{Label("Review today",systemImage:"checkmark.circle").frame(maxWidth:.infinity,minHeight:48)}};GlassAction{Button{weekly=true;review=true}label:{Image(systemName:"calendar").frame(minWidth:44,minHeight:48)}.accessibilityLabel("Review this week")}}.font(Design.font(15))
             }.padding(.horizontal,20).padding(.top,8).padding(.bottom,26)
         }.background(Design.background).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented:$choosingFocus){NativeFocusChoice().presentationDragIndicator(.visible)}
             .sheet(isPresented:$review){NativeReview(weekly:weekly).presentationDragIndicator(.visible)}
     }
 }

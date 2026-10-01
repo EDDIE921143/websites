@@ -61,22 +61,27 @@ struct NativeAudioPractice:View {
 @MainActor final class NativeMetronome:ObservableObject {
     @Published var bpm=100
     @Published var playing=false
-    private var timer:Timer?
-    private var click:AVAudioPlayer?
-    init(){var bytes=Data();func text(_ s:String){bytes.append(contentsOf:s.utf8)};func number<T:FixedWidthInteger>(_ v:T){var value=v.littleEndian;withUnsafeBytes(of:&value){bytes.append(contentsOf:$0)}};let frames=2205;text("RIFF");number(UInt32(36+frames*2));text("WAVEfmt ");number(UInt32(16));number(UInt16(1));number(UInt16(1));number(UInt32(44100));number(UInt32(88200));number(UInt16(2));number(UInt16(16));text("data");number(UInt32(frames*2));for i in 0..<frames{let decay=exp(-Double(i)/350);let sample=Int16(sin(2 * .pi * 900 * Double(i)/44100) * 9000 * decay);number(sample)};click=try? AVAudioPlayer(data:bytes);click?.prepareToPlay()}
-    func toggle(){if playing{stop()}else{playing=true;try? AVAudioSession.sharedInstance().setCategory(.playback,mode:.default);try? AVAudioSession.sharedInstance().setActive(true);tick();timer=Timer.scheduledTimer(withTimeInterval:60/Double(bpm),repeats:true){[weak self]_ in Task{@MainActor in self?.tick()}}}}
-    func tick(){click?.currentTime=0;click?.play()}
+    @Published var message:String?
+    private let engine=AVAudioEngine()
+    private let player=AVAudioPlayerNode()
+    private let format=AVAudioFormat(standardFormatWithSampleRate:44100,channels:1)!
+    init(){engine.attach(player);engine.connect(player,to:engine.mainMixerNode,format:format)}
+    func toggle(){if playing{stop();return};message=nil
+        do {let session=AVAudioSession.sharedInstance();try session.setCategory(.playback,mode:.default);try session.setActive(true);let samples=BeatAudio.samples(bpm:bpm);guard let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:AVAudioFrameCount(samples.count)),let channel=buffer.floatChannelData?[0] else{throw CoreError.database("audio buffer unavailable")};buffer.frameLength=AVAudioFrameCount(samples.count);for index in samples.indices{channel[index]=samples[index]};player.scheduleBuffer(buffer,at:nil,options:.loops);try engine.start();player.play();playing=engine.isRunning && player.isPlaying;if !playing{throw CoreError.database("audio output unavailable")}}
+        catch {stop();message="Sound couldn’t start. Check the audio output and try again."}
+    }
     func changeBPM(){if playing{stop();toggle()}}
-    func stop(){timer?.invalidate();timer=nil;click?.stop();playing=false}
+    func stop(){player.stop();engine.stop();playing=false;try? AVAudioSession.sharedInstance().setActive(false,options:.notifyOthersOnDeactivation)}
 }
 struct NativeRehearsal:View {
     @Environment(\.dismiss) private var dismiss
     let songs:[EdizCore.Record]
     @State private var index=0
     @StateObject private var metronome=NativeMetronome()
+    func applySongTempo(){if songs.indices.contains(index),let bpm=Int(songs[index].data["BPM"] ?? ""),(30...240).contains(bpm){metronome.bpm=bpm}}
     var body:some View {
-        VStack(alignment:.leading,spacing:24){HStack{Text("CLEARANCE 19").font(.subheadline).foregroundStyle(Design.muted);Spacer();Button("Close"){metronome.stop();dismiss()}};if songs.indices.contains(index){let song=songs[index];Text("\(index+1) of \(songs.count)").font(.subheadline).foregroundStyle(Design.muted);Text(song.title).font(.largeTitle.weight(.medium));Text([song.data["BPM"].map{"\($0) BPM"},song.data["tuning"]].compactMap{$0}.joined(separator:" · ")).font(.title3);ScrollView{Text(song.data["structure"] ?? song.body).font(.body).frame(maxWidth:.infinity,alignment:.leading)};HStack{Button("Previous"){index=max(0,index-1)}.buttonStyle(ActionStyle()).disabled(index == 0);Button("Next"){index=min(songs.count-1,index+1)}.buttonStyle(ActionStyle(primary:true)).disabled(index>=songs.count-1)};Stepper("\(metronome.bpm) BPM",value:$metronome.bpm,in:30...240);Button(metronome.playing ? "Stop metronome":"Start metronome"){metronome.toggle()}.buttonStyle(ActionStyle())}else{Text("Add songs to your setlist first.")}}
+        VStack(alignment:.leading,spacing:24){HStack{Text("CLEARANCE 19").font(.subheadline).foregroundStyle(Design.muted);Spacer();Button("Close"){metronome.stop();dismiss()}};if songs.indices.contains(index){let song=songs[index];Text("\(index+1) of \(songs.count)").font(.subheadline).foregroundStyle(Design.muted);Text(song.title).font(.largeTitle.weight(.medium));Text([song.data["BPM"].map{"\($0) BPM"},song.data["tuning"]].compactMap{$0}.joined(separator:" · ")).font(.title3);ScrollView{Text(song.data["structure"] ?? song.body).font(.body).frame(maxWidth:.infinity,alignment:.leading)};HStack{Button("Previous"){index=max(0,index-1)}.buttonStyle(ActionStyle()).disabled(index == 0);Button("Next"){index=min(songs.count-1,index+1)}.buttonStyle(ActionStyle(primary:true)).disabled(index>=songs.count-1)};Stepper("\(metronome.bpm) BPM",value:$metronome.bpm,in:30...240);Button(metronome.playing ? "Stop metronome":"Start metronome"){metronome.toggle()}.buttonStyle(ActionStyle());if let message=metronome.message{Text(message).font(.footnote).foregroundStyle(Design.muted)}}else{Text("Add songs to your setlist first.")}}
             .padding(24).background(Design.background).preferredColorScheme(.dark).simultaneousGesture(DragGesture(minimumDistance:50).onEnded{value in guard abs(value.translation.width)>abs(value.translation.height)*1.5 else{return};index=value.translation.width<0 ? min(max(0,songs.count-1),index+1):max(0,index-1)})
-            .onChange(of:metronome.bpm){_,_ in metronome.changeBPM()}.onDisappear{metronome.stop()}
+            .onAppear{applySongTempo()}.onChange(of:index){_,_ in applySongTempo()}.onChange(of:metronome.bpm){_,_ in metronome.changeBPM()}.onDisappear{metronome.stop()}
     }
 }

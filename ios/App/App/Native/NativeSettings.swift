@@ -6,6 +6,7 @@ struct NativeSettings:View {
     @State private var file:FilePreview?
     var body:some View {
         Form {
+            Section("Look & feel"){Picker("Density",selection:Binding(get:{store.preferences.density},set:{var next=store.preferences;next.density=$0;store.setPreferences(next)})){Text("Comfortable").tag("comfortable");Text("Compact").tag("compact")}.pickerStyle(.segmented);Text("Changes spacing while keeping touch targets comfortable.").font(.footnote).foregroundStyle(Design.muted)}
             Section("Your attention"){Picker("Current focus",selection:Binding(get:{store.preferences.focus},set:{store.setFocus($0)})){Text("Balanced").tag("all");ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Text("This gives the chosen space more weight. Deadlines still matter.").font(.footnote).foregroundStyle(Design.muted)}
             Section("Your data"){
                 Button("Export full backup"){do{file=FilePreview(url:try store.export())}catch{store.error=error.localizedDescription}}
@@ -22,7 +23,7 @@ struct NativeSettings:View {
                     Text("Connect a model you run on your local network. Records are sent only when you switch on ‘Use my local model’ in Assistant and ask a question. No paid key is required.").font(.footnote).foregroundStyle(Design.muted)
                 }
             }
-            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.2 · No paid API required.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.3 · No paid API required.").font(.footnote).foregroundStyle(Design.muted)}
         }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Settings")
             .sheet(item:$file){shared in NativeShare(url:shared.url){completed in if completed && shared.url.lastPathComponent.hasPrefix("ediz-os-"){store.markBackupShared()}}}
     }
@@ -40,5 +41,12 @@ struct NativeHistory:View {
 }
 struct NativeHealth:View {
     @EnvironmentObject var store:NativeStore
-    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:"No model required");LabeledContent("Version",value:"0.3.2");Text("Data stays on this device. Speech requires on-device recognition. No telemetry is collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(Design.background).navigationTitle("System health") }
+    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:"No model required");LabeledContent("Version",value:"0.3.3");Text("Data stays on this device. Speech requires on-device recognition. No telemetry is collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(Design.background).navigationTitle("System health") }
+}
+
+struct NativeFocusChoice:View {
+    @EnvironmentObject var store:NativeStore
+    @Environment(\.dismiss) private var dismiss
+    var body:some View {NavigationStack {List {Section {Text("Choose where you want more attention. Important deadlines stay visible.").font(.subheadline).foregroundStyle(Design.muted).listRowSeparator(.hidden);choice("all","Balanced");ForEach(Catalog.spaces){choice($0.id,$0.name)}}}.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Focus on a space").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}}}
+    func choice(_ id:String,_ label:String)->some View {Button{store.setFocus(id);if store.preferences.focus == id{dismiss()}}label:{HStack{Text(label).foregroundStyle(Design.ink);Spacer();if store.preferences.focus == id{Image(systemName:"checkmark").foregroundStyle(Design.ink)}}.frame(minHeight:44)}.listRowSeparator(.hidden)}
 }

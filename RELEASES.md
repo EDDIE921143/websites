@@ -1,3 +1,12 @@
+# Ediz OS 0.3.3
+
+- Preference choices apply immediately and write in sequence, so rapid changes keep both density and workspace focus.
+- Visible density controls and a dedicated focus picker; Today shows the active workspace focus.
+- Today has a personal greeting, calendar anchor, and grouped work surface. Named space shortcuts open the correct area.
+- Web metronome starts and resumes audio in the tap gesture, schedules clicks on the audio clock, follows song tempo, and reports failures instead of pretending to play.
+- Native metronome loops actual PCM audio using AVAudioEngine. Both versions stop their audio on exit.
+- Native density changes row spacing; native Today gets the same focus controls and calendar hierarchy.
+
 # Ediz OS 0.3.2
 
 - Module additions now open typed editors: chapter, plot thread, location, research, idea, lead, song, homework and other entities. Quick Capture remains separate.

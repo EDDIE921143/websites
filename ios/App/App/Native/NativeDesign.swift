@@ -65,7 +65,7 @@ struct RecordRow:View {
                     }.font(.caption).foregroundStyle(Design.muted)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }.buttonStyle(.plain)
-        }.padding(.vertical,7).transition(.opacity.combined(with:.scale(scale:0.97)))
+        }.padding(.vertical,store.preferences.density == "compact" ? 3:7).transition(.opacity.combined(with:.scale(scale:0.97)))
     }
 }
 struct QuietEmpty:View {
