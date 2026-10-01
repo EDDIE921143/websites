@@ -146,25 +146,25 @@ struct NativeCreation:View {
         NavigationStack {
             Form {
                 Section {
-                    Text(Catalog.space(record.space).name).font(.subheadline).foregroundStyle(Design.muted)
-                    TextField(record.kind == "chapter" ? "Chapter title":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title")
-                    TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"Context worth keeping",text:$record.body,axis:.vertical).lineLimit(3...7)
+                    Text(Catalog.space(record.space).name).font(.subheadline).foregroundStyle(Design.muted).listRowSeparator(.hidden)
+                    TextField(record.kind == "chapter" ? "Chapter title":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title").listRowSeparator(.hidden)
+                    TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"Context worth keeping",text:$record.body,axis:.vertical).lineLimit(2...7).listRowSeparator(.hidden)
                 }
                 if !detailKeys.isEmpty {
                     Section(record.kind == "chapter" ? "In this chapter":record.kind == "thread" ? "The thread":record.kind == "location" ? "The place":record.kind == "note" ? "Sources & connections":"Details") {
-                        ForEach(Array(detailKeys.prefix(3)),id:\.self){key in TextField(label(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...4).accessibilityIdentifier("creation-"+key)}
-                        if detailKeys.count>3 {DisclosureGroup("More details"){ForEach(Array(detailKeys.dropFirst(3)),id:\.self){key in TextField(label(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...4).accessibilityIdentifier("creation-"+key)}}}
+                        ForEach(Array(detailKeys.prefix(3)),id:\.self){key in VStack(alignment:.leading,spacing:6){Text(label(key)).font(.caption).foregroundStyle(Design.muted);TextField("",text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...4).accessibilityIdentifier("creation-"+key).accessibilityLabel(label(key))}.listRowSeparator(.hidden)}
+                        if detailKeys.count>3 {DisclosureGroup("More details"){ForEach(Array(detailKeys.dropFirst(3)),id:\.self){key in VStack(alignment:.leading,spacing:6){Text(label(key)).font(.caption).foregroundStyle(Design.muted);TextField("",text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...4).accessibilityIdentifier("creation-"+key).accessibilityLabel(label(key))}.listRowSeparator(.hidden)}}}
                     }
                 }
                 Section {
-                    Picker("State",selection:$record.status){ForEach(Catalog.states(kind:record.kind,space:record.space),id:\.self){Text($0).tag($0)}}
+                    Picker("State",selection:$record.status){ForEach(Catalog.states(kind:record.kind,space:record.space),id:\.self){Text($0).tag($0)}}.listRowSeparator(.hidden)
                     if record.space == "moshia" {Text("POSSIBLE — canon only when you choose it.").font(.footnote).foregroundStyle(Design.muted)}
                     if ["task","assignment","exam","event","rehearsal","lead"].contains(record.kind) {Toggle("Set a date",isOn:$scheduled);if scheduled{DatePicker("When",selection:$date)}}
                 }
             }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Add "+noun).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement:.cancellationAction){Button("Close"){keepDraft();dismiss()}}
-                    ToolbarItem(placement:.confirmationAction){Button("Add "+noun){if record.status == "CANON" {confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("creation-save")}
+                    ToolbarItem(placement:.confirmationAction){Button("Add"){if record.status == "CANON" {confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("creation-save").accessibilityLabel("Add "+noun)}
                 }
                 .onChange(of:record){_,_ in keepDraft()}
                 .onChange(of:date){_,value in record.due=scheduled ? Time.string(value):nil}
