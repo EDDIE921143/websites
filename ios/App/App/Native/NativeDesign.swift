@@ -9,6 +9,7 @@ enum Design {
     static let ink=Color(red:0.94,green:0.92,blue:0.87)
     static let muted=Color(red:0.68,green:0.66,blue:0.62)
     static let accent=ink
+    static let glassLettering=LinearGradient(colors:[Color.white,ink,Color(red:0.80,green:0.79,blue:0.74),ink],startPoint:.topLeading,endPoint:.bottomTrailing)
     static func font(_ size:CGFloat,weight:String="Medium",relativeTo:Font.TextStyle = .body)->Font { .custom("AvenirNext-"+weight,size:size,relativeTo:relativeTo) }
     static func color(_ hex:UInt32)->Color { Color(red:Double((hex >> 16)&255)/255,green:Double((hex >> 8)&255)/255,blue:Double(hex&255)/255) }
 }
@@ -50,9 +51,10 @@ struct OSNavigation<Content:View>:View {
 struct RecordRow:View {
     @EnvironmentObject var store:NativeStore
     let record:EdizCore.Record
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     var body:some View {
         HStack(spacing:13) {
-            if record.actionable { Button { store.complete(record) } label:{ Image(systemName:"square").font(.title3).foregroundStyle(Design.muted).frame(width:44,height:44) }.buttonStyle(.borderless).accessibilityLabel("Complete \(record.title)") }
+            if record.actionable { Button { withAnimation(reducedMotion ? nil:.easeInOut(duration:0.25)){store.complete(record)} } label:{ Image(systemName:"square").font(.title3).foregroundStyle(Design.muted).frame(width:44,height:44) }.buttonStyle(.borderless).accessibilityLabel("Complete \(record.title)") }
             NavigationLink(value:record) {
                 VStack(alignment:.leading,spacing:5) {
                     Text(record.title).font(Design.font(17,weight:"Regular")).foregroundStyle(Design.ink)
@@ -63,7 +65,7 @@ struct RecordRow:View {
                     }.font(.caption).foregroundStyle(Design.muted)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }.buttonStyle(.plain)
-        }.padding(.vertical,7)
+        }.padding(.vertical,7).transition(.opacity.combined(with:.scale(scale:0.97)))
     }
 }
 struct QuietEmpty:View {

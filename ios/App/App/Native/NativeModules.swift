@@ -88,38 +88,30 @@ struct NativeFocus:View {
     let record:EdizCore.Record
     @State private var started:Date?
     @State private var accumulated=0.0
+    var begun:Bool {started != nil || accumulated>0}
     var body:some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment:.leading,spacing:26){
-                    HStack(spacing:12){SpaceMark(space:Catalog.space(record.space));Text(Catalog.space(record.space).name).font(.subheadline).foregroundStyle(Design.muted)}
-                    Text(record.title).font(.title2.weight(.medium)).fixedSize(horizontal:false,vertical:true)
-                    Text(started == nil && accumulated == 0 ? "One thing at a time. Take a moment to settle in.":started == nil ? "Take your time. Your session is here when you’re ready.":"You have room to stay with this.").font(.body).foregroundStyle(Design.muted).lineSpacing(3)
-                    Surface {
-                        TimelineView(.periodic(from:.now,by:1)){context in
-                            let elapsed=max(0,Int(accumulated+(started.map{context.date.timeIntervalSince($0)} ?? 0)))
-                            VStack(alignment:.leading,spacing:9){
-                                Text("Time spent").font(.subheadline).foregroundStyle(Design.muted)
-                                Text("\(elapsed/60):\(String(format:"%02d",elapsed%60))").font(.system(.largeTitle,design:.rounded,weight:.regular)).monospacedDigit()
-                                if let minutes=record.duration{Text("You allowed about \(minutes) minutes. There’s no countdown.").font(.subheadline).foregroundStyle(Design.muted)}
-                            }
-                        }
+                VStack(spacing:24){
+                    HStack(spacing:8){SpaceMark(space:Catalog.space(record.space));Text(Catalog.space(record.space).name).font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted)}.padding(.top,24)
+                    Text(record.title).font(Design.font(24,relativeTo:.title2)).multilineTextAlignment(.center).fixedSize(horizontal:false,vertical:true)
+                    Text(!begun ? "A little space to begin.":started == nil ? "Take your time. Your session is here.":"Stay with this one thing.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).multilineTextAlignment(.center)
+                    TimelineView(.periodic(from:.now,by:1)){context in
+                        let elapsed=max(0,Int(accumulated+(started.map{context.date.timeIntervalSince($0)} ?? 0)))
+                        VStack(spacing:10){Text("\(elapsed/60):\(String(format:"%02d",elapsed%60))").font(Design.font(38,weight:"Regular",relativeTo:.largeTitle)).monospacedDigit();Text("Time with your work").font(Design.font(12,weight:"Regular")).foregroundStyle(Design.muted)}
+                            .frame(width:208,height:208).background(Design.surface,in:Circle()).shadow(color:.black.opacity(0.2),radius:25,y:12).padding(.vertical,10)
                     }
-                    if !record.body.isEmpty{VStack(alignment:.leading,spacing:10){Text("Keep in mind").font(.subheadline.weight(.medium));Text(record.body).font(.body).lineSpacing(4).textSelection(.enabled)}}
-                }.padding(24)
+                    if let minutes=record.duration{Text("You allowed about \(minutes) minutes. There’s no countdown.").font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted).multilineTextAlignment(.center)}
+                    if !record.body.isEmpty{Surface{VStack(alignment:.leading,spacing:10){Text("Keep in mind").font(Design.font(16));Text(record.body).font(Design.font(15,weight:"Regular")).lineSpacing(4).textSelection(.enabled)}}}
+                    Group{
+                    HStack(spacing:12){
+                        GlassAction{Button(started == nil ? (begun ? "Continue":"Begin"):"Pause"){toggle()}.font(Design.font(16)).frame(maxWidth:.infinity,minHeight:48)}
+                        GlassAction{Button("Finish"){store.complete(record);dismiss()}.font(Design.font(14)).foregroundStyle(Design.muted).frame(maxWidth:.infinity,minHeight:48)}.opacity(begun ? 1:0).disabled(!begun).accessibilityHidden(!begun)
+                    }.padding(.top,4)
+                }
+                }.frame(maxWidth:.infinity).padding(24)
             }.background(Design.background).navigationTitle("Focus").navigationBarTitleDisplayMode(.inline)
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}
-                .safeAreaInset(edge:.bottom){
-                    HStack(spacing:12){
-                        if #available(iOS 26.0,*){
-                            Button(started == nil ? (accumulated == 0 ? "Begin":"Continue"):"Pause"){toggle()}.buttonStyle(.glass).controlSize(.large).frame(maxWidth:.infinity)
-                            Button("Finish"){store.complete(record);dismiss()}.buttonStyle(.glassProminent).controlSize(.large).frame(maxWidth:.infinity)
-                        }else{
-                            Button(started == nil ? "Begin":"Pause"){toggle()}.buttonStyle(ActionStyle())
-                            Button("Finish"){store.complete(record);dismiss()}.buttonStyle(ActionStyle(primary:true))
-                        }
-                    }.padding(20)
-                }
         }.preferredColorScheme(.dark).tint(Design.accent)
     }
     func toggle(){if let start=started{accumulated += Date().timeIntervalSince(start);started=nil}else{started=Date()}}

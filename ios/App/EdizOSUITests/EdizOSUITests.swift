@@ -92,7 +92,7 @@ final class EdizOSUITests:XCTestCase {
         capture("A comfortable focus session")
         app.staticTexts["A comfortable focus session"].tap()
         app.buttons["Start focus"].tap()
-        XCTAssertTrue(app.buttons["Begin"].waitForExistence(timeout:5));snapshot("Focus before starting");app.buttons["Begin"].tap()
+        XCTAssertTrue(app.buttons["Begin"].waitForExistence(timeout:5));snapshot("Focus before starting");XCTAssertFalse(app.buttons["Finish"].exists);app.buttons["Begin"].tap()
         XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout:5));app.buttons["Pause"].tap()
         XCTAssertTrue(app.buttons["Continue"].waitForExistence(timeout:5));app.buttons["Continue"].tap()
         app.buttons["Finish"].tap()

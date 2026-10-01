@@ -44,10 +44,10 @@ struct NativeAssistant:View {
         }.background(Design.background).navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
     }
     var conversation:some View {
-        VStack(alignment:.leading,spacing:22){
+        VStack(alignment:.leading,spacing:14){
             if entries.isEmpty {
-                Text("Let’s make room for what matters, Ediz.").font(.title3.weight(.medium)).padding(.top,12)
-                Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(.body).foregroundStyle(Design.muted)
+                Text("Let’s make room for what matters, Ediz.").font(Design.font(21,relativeTo:.title3)).padding(.top,12)
+                Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(Design.font(16,weight:"Regular")).foregroundStyle(Design.muted)
                 VStack(spacing:9){forPrompt("What should I focus on?");forPrompt("Plan tomorrow");forPrompt("Any loose ends?")}
             }
             ForEach(entries){entry in entryView(entry).id(entry.id)}
@@ -56,11 +56,14 @@ struct NativeAssistant:View {
         }.padding(20)
     }
     @ViewBuilder func entryView(_ entry:ConversationEntry)->some View {
-        VStack(alignment:.leading,spacing:10){
-            if entry.role == "user"{Text(entry.text).font(.body).padding(14).background(Design.raised,in:RoundedRectangle(cornerRadius:14)).frame(maxWidth:.infinity,alignment:.trailing)}else{
-                Text(entry.text).font(.body).lineSpacing(4).textSelection(.enabled)
-                ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
-                if let draft=entry.draft{Button("Review reminder"){store.captureRequest=draft}.buttonStyle(ActionStyle())}
+        VStack(alignment:entry.role == "user" ? .trailing:.leading,spacing:10){
+            if entry.role == "user" {
+                Text(entry.text).font(Design.font(16,weight:"Regular")).padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:23)).frame(maxWidth:.infinity,alignment:.trailing)
+            } else {
+                VStack(alignment:.leading,spacing:10){Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
+                    ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
+                    if let draft=entry.draft{Button("Review reminder"){store.captureRequest=draft}.buttonStyle(ActionStyle())}
+                }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(.regularMaterial,in:RoundedRectangle(cornerRadius:23))
             }
         }
     }
@@ -68,12 +71,12 @@ struct NativeAssistant:View {
         VStack(spacing:8){
             if store.preferences.labs && !(store.preferences.localEndpoint ?? "").isEmpty{Toggle("Use my local model",isOn:$model).font(.subheadline)}
             HStack(alignment:.bottom,spacing:10){
-                TextField("Ask about your work…",text:$question,axis:.vertical).lineLimit(1...5).font(.body).focused($typing).accessibilityIdentifier("assistant-question")
+                TextField("Ask about your work…",text:$question,axis:.vertical).lineLimit(1...5).font(Design.font(16,weight:"Regular")).focused($typing).accessibilityIdentifier("assistant-question")
                 Button{send()}label:{Image(systemName:"arrow.up").font(.body.weight(.medium)).frame(width:44,height:44).foregroundStyle(Design.background).background(Design.ink,in:Circle())}.disabled(busy || question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityLabel("Send question")
             }
-        }.padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:20)).padding(.horizontal,16).padding(.bottom,8)
+        }.padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:27)).padding(.horizontal,16).padding(.bottom,8)
     }
-    func forPrompt(_ prompt:String)->some View{Button{question=prompt;send()}label:{HStack{Text(prompt);Spacer();Image(systemName:"arrow.up.right")}.font(.subheadline).padding(14).background(Design.surface,in:RoundedRectangle(cornerRadius:12))}.buttonStyle(.plain)}
+    func forPrompt(_ prompt:String)->some View{GlassAction{Button{question=prompt;send()}label:{Text(prompt).font(Design.font(14)).frame(maxWidth:.infinity,minHeight:46)}}}
     func send(){
         let q=question.trimmingCharacters(in:.whitespacesAndNewlines);guard !q.isEmpty,!busy else{return}
         let prior=(entries.last(where:{$0.role == "assistant"})?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}

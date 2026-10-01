@@ -47,9 +47,9 @@ struct NativeToday:View {
     var upcoming:[EdizCore.Record]{store.records.filter{$0.kind == "event" || $0.kind == "rehearsal" || $0.kind == "exam"}.filter{$0.status != "done" && (Time.date($0.due).map{$0>=Date()} ?? false)}.sorted{($0.due ?? "")<($1.due ?? "")}}
     var body:some View {
         ScrollView {
-            VStack(alignment:.leading,spacing:26) {
-                VStack(alignment:.leading,spacing:6){Text(Date.now,format:.dateTime.weekday(.wide).day().month(.wide)).font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted);Text("Today, Ediz.").font(Design.font(30,weight:"DemiBold",relativeTo:.largeTitle))}
-                VStack(alignment:.leading,spacing:15) {
+            VStack(alignment:.leading,spacing:20) {
+                VStack(alignment:.leading,spacing:6){Text(Date.now,format:.dateTime.weekday(.wide).day().month(.wide)).font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted);Text("Today, Ediz.").font(Design.font(30,weight:"DemiBold",relativeTo:.largeTitle)).foregroundStyle(Design.glassLettering)}
+                VStack(alignment:.leading,spacing:12) {
                     Text("Your next move").font(Design.font(19,weight:"DemiBold",relativeTo:.headline))
                     if store.priorities.isEmpty {
                         VStack(alignment:.leading,spacing:8){Text("Nothing pressing.").font(Design.font(23,relativeTo:.title2));Text("Capture a thought or bring in your existing work.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted)}.padding(.vertical,3)
@@ -74,12 +74,12 @@ struct NativeSpaceShortcut:View {
     var body:some View {
         HStack(spacing:10){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:11){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(16,weight:"DemiBold")).foregroundStyle(Design.ink);Text(space.summary).font(Design.font(12,weight:"Regular")).foregroundStyle(Design.muted)}}.frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain)
             GlassAction{if space.id == "personal" {Button(shortcut){store.capture(space:"personal")}.frame(minHeight:44)}else{NavigationLink(value:SpaceRoute(id:space.id)){Text(shortcut).frame(minHeight:44)}}}.font(Design.font(13))
-        }.padding(.horizontal,14).padding(.vertical,10).background(Design.surface,in:RoundedRectangle(cornerRadius:20))
+        }.padding(.horizontal,14).padding(.vertical,6).background(Design.surface,in:RoundedRectangle(cornerRadius:20))
     }
 }
 struct NativeSpaces:View {
     var body:some View {
-        ScrollView { VStack(alignment:.leading,spacing:18) {
+        ScrollView { VStack(alignment:.leading,spacing:14) {
             Text("Five spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
             ForEach(Catalog.spaces){space in
                 VStack(alignment:.leading,spacing:16){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)};Spacer()}}.buttonStyle(.plain)
