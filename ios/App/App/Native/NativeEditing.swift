@@ -5,15 +5,15 @@ import EdizCore
 struct NativeCapture:View {
     @EnvironmentObject var store:NativeStore
     @Environment(\.dismiss) private var dismiss
-    @State private var draft:Record
+    @State private var draft:EdizCore.Record
     @State private var automatic:Bool
     @State private var voicePrefix=""
     @State private var explicitDate=false
     @State private var date=Date()
     @StateObject private var speech=NativeSpeech()
     @FocusState private var typing:Bool
-    init(seed:Record){_draft=State(initialValue:seed);_automatic=State(initialValue:seed.data["_captureAuto"] == "1");_date=State(initialValue:Time.date(seed.due) ?? Date());_explicitDate=State(initialValue:seed.due != nil)}
-    var preview:Record {
+    init(seed:EdizCore.Record){_draft=State(initialValue:seed);_automatic=State(initialValue:seed.data["_captureAuto"] == "1");_date=State(initialValue:Time.date(seed.due) ?? Date());_explicitDate=State(initialValue:seed.due != nil)}
+    var preview:EdizCore.Record {
         var parsed=CaptureParser.parse(draft.title)
         parsed.id=draft.id;parsed.created=draft.created
         if !automatic { parsed.space=draft.space;parsed.kind=draft.kind }
@@ -53,7 +53,7 @@ struct NativeCapture:View {
 struct NativeEditor:View {
     @EnvironmentObject var store:NativeStore
     @Environment(\.dismiss) private var dismiss
-    @State var record:Record
+    @State var record:EdizCore.Record
     @State private var deletion=false
     @State private var addingFile=false
     @State private var files:[Attachment]=[]
@@ -103,7 +103,7 @@ struct NativeImport:View {
     @State private var choose=false
     @State private var paste=""
     @State private var space="personal"
-    @State private var items:[Record]=[]
+    @State private var items:[EdizCore.Record]=[]
     @State private var raw:Data?
     @State private var backup=false
     @State private var confirm=false

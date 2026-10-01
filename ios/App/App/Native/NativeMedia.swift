@@ -71,7 +71,7 @@ struct NativeAudioPractice:View {
 }
 struct NativeRehearsal:View {
     @Environment(\.dismiss) private var dismiss
-    let songs:[Record]
+    let songs:[EdizCore.Record]
     @State private var index=0
     @StateObject private var metronome=NativeMetronome()
     var body:some View {

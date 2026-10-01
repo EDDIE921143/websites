@@ -5,11 +5,11 @@ struct ConversationEntry:Identifiable {
     let id=UUID()
     let role:String
     let text:String
-    var records:[Record]=[]
-    var draft:Record?
+    var records:[EdizCore.Record]=[]
+    var draft:EdizCore.Record?
 }
 enum LocalAssistant {
-    static func answer(endpoint:String,question:String,context:[Record],conversation:[ConversationEntry]) async throws -> String {
+    static func answer(endpoint:String,question:String,context:[EdizCore.Record],conversation:[ConversationEntry]) async throws -> String {
         guard var url=URL(string:endpoint),let host=url.host?.lowercased(),url.scheme == "http" || url.scheme == "https" else{throw URLError(.badURL)}
         let parts=host.split(separator:".").compactMap{Int($0)}
         let privateHost=host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".local") || (parts.count == 4 && (parts[0] == 10 || (parts[0] == 192 && parts[1] == 168) || (parts[0] == 172 && (16...31).contains(parts[1]))))

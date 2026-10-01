@@ -30,7 +30,7 @@ struct OSNavigation<Content:View>:View {
     @ViewBuilder var content:Content
     var body:some View {
         NavigationStack {
-            content.navigationDestination(for:Record.self){NativeEditor(record:$0)}
+            content.navigationDestination(for:EdizCore.Record.self){NativeEditor(record:$0)}
                 .navigationDestination(for:SpaceRoute.self){NativeSpace(route:$0)}
                 .toolbar { ToolbarItem(placement:.topBarTrailing) { NavigationLink { NativeSettings() } label:{ Image(systemName:"slider.horizontal.3").font(.body).foregroundStyle(Design.muted).frame(minWidth:44,minHeight:44) }.accessibilityLabel("Settings and backup") } }
         }.tint(Design.accent)
@@ -38,7 +38,7 @@ struct OSNavigation<Content:View>:View {
 }
 struct RecordRow:View {
     @EnvironmentObject var store:NativeStore
-    let record:Record
+    let record:EdizCore.Record
     var body:some View {
         HStack(spacing:13) {
             if record.actionable { Button { store.complete(record) } label:{ Image(systemName:"square").font(.title3).foregroundStyle(Design.muted).frame(width:44,height:44) }.buttonStyle(.borderless).accessibilityLabel("Complete \(record.title)") }

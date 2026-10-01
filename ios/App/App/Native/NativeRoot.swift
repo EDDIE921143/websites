@@ -84,7 +84,7 @@ struct NativeSearch:View {
     @EnvironmentObject var store:NativeStore
     @State private var query=""
     @State private var space="all"
-    var results:[Record]{SearchIndex.find(store.records,query:query).filter{space == "all" || $0.space == space}}
+    var results:[EdizCore.Record]{SearchIndex.find(store.records,query:query).filter{space == "all" || $0.space == space}}
     var body:some View {
         List {
             Section { Picker("Space",selection:$space){Text("Everything").tag("all");ForEach(Catalog.spaces){Text($0.name).tag($0.id)}} }

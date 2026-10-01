@@ -59,4 +59,31 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["capture-save"].tap()
         XCTAssertTrue(app.staticTexts["Character for test"].waitForExistence(timeout:5))
     }
+    func ask(_ question:String){
+        let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText(question)
+        app.buttons["Send question"].tap()
+    }
+    func testAssistantKeepsContextAndPreviewsReminders(){
+        capture("French homework tomorrow")
+        app.tabBars.buttons["Assistant"].tap()
+        ask("What should I focus on?")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","Start with French homework")).firstMatch.waitForExistence(timeout:5))
+        ask("Why that?")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","French homework tomorrow:")).firstMatch.waitForExistence(timeout:5))
+        ask("Remind me call Studio 41 tomorrow at 16")
+        let review=app.buttons["Review reminder"];XCTAssertTrue(review.waitForExistence(timeout:5));review.tap()
+        XCTAssertTrue(app.buttons["capture-save"].waitForExistence(timeout:5))
+        app.buttons["Close"].tap()
+    }
+    func testFocusCanPauseResumeAndFinish(){
+        capture("A comfortable focus session")
+        app.staticTexts["A comfortable focus session"].tap()
+        app.buttons["Start focus"].tap()
+        XCTAssertTrue(app.buttons["Begin"].waitForExistence(timeout:5));app.buttons["Begin"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout:5));app.buttons["Pause"].tap()
+        XCTAssertTrue(app.buttons["Continue"].waitForExistence(timeout:5));app.buttons["Continue"].tap()
+        app.buttons["Finish"].tap()
+        XCTAssertTrue(app.buttons["record-save"].waitForExistence(timeout:5))
+    }
 }

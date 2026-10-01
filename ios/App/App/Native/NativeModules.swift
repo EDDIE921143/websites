@@ -8,8 +8,8 @@ struct NativeSpace:View {
     @State private var filter="all"
     @State private var rehearsal=false
     var space:SpaceDefinition{Catalog.space(route.id)}
-    var records:[Record]{store.records.filter{$0.space == route.id && $0.kind == kind && (filter == "all" || $0.status == filter)}.sorted{$0.updated>$1.updated}}
-    var songs:[Record]{store.records.filter{$0.space == "band" && $0.kind == "song" && $0.status != "archived"}.sorted{$0.created<$1.created}}
+    var records:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind && (filter == "all" || $0.status == filter)}.sorted{$0.updated>$1.updated}}
+    var songs:[EdizCore.Record]{store.records.filter{$0.space == "band" && $0.kind == "song" && $0.status != "archived"}.sorted{$0.created<$1.created}}
     var body:some View {
         List {
             Section {
@@ -79,13 +79,13 @@ struct NativeGradeProjection:View {
 struct NativeTimeline:View {
     @EnvironmentObject var store:NativeStore
     @State private var query=""
-    var events:[Record]{store.records.filter{$0.space == "moshia" && $0.kind == "event" && (query.isEmpty || [$0.data["characters"],$0.data["location"],$0.data["chapter"]].compactMap{$0}.joined(separator:" ").localizedCaseInsensitiveContains(query))}.sorted{($0.data["storyDate"] ?? $0.due ?? $0.created)<($1.data["storyDate"] ?? $1.due ?? $1.created)}}
+    var events:[EdizCore.Record]{store.records.filter{$0.space == "moshia" && $0.kind == "event" && (query.isEmpty || [$0.data["characters"],$0.data["location"],$0.data["chapter"]].compactMap{$0}.joined(separator:" ").localizedCaseInsensitiveContains(query))}.sorted{($0.data["storyDate"] ?? $0.due ?? $0.created)<($1.data["storyDate"] ?? $1.due ?? $1.created)}}
     var body:some View{Section("Story chronology"){TextField("Filter character, chapter or location",text:$query);ForEach(events){event in NavigationLink(value:event){VStack(alignment:.leading,spacing:7){Text(event.data["storyDate"] ?? event.due ?? "Story date not set").font(.caption).foregroundStyle(Design.muted);Text(event.title).font(.body.weight(.medium));Text([event.status,event.data["location"] ?? "",event.data["characters"] ?? ""].filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}}}}}
 }
 struct NativeFocus:View {
     @EnvironmentObject var store:NativeStore
     @Environment(\.dismiss) private var dismiss
-    let record:Record
+    let record:EdizCore.Record
     @State private var started:Date?
     @State private var accumulated=0.0
     var body:some View {
