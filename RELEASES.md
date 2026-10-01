@@ -1,5 +1,7 @@
 # Ediz OS 0.3.3
 
+- Attachments store portable binary buffers, retaining compatibility with existing files and backups.
+
 - Preference choices apply immediately and write in sequence, so rapid changes keep both density and workspace focus.
 - Visible density controls and a dedicated focus picker; Today shows the active workspace focus.
 - Today has a personal greeting, calendar anchor, and grouped work surface. Named space shortcuts open the correct area.
