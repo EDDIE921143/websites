@@ -87,6 +87,8 @@ struct NativeTabScrubber:UIViewRepresentable {
         var selection:Binding<Int>
         weak var bar:UITabBar?
         var pan:UIPanGestureRecognizer?
+        var candidate:Int?
+        let feedback=UISelectionFeedbackGenerator()
         init(selection:Binding<Int>){self.selection=selection}
         func controller(_ root:UIViewController?)->UITabBarController? {
             guard let root else{return nil};if let tabs=root as? UITabBarController{return tabs}
@@ -106,7 +108,13 @@ struct NativeTabScrubber:UIViewRepresentable {
         @objc func scrub(_ gesture:UIPanGestureRecognizer) {
             guard let bar,let count=bar.items?.count,count>0,bar.bounds.width>0 else{return}
             let index=min(count-1,max(0,Int(gesture.location(in:bar).x/bar.bounds.width*CGFloat(count))))
-            if selection.wrappedValue != index{selection.wrappedValue=index;UISelectionFeedbackGenerator().selectionChanged()}
+            switch gesture.state {
+            case .began: candidate=index;feedback.prepare()
+            case .changed: if candidate != index {candidate=index;feedback.selectionChanged()}
+            case .ended: candidate=nil;if selection.wrappedValue != index {selection.wrappedValue=index}
+            case .cancelled,.failed: candidate=nil
+            default: break
+            }
         }
     }
 }

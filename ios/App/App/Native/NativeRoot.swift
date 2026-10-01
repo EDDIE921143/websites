@@ -17,7 +17,7 @@ struct NativeRoot:View {
                 }.tint(Design.accent)
                     .background(NativeTabScrubber(selection:$selected))
                     .onChange(of:selected){_,next in if next != 1 {previous=next} }
-                    .sheet(item:$store.captureRequest){NativeCapture(seed:$0).presentationDetents([.large]).presentationDragIndicator(.visible)}
+                    .sheet(item:$store.captureRequest){seed in Group { if seed.data["_creation"] == "1" { NativeCreation(seed:seed) } else { NativeCapture(seed:seed) } }.presentationDetents([.large]).presentationDragIndicator(.visible)}
                     .fullScreenCover(item:$store.focusRequest){NativeFocus(record:$0)}
                     .overlay(alignment:.bottom){if store.undoRecord != nil{HStack{Text("Completed").font(.subheadline);Spacer();Button("Undo"){store.undo()}.font(.subheadline.weight(.medium));Button{store.undoRecord=nil}label:{Image(systemName:"xmark").frame(width:30,height:36)}.accessibilityLabel("Dismiss completion")}.padding(.horizontal,16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)).padding(.horizontal,20).padding(.bottom,80)}}
             } else {

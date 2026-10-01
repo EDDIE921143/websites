@@ -53,6 +53,9 @@ public final class Database {
     public func delete(_ record: Record) throws { try transaction { try write("DELETE FROM entities WHERE id=?",[record.id]);try write("DELETE FROM settings WHERE key=?",["edit:"+record.id]);let event=Activity(record:record,action:"Deleted");try write("INSERT INTO activity(id,json) VALUES(?,?)",[event.id,json(event)]) } }
     public func draft() throws -> Record? { try read("SELECT json FROM settings WHERE key='draft'").first }
     public func setDraft(_ record: Record?) throws { if let record { try write("INSERT OR REPLACE INTO settings(key,json) VALUES('draft',?)",[json(record)]) } else { try write("DELETE FROM settings WHERE key='draft'") } }
+    public func creationDraft(space:String,kind:String) throws -> Record? { try read("SELECT json FROM settings WHERE key=?",["creation:"+space+":"+kind]).first }
+    public func setCreationDraft(_ record:Record) throws { try write("INSERT OR REPLACE INTO settings(key,json) VALUES(?,?)",["creation:"+record.space+":"+record.kind,json(record)]) }
+    public func clearCreationDraft(space:String,kind:String) throws { try write("DELETE FROM settings WHERE key=?",["creation:"+space+":"+kind]) }
     public func editDraft(recordID:String) throws -> Record? { try read("SELECT json FROM settings WHERE key=?",["edit:"+recordID]).first }
     public func setEditDraft(_ record:Record) throws { try write("INSERT OR REPLACE INTO settings(key,json) VALUES(?,?)",["edit:"+record.id,json(record)]) }
     public func attachments(recordID: String? = nil) throws -> [Attachment] { if let id=recordID { return try read("SELECT json FROM attachments WHERE entity_id=?",[id]) };return try read("SELECT json FROM attachments") }

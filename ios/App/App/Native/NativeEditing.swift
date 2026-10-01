@@ -128,3 +128,48 @@ struct NativeImport:View {
             }.confirmationDialog("Replace all current records, files, history and preferences?",isPresented:$confirm,titleVisibility:.visible){Button("Replace current data & restore",role:.destructive){if let raw,store.restore(raw){items=[];message="Backup restored."}};Button("Keep current data",role:.cancel){}}
     }
 }
+
+struct NativeCreation:View {
+    @EnvironmentObject var store:NativeStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var record:EdizCore.Record
+    @State private var confirmCanon=false
+    @State private var scheduled=false
+    @State private var date=Date()
+    init(seed:EdizCore.Record){_record=State(initialValue:seed);_scheduled=State(initialValue:seed.due != nil);_date=State(initialValue:Time.date(seed.due) ?? Date())}
+    var noun:String { if record.kind == "thread" {return "plot thread"};if record.kind == "assignment" {return "homework"};if record.kind == "note" && record.space == "moshia" {return "research"};return record.kind }
+    var detailKeys:[String] { if record.kind == "chapter" {return ["POV","purpose","location","storyDate","characters","plotThreads","wordCount"]};if record.kind == "note" && record.space == "moshia" {return ["source","relatedChapter"]};return Catalog.fields(record.kind) }
+    func label(_ key:String)->String { if key == "POV" {return "Point of view"};return key.replacingOccurrences(of:"([a-z])([A-Z])",with:"$1 $2",options:.regularExpression).capitalized }
+    func keepDraft(){ do {try store.database?.setCreationDraft(record)}catch{store.error="Your draft could not be kept. Leave this screen open until you save."} }
+    func save(){var final=record;final.data.removeValue(forKey:"_creation");final.due=scheduled ? Time.string(date):nil;if store.save(final,action:"Created"){do{try store.database?.clearCreationDraft(space:record.space,kind:record.kind)}catch{store.error="Saved, but the old draft could not be cleared."};dismiss()} }
+    var body:some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(Catalog.space(record.space).name).font(.subheadline).foregroundStyle(Design.muted)
+                    TextField(record.kind == "chapter" ? "Chapter title":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title")
+                    TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"Context worth keeping",text:$record.body,axis:.vertical).lineLimit(3...7)
+                }
+                if !detailKeys.isEmpty {
+                    Section(record.kind == "chapter" ? "In this chapter":record.kind == "thread" ? "The thread":record.kind == "location" ? "The place":record.kind == "note" ? "Sources & connections":"Details") {
+                        ForEach(Array(detailKeys.prefix(3)),id:\.self){key in TextField(label(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...4)}
+                        if detailKeys.count>3 {DisclosureGroup("More details"){ForEach(Array(detailKeys.dropFirst(3)),id:\.self){key in TextField(label(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...4)}}}
+                    }
+                }
+                Section {
+                    Picker("State",selection:$record.status){ForEach(Catalog.states(kind:record.kind,space:record.space),id:\.self){Text($0).tag($0)}}
+                    if record.space == "moshia" {Text("POSSIBLE — canon only when you choose it.").font(.footnote).foregroundStyle(Design.muted)}
+                    if ["task","assignment","exam","event","rehearsal","lead"].contains(record.kind) {Toggle("Set a date",isOn:$scheduled);if scheduled{DatePicker("When",selection:$date)}}
+                }
+            }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Add "+noun).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement:.cancellationAction){Button("Close"){keepDraft();dismiss()}}
+                    ToolbarItem(placement:.confirmationAction){Button("Add "+noun){if record.status == "CANON" {confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("creation-save")}
+                }
+                .onChange(of:record){_,_ in keepDraft()}
+                .onChange(of:date){_,value in record.due=scheduled ? Time.string(value):nil}
+                .onChange(of:scheduled){_,value in record.due=value ? Time.string(date):nil}
+                .confirmationDialog("Add this to canon?",isPresented:$confirmCanon,titleVisibility:.visible){Button("Add to canon"){save()};Button("Cancel",role:.cancel){}}message:{Text("This marks the material as established in Moshia.")}
+        }.preferredColorScheme(.dark).tint(Design.accent)
+    }
+}

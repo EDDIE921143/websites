@@ -64,10 +64,10 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["Characters"].tap()
         let add=app.buttons["Add character"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout:5));add.tap()
-        let input=app.descendants(matching:.any).matching(identifier:"capture-text").firstMatch
+        let input=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch
         XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText("Character for test")
         XCTAssertTrue(app.staticTexts["POSSIBLE — canon only when you choose it."].exists)
-        app.buttons["capture-save"].tap()
+        app.buttons["creation-save"].tap()
         XCTAssertTrue(app.staticTexts["Character for test"].waitForExistence(timeout:5))
     }
     func ask(_ question:String){

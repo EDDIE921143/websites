@@ -3,6 +3,16 @@ import XCTest
 final class CoreTests: XCTestCase {
     let now=Time.date("2026-10-01T10:00:00Z")!
     func database() throws -> Database { let url=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("test.sqlite");return try Database(url:url) }
+    func testCreationDraftsKeepTheirOwnFieldsAndLeaveQuickCaptureAlone() throws {
+        let db=try database();let quick=Record(title:"Quick thought");try db.setDraft(quick)
+        var chapter=Record(space:"moshia",kind:"chapter",title:"Chapter draft");chapter.data["POV"]="Narrator";try db.setCreationDraft(chapter)
+        try db.setCreationDraft(Record(space:"moshia",kind:"thread",title:"Loose thread"))
+        XCTAssertEqual(try db.creationDraft(space:"moshia",kind:"chapter")?.data["POV"],"Narrator")
+        XCTAssertEqual(try db.draft()?.title,"Quick thought")
+        try db.clearCreationDraft(space:"moshia",kind:"chapter")
+        XCTAssertNil(try db.creationDraft(space:"moshia",kind:"chapter"))
+        XCTAssertEqual(try db.creationDraft(space:"moshia",kind:"thread")?.title,"Loose thread")
+    }
     func testPriorityExcludesWaitingAndExplainsDeadline() {
         let soon=Record(space:"school",kind:"assignment",title:"Due",due:now.addingTimeInterval(3600),now:now)
         let waiting=Record(title:"Waiting",status:"waiting",now:now)

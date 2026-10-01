@@ -47,7 +47,9 @@ import EdizCore
     func capture(space: String? = nil, kind: String? = nil) {
         do {
             if space == nil && kind == nil, let draft=try database?.draft() { captureRequest=draft;return }
+            if let space,let kind,let draft=try database?.creationDraft(space:space,kind:kind) { captureRequest=draft;return }
             var record=EdizCore.Record(space:space ?? "personal",kind:kind ?? "task",title:"")
+            if kind != nil { record.data["_creation"]="1" }
             if space == nil { record.data["_captureAuto"]="1" }
             captureRequest=record
         } catch { self.error=error.localizedDescription }
