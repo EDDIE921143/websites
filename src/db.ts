@@ -22,3 +22,7 @@ export async function restoreSnapshot(id:string){const d=await db;const s=await 
 export type CaptureDraft={text:string;space:string;kind:string;due:string};
 export async function captureDraft(){return (await (await db).get('settings','captureDraft')) as CaptureDraft|undefined;}
 export async function saveCaptureDraft(draft:CaptureDraft|null){const d=await db;if(draft)await d.put('settings',draft,'captureDraft');else await d.delete('settings','captureDraft');}
+
+// Typed creation never overwrites the spontaneous quick-capture draft.
+export async function creationDraft(space:string,kind:string){return await (await db).get('settings',`creation:${space}:${kind}`) as Entity|undefined;}
+export async function saveCreationDraft(space:string,kind:string,draft:Entity|null){const database=await db;const key=`creation:${space}:${kind}`;if(draft)await database.put('settings',draft,key);else await database.delete('settings',key);}

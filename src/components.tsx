@@ -4,6 +4,7 @@ import {spaces,moduleKinds,fields,statuses,parseCapture,makeEntity,rank,actionab
 import * as db from './db';
 import {LocalProvider} from './ai';
 import {ConversationAssistant} from './ConversationAssistant';
+import {creationSpec} from './creation';
 import * as SwitchPrimitive from '@radix-ui/react-switch';
 export function Switch({checked,onCheckedChange,label}:{checked:boolean;onCheckedChange:(v:boolean)=>void;label:string}){return <SwitchPrimitive.Root className="os-switch" checked={checked} onCheckedChange={onCheckedChange} aria-label={label}><SwitchPrimitive.Thumb className="os-switch-thumb"/></SwitchPrimitive.Root>}
 import {Mark,Empty,spaceOf,dateLabel} from './primitives';

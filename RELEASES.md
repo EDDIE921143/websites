@@ -1,3 +1,12 @@
+# Ediz OS 0.3.2
+
+- Module additions now open typed editors: chapter, plot thread, location, research, idea, lead, song, homework and other entities. Quick Capture remains separate.
+- Each creation form has its own durable draft and relevant fields. Moshia material begins as POSSIBLE, with explicit confirmation before adding canon.
+- Moshia collections show thread development, location context, research sources and ideas.
+- The web dock lens tracks the finger continuously without React rendering on each pointer movement. Navigation commits on release.
+- Native dock scrubbing commits on release; native editors use SwiftUI forms and system glass controls.
+- Lighter glass controls replace the previous heavy sheen. No paid service or user data migration required.
+
 # Ediz OS 0.3.1
 
 - Stable task rows, fewer scrolling blur surfaces, and compositor-only completion and focus motion.
