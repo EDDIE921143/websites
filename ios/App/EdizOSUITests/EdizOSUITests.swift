@@ -70,6 +70,21 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["creation-save"].tap()
         XCTAssertTrue(app.staticTexts["Character for test"].waitForExistence(timeout:5))
     }
+    func testChapterCreationKeepsItsOwnDraftAndFields(){
+        app.tabBars.buttons["Spaces"].tap();app.buttons["Chapters"].tap()
+        app.buttons["Add chapter"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Add chapter"].waitForExistence(timeout:5))
+        let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch
+        title.tap();title.typeText("Chapter: native draft")
+        let pov=app.descendants(matching:.any).matching(identifier:"creation-POV").firstMatch
+        pov.tap();pov.typeText("Narrator")
+        snapshot("Chapter creation uses its own native editor")
+        app.buttons["Close"].firstMatch.tap();app.buttons["Add chapter"].firstMatch.tap()
+        XCTAssertEqual(title.value as? String,"Chapter: native draft")
+        XCTAssertEqual(pov.value as? String,"Narrator")
+        app.buttons["creation-save"].tap()
+        XCTAssertTrue(app.staticTexts["Chapter: native draft"].waitForExistence(timeout:5))
+    }
     func ask(_ question:String){
         let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
         XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText(question)

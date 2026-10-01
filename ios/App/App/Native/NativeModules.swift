@@ -8,6 +8,7 @@ struct NativeSpace:View {
     @State private var filter="all"
     @State private var rehearsal=false
     var space:SpaceDefinition{Catalog.space(route.id)}
+    var creationNoun:String {kind == "thread" ? "plot thread":kind == "assignment" ? "homework":kind == "note" && route.id == "moshia" ? "research":kind}
     var records:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind && (filter == "all" || $0.status == filter)}.sorted{$0.updated>$1.updated}}
     var songs:[EdizCore.Record]{store.records.filter{$0.space == "band" && $0.kind == "song" && $0.status != "archived"}.sorted{$0.created<$1.created}}
     var body:some View {
@@ -27,7 +28,7 @@ struct NativeSpace:View {
             if route.id == "school" && kind == "grade"{NativeGradeProjection()}
             if route.id == "school" && ["assignment","exam"].contains(kind){NativeWorkload()}
             Section(space.modules.first{$0.kind == kind}?.label ?? "Records") {
-                if records.isEmpty{QuietEmpty(title:"Ready for your \(kind == "assignment" ? "homework":kind == "lead" ? "leads":kind == "chapter" ? "chapters":"work").",message:"Capture it here or bring in an existing file.");Button("Add \(kind == "assignment" ? "homework":kind)"){store.capture(space:route.id,kind:kind)}}
+                if records.isEmpty{QuietEmpty(title:"Ready for your \(kind == "assignment" ? "homework":kind == "lead" ? "leads":kind == "chapter" ? "chapters":"work").",message:"Add your own material or bring in an existing file.");Button("Add \(creationNoun)"){store.capture(space:route.id,kind:kind)}}
                 ForEach(records){record in
                     VStack(alignment:.leading,spacing:7){RecordRow(record:record)
                         if route.id == "moshia"{Text(record.status).font(.caption.weight(.medium)).foregroundStyle(Design.color(space.color))}
@@ -38,7 +39,7 @@ struct NativeSpace:View {
             }
             if route.id == "moshia" && kind == "event"{NativeTimeline()}
         }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Design.background).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
-            .toolbar{ToolbarItem(placement:.bottomBar){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(kind == "assignment" ? "homework":kind)",systemImage:"plus")}.disabled(kind.isEmpty)}}
+            .toolbar{ToolbarItem(placement:.bottomBar){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty)}}
             .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind}}
             .onChange(of:kind){_,_ in filter="all"}
             .fullScreenCover(isPresented:$rehearsal){NativeRehearsal(songs:songs)}

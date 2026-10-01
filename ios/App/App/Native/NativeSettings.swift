@@ -22,7 +22,7 @@ struct NativeSettings:View {
                     Text("Connect a model you run on your local network. Records are sent only when you switch on ‘Use my local model’ in Assistant and ask a question. No paid key is required.").font(.footnote).foregroundStyle(Design.muted)
                 }
             }
-            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.0 · No paid API required.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.2 · No paid API required.").font(.footnote).foregroundStyle(Design.muted)}
         }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Settings")
             .sheet(item:$file){shared in NativeShare(url:shared.url){completed in if completed && shared.url.lastPathComponent.hasPrefix("ediz-os-"){store.markBackupShared()}}}
     }
@@ -40,5 +40,5 @@ struct NativeHistory:View {
 }
 struct NativeHealth:View {
     @EnvironmentObject var store:NativeStore
-    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:"No model required");LabeledContent("Version",value:"0.3.0");Text("Data stays on this device. Speech requires on-device recognition. No telemetry is collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(Design.background).navigationTitle("System health") }
+    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:"No model required");LabeledContent("Version",value:"0.3.2");Text("Data stays on this device. Speech requires on-device recognition. No telemetry is collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(Design.background).navigationTitle("System health") }
 }
