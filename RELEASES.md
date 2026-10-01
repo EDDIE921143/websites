@@ -1,3 +1,12 @@
+# Ediz OS 0.3.1
+
+- Stable task rows, fewer scrolling blur surfaces, and compositor-only completion and focus motion.
+- Persistent app chrome with one momentum-scrolling work surface.
+- Each destination restores its scroll position and module selection. Assistant conversations remain intact across tab changes.
+- Settings and imports have a clear return action; search no longer forces the keyboard open on arrival.
+- Two additional browser checks cover navigation continuity, long lists, and stationary chrome.
+- Native iPhone release remains the tested SwiftUI 0.3.0 build; physical installation still requires Apple signing.
+
 # 0.3.0
 
 A new warm-black design with humanist typography, glass lettering, neutral space rows, useful glass shortcuts and draggable bottom navigation. Chat replies use glass bubbles; tasks settle away with a short completion animation. Phone spacing is compact and the chat composer stays near the dock. Today gives one clear starting point and room to continue. Assistant supports contextual follow-ups, saved information, tomorrow and reminder previews. Focus begins gently, counts elapsed time and can pause and resume.

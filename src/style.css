@@ -42,3 +42,24 @@ h1{font-size:30px;letter-spacing:-.65px;font-weight:700;line-height:1.2}h2{font-
 @media(prefers-reduced-transparency:reduce){.conversation-message.assistant,.conversation-message.user{background:var(--surface-raised);backdrop-filter:none;-webkit-backdrop-filter:none}}
 @media(prefers-reduced-motion:reduce){.entity-row.is-completing{animation:none}.entity-row.is-completing .complete>svg{animation:none}}
 .assistant-page{display:flex;flex-direction:column;min-height:calc(var(--visual-height,100dvh) - 188px - var(--safe-top) - var(--safe-bottom))}.assistant-page .assistant-conversation{flex:1}.assistant-page .assistant-note{margin-bottom:0}.assistant-page .assistant-composer{flex-shrink:0}
+
+/* Persistent app chrome and one momentum-scrolling work surface. */
+html,body,#root{height:100%;overflow:hidden}
+main{height:100dvh;min-height:0;padding-bottom:0;display:flex;flex-direction:column;overflow:hidden}
+.topbar{flex-shrink:0}
+.content{flex:1;min-height:0;width:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scroll-padding-top:16px;padding-bottom:calc(104px + var(--safe-bottom));outline:none}
+.app-screen{min-height:100%}
+.app-screen>[hidden]{display:none!important}
+/* Static glass surfaces retain their highlights without a live blur per row. */
+.content .quiet,.content .primary,.content .glass-control,.content .review-controls>button,.content .module-tabs button,.conversation-message.assistant,.conversation-message.user{backdrop-filter:none;-webkit-backdrop-filter:none}
+.entity-row{content-visibility:auto;contain-intrinsic-size:auto 90px}
+@keyframes task-settle{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(12px)}}
+.focus-clock.running{animation:none;position:relative}
+.focus-clock.running:after{content:"";position:absolute;inset:-8px;pointer-events:none;border-radius:inherit;box-shadow:0 0 24px #d8ccb51c;animation:focus-halo 8s ease-in-out infinite}
+@keyframes focus-halo{0%,100%{opacity:.3;transform:scale(.98)}50%{opacity:.8;transform:scale(1.025)}}
+.modal{animation:sheet-arrive .24s cubic-bezier(.2,.8,.2,1);-webkit-overflow-scrolling:touch}
+.overlay{animation:scrim-arrive .18s ease-out}
+@keyframes sheet-arrive{from{transform:translateY(26px);opacity:.65}to{transform:translateY(0);opacity:1}}
+@keyframes scrim-arrive{from{background-color:#0000}to{background-color:#0009}}
+@media(min-width:900px){.content{padding-bottom:32px}}
+@media(prefers-reduced-motion:reduce){.focus-clock.running:after,.modal,.overlay{animation:none}.entity-row.is-completing{animation:none}}
