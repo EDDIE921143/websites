@@ -24,7 +24,7 @@ struct NativeSpace:View {
                     HStack{metric("Leads",leads.filter{$0.status != "Client" && $0.status != "Lost"}.count);Spacer();metric("Interested",leads.filter{$0.status == "Interested"}.count);Spacer();metric("Clients",leads.filter{$0.status == "Client"}.count)}
                 }
             }
-            if route.id == "band" && kind == "song"{Section{Button("Rehearsal mode"){rehearsal=true}.disabled(songs.isEmpty);if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
+            if route.id == "band" && kind == "song"{Section{Button("Rehearsal mode"){rehearsal=true};if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
             if route.id == "school" && kind == "grade"{NativeGradeProjection()}
             if route.id == "school" && ["assignment","exam"].contains(kind){NativeWorkload()}
             Section(space.modules.first{$0.kind == kind}?.label ?? "Records") {

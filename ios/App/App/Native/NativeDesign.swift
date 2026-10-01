@@ -29,12 +29,23 @@ struct Surface<Content:View>:View {
     @ViewBuilder var content:Content
     var body:some View { content.padding(18).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:14)) }
 }
+struct ControlMaterial:ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reducedTransparency
+    func body(content:Content)->some View {
+        if reducedTransparency { content.background(Design.raised,in:Capsule()) }
+        else if #available(iOS 26.0,*) { content.glassEffect(.regular.interactive(),in:Capsule()) }
+        else { content.background(.regularMaterial,in:Capsule()) }
+    }
+}
 struct ActionStyle:ButtonStyle {
     var primary=false
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     func makeBody(configuration:Configuration)->some View {
         configuration.label.font(Design.font(15)).padding(.horizontal,18).frame(minHeight:46).foregroundStyle(Design.ink)
-            .background(.regularMaterial,in:Capsule()).shadow(color:.black.opacity(0.18),radius:8,y:4)
-            .scaleEffect(configuration.isPressed ? 0.97:1).opacity(configuration.isPressed ? 0.8:1)
+            .modifier(ControlMaterial())
+            .scaleEffect(configuration.isPressed && !reducedMotion ? 0.97:1)
+            .opacity(!enabled ? 0.4:configuration.isPressed ? 0.85:1)
     }
 }
 struct SpaceRoute:Hashable { let id:String;var kind:String?=nil }

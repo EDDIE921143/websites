@@ -86,9 +86,17 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["Chapter: native draft"].waitForExistence(timeout:5))
     }
     func testNativeMetronomeProducesRunningAudioAndStops(){
-        app.tabBars.buttons["Spaces"].tap();app.buttons["Songs"].tap();app.buttons["Add song"].firstMatch.tap()
-        let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch;title.tap();title.typeText("Audio test song");app.buttons["creation-save"].tap()
-        app.buttons["Rehearsal mode"].tap();app.buttons["Start metronome"].tap()
+        app.tabBars.buttons["Spaces"].tap();app.buttons["Songs"].tap()
+        for (name,tempo) in [("Audio test song","120"),("Second audio song","144")] {
+            app.buttons["Add song"].firstMatch.tap()
+            let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch;title.tap();title.typeText(name)
+            let bpm=app.descendants(matching:.any).matching(identifier:"creation-BPM").firstMatch;bpm.tap();bpm.typeText(tempo)
+            app.buttons["creation-save"].tap()
+        }
+        app.buttons["Rehearsal mode"].tap()
+        app.buttons["Select Second audio song"].tap();XCTAssertTrue(app.staticTexts["144"].waitForExistence(timeout:5))
+        app.buttons["Select Audio test song"].tap();XCTAssertTrue(app.staticTexts["120"].waitForExistence(timeout:5))
+        app.buttons["Start metronome"].tap()
         XCTAssertTrue(app.buttons["Stop metronome"].waitForExistence(timeout:5));snapshot("Rehearsal with running native audio")
         app.buttons["Stop metronome"].tap();XCTAssertTrue(app.buttons["Start metronome"].waitForExistence(timeout:5))
     }

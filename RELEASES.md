@@ -1,3 +1,10 @@
+# Ediz OS 0.3.4
+
+- Native controls use interactive system glass on iOS 26, with solid surfaces for reduced transparency and clearer disabled states.
+- Rehearsal provides a selectable setlist, live beat indicator and reachable audio controls; song changes apply the saved tempo.
+- Web rehearsal supports horizontal song swipes and the same compact working layout.
+- Sharper heading typography and accurate system health version.
+
 # Ediz OS 0.3.3
 
 - Attachments store portable binary buffers, retaining compatibility with existing files and backups.
