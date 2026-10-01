@@ -23,6 +23,13 @@ final class CoreTests: XCTestCase {
         let ranked=Priority.rank([ordinary,waiting,soon],now:now)
         XCTAssertEqual(ranked.first?.id,soon.id);XCTAssertEqual(ranked.count,2);XCTAssertTrue(ranked[0].reasons.contains{$0.contains("24 hours")})
     }
+    func testFocusCannotHideUrgentSchoolOrRecommendRejectedWork() {
+        var focused=Record(space:"moshia",title:"Later",now:now.addingTimeInterval(-30*86400));focused.importance=5
+        var exam=Record(space:"school",kind:"exam",title:"Soon",due:now.addingTimeInterval(3600),now:now);exam.importance=1
+        let rejected=Record(space:"moshia",title:"Discarded",status:"REJECTED",now:now)
+        let result=Priority.rank([focused,rejected,exam],now:now,focus:"moshia")
+        XCTAssertEqual(result.first?.id,exam.id);XCTAssertEqual(result.count,2)
+    }
     func testCreativePossibilitiesStayPossible() { let r=CaptureParser.parse("Moshia idea: Nathaniel",now:now);XCTAssertEqual(r.space,"moshia");XCTAssertEqual(r.kind,"idea");XCTAssertEqual(r.status,"POSSIBLE");XCTAssertFalse(r.actionable) }
     func testCaptureUnderstandsTomorrowAndTime() { var calendar=Calendar(identifier:.gregorian);calendar.timeZone=TimeZone(secondsFromGMT:0)!;let r=CaptureParser.parse("Call Studio 41 tomorrow at 16",now:now,calendar:calendar);XCTAssertEqual(r.space,"ejj");XCTAssertEqual(r.due,"2026-10-02T16:00:00Z") }
     func testFuzzySearchAndLinkedInformation() { var r=Record(space:"moshia",kind:"chapter",title:"Chapter 10");r.data["characters"]="Nathaniel";XCTAssertEqual(SearchIndex.find([r],query:"Nathanil").count,1) }

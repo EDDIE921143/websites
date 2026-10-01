@@ -49,11 +49,11 @@ struct NativeToday:View {
     var upcoming:[EdizCore.Record]{store.records.filter{$0.kind == "event" || $0.kind == "rehearsal" || $0.kind == "exam"}.filter{$0.status != "done" && (Time.date($0.due).map{$0>=Date()} ?? false)}.sorted{($0.due ?? "")<($1.due ?? "")}}
     var body:some View {
         ScrollView {
-            VStack(alignment:.leading,spacing:20) {
+            VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 13:20) {
                 HStack(alignment:.center,spacing:18){VStack(alignment:.leading,spacing:6){Text(greeting+", Ediz.").font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted);Text("Today.").font(Design.font(34,weight:"Medium",relativeTo:.largeTitle)).foregroundStyle(Design.glassLettering);if store.preferences.focus != "all"{Button("Focused on "+Catalog.space(store.preferences.focus).name){choosingFocus=true}.font(.caption).foregroundStyle(Design.muted)}};Spacer();VStack(spacing:3){Text(Date.now,format:.dateTime.weekday(.abbreviated)).font(.caption2);Text(Date.now,format:.dateTime.day()).font(Design.font(29,weight:"Regular"));Text(Date.now,format:.dateTime.month(.abbreviated)).font(.caption2)}.foregroundStyle(Design.muted).frame(width:64,height:80).background(Design.surface,in:RoundedRectangle(cornerRadius:22))}
 
                 VStack(alignment:.leading,spacing:12) {
-                    HStack{Text("Your next move").font(Design.font(19,weight:"Medium",relativeTo:.headline));Spacer();GlassAction{Button{choosingFocus=true}label:{Image(systemName:"slider.horizontal.3").frame(width:44,height:44)}.accessibilityLabel("Change focus")}}
+                    HStack{Text("What matters").font(Design.font(19,weight:"Medium",relativeTo:.headline));Spacer();GlassAction{Button{choosingFocus=true}label:{Image(systemName:"slider.horizontal.3").frame(width:44,height:44)}.accessibilityLabel("Change focus")}}
                     if store.priorities.isEmpty {
                         VStack(alignment:.leading,spacing:8){Text("Nothing pressing.").font(Design.font(23,relativeTo:.title2));Text("Capture a thought or bring in your existing work.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted)}.padding(.vertical,3)
                     } else {
@@ -61,9 +61,9 @@ struct NativeToday:View {
                     }
                     HStack(spacing:12){GlassAction{Button{store.capture()}label:{Label("Capture",systemImage:"plus").padding(.horizontal,8).frame(minHeight:44)}.accessibilityIdentifier("capture-from-today")};GlassAction{NavigationLink{NativeImport()}label:{Label("Import",systemImage:"square.and.arrow.down").padding(.horizontal,8).frame(minHeight:44)}}}.font(Design.font(15))
                 }
-                VStack(alignment:.leading,spacing:12){Text("Your spaces").font(Design.font(19,weight:"DemiBold",relativeTo:.headline));ForEach(Catalog.spaces){space in NativeSpaceShortcut(space:space)}}
                 if let recent=store.recent { VStack(alignment:.leading,spacing:10){Text("Continue where you left off").font(Design.font(19,weight:"DemiBold"));Surface{RecordRow(record:recent)}} }
                 if !upcoming.isEmpty { VStack(alignment:.leading,spacing:10){Text("Coming up").font(Design.font(19,weight:"DemiBold"));Surface{VStack{ForEach(Array(upcoming.prefix(3))){RecordRow(record:$0)}}}} }
+                VStack(alignment:.leading,spacing:12){Text("Your spaces").font(Design.font(19,weight:"DemiBold",relativeTo:.headline));Surface{VStack(spacing:store.preferences.density == "compact" ? 2:8){ForEach(Catalog.spaces.sorted{($0.id == store.preferences.focus ? 0:1)<($1.id == store.preferences.focus ? 0:1)}){space in NativeSpaceShortcut(space:space)}}}}
                 HStack(spacing:12){GlassAction{Button{weekly=false;review=true}label:{Label("Review today",systemImage:"checkmark.circle").frame(maxWidth:.infinity,minHeight:48)}};GlassAction{Button{weekly=true;review=true}label:{Image(systemName:"calendar").frame(minWidth:44,minHeight:48)}.accessibilityLabel("Review this week")}}.font(Design.font(15))
             }.padding(.horizontal,20).padding(.top,8).padding(.bottom,26)
         }.background(Design.background).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
@@ -74,11 +74,11 @@ struct NativeToday:View {
 struct NativeSpaceShortcut:View {
     @EnvironmentObject var store:NativeStore
     let space:SpaceDefinition
-    var shortcut:String {space.id == "band" ? "Setlist":space.id == "school" ? "Week":space.id == "personal" ? "Capture":space.modules[0].label}
+    var shortcut:String {space.id == "band" ? "Setlist":space.id == "school" ? "Homework":space.id == "personal" ? "Capture":space.modules[0].label}
     var body:some View {
         HStack(spacing:10){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:11){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(16,weight:"DemiBold")).foregroundStyle(Design.ink);Text(space.summary).font(Design.font(12,weight:"Regular")).foregroundStyle(Design.muted)}}.frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain)
             GlassAction{if space.id == "personal" {Button(shortcut){store.capture(space:"personal")}.frame(minHeight:44)}else{NavigationLink(value:SpaceRoute(id:space.id)){Text(shortcut).frame(minHeight:44)}}}.font(Design.font(13))
-        }.padding(.horizontal,14).padding(.vertical,6).background(Design.surface,in:RoundedRectangle(cornerRadius:20))
+        }.padding(.vertical,store.preferences.density == "compact" ? 2:6)
     }
 }
 struct NativeSpaces:View {

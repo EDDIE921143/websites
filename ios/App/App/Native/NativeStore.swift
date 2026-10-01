@@ -85,7 +85,13 @@ import EdizCore
     func merge(_ items: [EdizCore.Record]) -> Bool { do{guard let database else{throw CoreError.database("unavailable")};_ = try database.merge(items);try reload();return true}catch{self.error=error.localizedDescription;return false} }
     func remember(_ record: EdizCore.Record) { var next=preferences;next.recentId=record.id;setPreferences(next) }
     var priorities: [Recommendation] { Priority.rank(records,focus:preferences.focus) }
-    var recent: EdizCore.Record? { records.first{$0.id == preferences.recentId} }
+    var recent: EdizCore.Record? {
+        let open=records.filter{!["done","archived","REJECTED","Lost"].contains($0.status)}
+        let saved=open.first{$0.id == preferences.recentId}
+        if preferences.focus == "all" || saved?.space == preferences.focus{return saved}
+        for entry in activity.sorted(by:{$0.at>$1.at}){if let record=open.first(where:{$0.id == entry.entityId && $0.space == preferences.focus}){return record}}
+        return saved
+    }
     func fileURL(_ attachment: Attachment) throws -> URL {
         guard let bytes=attachment.bytes else{throw CoreError.invalidBackup}
         let folder=FileManager.default.temporaryDirectory.appendingPathComponent("EdizFiles",isDirectory:true)

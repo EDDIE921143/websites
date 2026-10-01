@@ -84,7 +84,7 @@ public struct Record: Codable, Identifiable, Hashable, Sendable {
         self.duration = nil; self.importance = 2; self.blocked = false; self.data = [:]
     }
     public var actionable: Bool {
-        ["task","assignment","exam","lead"].contains(kind) && !["done","Lost","Client","archived","waiting","blocked"].contains(status) && blocked != true
+        ["task","assignment","exam","lead"].contains(kind) && !["done","Lost","Client","archived","waiting","blocked","REJECTED"].contains(status) && blocked != true
     }
     public var valid: Bool {
         Catalog.spaces.contains { $0.id == space } && Catalog.kinds.contains(kind) && !id.isEmpty && !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && Time.date(created) != nil && Time.date(updated) != nil && (due == nil || Time.date(due) != nil)

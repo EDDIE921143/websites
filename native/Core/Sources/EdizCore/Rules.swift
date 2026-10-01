@@ -26,7 +26,11 @@ public enum Priority {
             if let duration = record.duration, duration > 0, duration <= 25 { score += 4; reasons.append("It fits into a short session.") }
             if reasons.isEmpty { reasons.append("An active next step in your system.") }
             return Recommendation(record: record, score: score, reasons: reasons)
-        }.sorted { $0.score == $1.score ? $0.record.created < $1.record.created : $0.score > $1.score }
+        }.sorted { a,b in
+            func urgent(_ r:Record)->Bool { ["assignment","exam"].contains(r.kind) && (Time.date(r.due).map{$0.timeIntervalSince(now)<=86400} ?? false) }
+            if urgent(a.record) != urgent(b.record){return urgent(a.record)}
+            return a.score == b.score ? a.record.created < b.record.created : a.score > b.score
+        }
     }
     public static func briefing(_ records: [Record], now: Date = Date(), focus: String = "all") -> String {
         let top = rank(records, now:now, focus:focus).prefix(4)

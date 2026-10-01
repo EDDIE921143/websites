@@ -9,11 +9,27 @@ struct ConversationEntry:Identifiable {
     var draft:EdizCore.Record?
 }
 enum LocalAssistant {
-    static func answer(endpoint:String,question:String,context:[EdizCore.Record],conversation:[ConversationEntry]) async throws -> String {
-        guard var url=URL(string:endpoint),let host=url.host?.lowercased(),url.scheme == "http" || url.scheme == "https" else{throw URLError(.badURL)}
+    static func baseURL(_ endpoint:String) throws -> URL {
+        guard let url=URL(string:endpoint),let host=url.host?.lowercased(),url.scheme == "http" || url.scheme == "https" else{throw URLError(.badURL)}
         let parts=host.split(separator:".").compactMap{Int($0)}
         let privateHost=host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".local") || (parts.count == 4 && (parts[0] == 10 || (parts[0] == 192 && parts[1] == 168) || (parts[0] == 172 && (16...31).contains(parts[1]))))
-        guard privateHost else{throw URLError(.unsupportedURL)}
+        guard privateHost, url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else{throw URLError(.unsupportedURL)}
+        return url.path.isEmpty || url.path == "/" ? url.appendingPathComponent("v1") : url
+    }
+    static func models(endpoint:String) async throws -> [String] {
+        let url=try baseURL(endpoint).appendingPathComponent("models")
+        var request=URLRequest(url:url);request.timeoutInterval=8
+        let (data,response)=try await URLSession.shared.data(for:request)
+        guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode),
+              let root=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let list=root["data"] as? [[String:Any]] else{throw URLError(.cannotParseResponse)}
+        let names=list.compactMap{$0["id"] as? String}.filter{!$0.isEmpty}
+        guard !names.isEmpty else{throw URLError(.resourceUnavailable)}
+        return names
+    }
+    static func answer(endpoint:String,question:String,context:[EdizCore.Record],conversation:[ConversationEntry]) async throws -> String {
+        var url=try baseURL(endpoint)
+        let available=try await models(endpoint:endpoint)
         url.appendPathComponent("chat/completions")
         let json=String(decoding:try JSONEncoder().encode(context),as:UTF8.self)
         var messages:[[String:String]]=[["role":"system","content":"You are Ediz’s personal assistant inside Ediz OS. Be calm, useful and concise. Use only the supplied records for facts. POSSIBLE and PLANNED fiction records are not canon. Explain next steps and uncertainty. Never claim to edit, delete, schedule or save anything. Changes must be reviewed in the app. Do not write novel prose unless explicitly asked. Local records: "+json]]
@@ -21,7 +37,7 @@ enum LocalAssistant {
         messages.append(["role":"user","content":question])
         var request=URLRequest(url:url);request.httpMethod="POST";request.timeoutInterval=35
         request.setValue("application/json",forHTTPHeaderField:"Content-Type")
-        request.httpBody=try JSONSerialization.data(withJSONObject:["model":"local-model","messages":messages,"temperature":0.4,"max_tokens":500])
+        request.httpBody=try JSONSerialization.data(withJSONObject:["model":available[0],"messages":messages,"temperature":0.4,"max_tokens":500])
         let (data,response)=try await URLSession.shared.data(for:request)
         guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode),let root=try JSONSerialization.jsonObject(with:data) as? [String:Any],let choices=root["choices"] as? [[String:Any]],let message=choices.first?["message"] as? [String:Any],let text=message["content"] as? String,!text.isEmpty else{throw URLError(.cannotParseResponse)}
         return text

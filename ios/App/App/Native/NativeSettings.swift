@@ -4,6 +4,9 @@ import EdizCore
 struct NativeSettings:View {
     @EnvironmentObject var store:NativeStore
     @State private var file:FilePreview?
+    @State private var testing=false
+    @State private var modelStatus="Not tested. No records are sent by a connection test."
+    @State private var checkedEndpoint=""
     var body:some View {
         Form {
             Section("Look & feel"){Picker("Density",selection:Binding(get:{store.preferences.density},set:{var next=store.preferences;next.density=$0;store.setPreferences(next)})){Text("Comfortable").tag("comfortable");Text("Compact").tag("compact")}.pickerStyle(.segmented);Text("Changes spacing while keeping touch targets comfortable.").font(.footnote).foregroundStyle(Design.muted)}
@@ -20,10 +23,21 @@ struct NativeSettings:View {
                 Toggle("Enable local model connection",isOn:Binding(get:{store.preferences.labs},set:{store.configureModel(enabled:$0)}))
                 if store.preferences.labs{
                     TextField("http://your-computer.local:1234/v1",text:Binding(get:{store.preferences.localEndpoint ?? ""},set:{store.configureModel(endpoint:$0)})).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button(testing ? "Testing connection…":"Test connection") {
+                        let endpoint=store.preferences.localEndpoint ?? ""
+                        testing=true;checkedEndpoint=endpoint;modelStatus="Testing…"
+                        Task { @MainActor in
+                            defer{testing=false}
+                            do {let names=try await LocalAssistant.models(endpoint:endpoint);if store.preferences.localEndpoint == endpoint{modelStatus="Connected · "+names.joined(separator:", ")}}
+                            catch {if store.preferences.localEndpoint == endpoint{modelStatus="Not available. Check that a model is loaded, the LAN address is correct, and local-network access is allowed."}}
+                        }
+                    }.disabled(testing)
+                    Text(checkedEndpoint == (store.preferences.localEndpoint ?? "") ? modelStatus:"Not tested for this address.").font(.footnote).foregroundStyle(Design.muted).accessibilityIdentifier("local-model-status")
+                    Text("On iPhone, localhost means this phone. For a model on your Mac, use the Mac’s LAN address on the same Wi-Fi.").font(.footnote).foregroundStyle(Design.muted)
                     Text("Connect a model you run on your local network. Records are sent only when you switch on ‘Use my local model’ in Assistant and ask a question. No paid key is required.").font(.footnote).foregroundStyle(Design.muted)
                 }
             }
-            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.4 · No paid API required.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.5 · No paid API required.").font(.footnote).foregroundStyle(Design.muted)}
         }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Settings")
             .sheet(item:$file){shared in NativeShare(url:shared.url){completed in if completed && shared.url.lastPathComponent.hasPrefix("ediz-os-"){store.markBackupShared()}}}
     }
@@ -41,7 +55,7 @@ struct NativeHistory:View {
 }
 struct NativeHealth:View {
     @EnvironmentObject var store:NativeStore
-    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:"No model required");LabeledContent("Version",value:"0.3.4");Text("Data stays on this device. Speech requires on-device recognition. No telemetry is collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(Design.background).navigationTitle("System health") }
+    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:"No model required");LabeledContent("Version",value:"0.3.5");Text("Data stays on this device. Speech requires on-device recognition. No telemetry is collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(Design.background).navigationTitle("System health") }
 }
 
 struct NativeFocusChoice:View {
