@@ -30,15 +30,34 @@ jobs:
           with open(os.environ['GITHUB_ENV'],'a') as env: env.write('EDIZ_SIM_ID='+phones[0]['udid']+'\n')
           print(phones[0]['name'])
           PY
+      - name: Compile native application and UI tests
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project ios/App/App.xcodeproj -scheme App -destination "platform=iOS Simulator,id=$EDIZ_SIM_ID" -derivedDataPath /tmp/ediz-derived CODE_SIGNING_ALLOWED=NO | tee /tmp/ediz-xcode-build.log
+      - name: Capture the real empty-state interface
+        run: |
+          xcrun simctl boot "$EDIZ_SIM_ID" || true
+          xcrun simctl bootstatus "$EDIZ_SIM_ID" -b
+          xcrun simctl ui "$EDIZ_SIM_ID" appearance dark
+          xcrun simctl install "$EDIZ_SIM_ID" /tmp/ediz-derived/Build/Products/Debug-iphonesimulator/App.app
+          xcrun simctl launch "$EDIZ_SIM_ID" com.ediz.os
+          sleep 2
+          xcrun simctl io "$EDIZ_SIM_ID" screenshot /tmp/ediz-native-today.png
+      - name: Preserve launch screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-launch-preview
+          path: /tmp/ediz-native-today.png
       - name: Test native navigation, capture, persistence and gestures
         run: |
           set -o pipefail
-          xcodebuild test -project ios/App/App.xcodeproj -scheme App -destination "platform=iOS Simulator,id=$EDIZ_SIM_ID" -derivedDataPath /tmp/ediz-derived -resultBundlePath /tmp/ediz-results.xcresult CODE_SIGNING_ALLOWED=NO | tee /tmp/ediz-xcode.log
-      - name: Capture the real empty-state interface
+          xcodebuild test-without-building -project ios/App/App.xcodeproj -scheme App -destination "platform=iOS Simulator,id=$EDIZ_SIM_ID" -parallel-testing-enabled NO -derivedDataPath /tmp/ediz-derived -resultBundlePath /tmp/ediz-results.xcresult CODE_SIGNING_ALLOWED=NO | tee /tmp/ediz-xcode.log
+      - name: Prepare unsigned iPhone archive
         if: success()
         run: |
-          xcrun simctl launch "$EDIZ_SIM_ID" com.ediz.os
-          xcrun simctl io "$EDIZ_SIM_ID" screenshot /tmp/ediz-native-today.png
+          set -o pipefail
+          xcodebuild archive -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath /tmp/ediz-native.xcarchive CODE_SIGNING_ALLOWED=NO | tee /tmp/ediz-device-build.log
+          ditto -c -k --sequesterRsrc --keepParent /tmp/ediz-native.xcarchive /tmp/ediz-unsigned-device-archive.zip
       - name: Preserve native test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -46,5 +65,8 @@ jobs:
           name: native-ios-verification
           path: |
             /tmp/ediz-results.xcresult
+            /tmp/ediz-xcode-build.log
             /tmp/ediz-xcode.log
             /tmp/ediz-native-today.png
+            /tmp/ediz-device-build.log
+            /tmp/ediz-unsigned-device-archive.zip

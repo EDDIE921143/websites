@@ -40,7 +40,7 @@ public enum AssistantRules {
         if lower.contains("tomorrow") || lower.contains("schedule") || lower.contains("calendar") || lower.contains("coming up") {
             let start=lower.contains("tomorrow") ? calendar.startOfDay(for:calendar.date(byAdding:.day,value:1,to:now) ?? now):calendar.startOfDay(for:now)
             let end=calendar.date(byAdding:.day,value:lower.contains("tomorrow") ? 1:7,to:start) ?? start
-            let upcoming=records.filter{![$0.status].contains("done") && Time.date($0.due).map{$0>=start && $0<end} == true}.sorted{($0.due ?? "")<($1.due ?? "")}
+            let upcoming=records.filter{$0.status != "done" && Time.date($0.due).map{$0>=start && $0<end} == true}.sorted{($0.due ?? "")<($1.due ?? "")}
             let minutes=upcoming.compactMap(\.duration).reduce(0,+)
             return AssistantReply(upcoming.isEmpty ? "There’s nothing dated \(lower.contains("tomorrow") ? "tomorrow":"in the next week") in your saved work.":"\(upcoming.count) items are scheduled \(lower.contains("tomorrow") ? "tomorrow":"over the next week").\(minutes>0 ? " The durations you’ve entered add up to \(minutes) minutes; undated estimates aren’t included.":"")",records:Array(upcoming.prefix(6)))
         }
@@ -49,7 +49,22 @@ public enum AssistantRules {
             guard let first=ranked.first else{return AssistantReply("There are no active next steps yet, Ediz. Capture what’s on your mind, or import the work you already have.")}
             return AssistantReply("Start with \(first.record.title). \(first.reasons.first ?? "") "+Priority.briefing(records,focus:focus),records:Array(ranked.prefix(3).map(\.record)))
         }
-        let matches=SearchIndex.find(records,query:q)
+        if lower.contains("how") || lower.contains("overview") || lower.contains("status") {
+            if let space=Catalog.spaces.first(where:{lower.contains($0.id) || lower.contains($0.name.lowercased()) || ($0.id == "band" && lower.contains("clearance"))}){
+                let local=records.filter{$0.space == space.id}
+                let next=Priority.rank(local,now:now,focus:focus)
+                let waiting=local.filter{["waiting","blocked"].contains($0.status)}.count
+                return AssistantReply(local.isEmpty ? "\(space.name) is ready, but there are no saved records to assess yet.":"\(space.name) has \(local.count) saved items, \(next.count) active next steps and \(waiting) waiting or blocked items.\(next.first.map{" The next step is \($0.record.title)."} ?? "")",records:next.isEmpty ? Array(local.prefix(4)):Array(next.prefix(4).map(\.record)))
+            }
+        }
+        let prefixes=["tell me about ","what do we know about ","what is ","who is ","what about "]
+        let query=prefixes.first(where:{lower.hasPrefix($0)}).map{String(q.dropFirst($0.count))} ?? q
+        let matches=SearchIndex.find(records,query:query)
+        if let first=matches.first,prefixes.contains(where:{lower.hasPrefix($0)}){
+            let state=first.space == "moshia" ? "Its story state is \(first.status). ":""
+            let body=first.body.isEmpty ? "Open the item for its linked details.":String(first.body.prefix(600))
+            return AssistantReply("\(first.title). \(state)\(body)",records:Array(matches.prefix(4)))
+        }
         if !matches.isEmpty{return AssistantReply("Here’s the saved context I found for that.",records:Array(matches.prefix(6)))}
         return AssistantReply("I can help you choose a next step, plan tomorrow, review progress, find saved context, or prepare a reminder. For an open-ended conversation, you can optionally connect a local model in Settings; it needs no paid API.")
     }

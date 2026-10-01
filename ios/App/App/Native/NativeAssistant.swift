@@ -37,39 +37,46 @@ struct NativeAssistant:View {
     @FocusState private var typing:Bool
     var body:some View {
         ScrollViewReader{reader in
-            ScrollView {
-                VStack(alignment:.leading,spacing:22){
-                    if entries.isEmpty {
-                        Text("Let’s make room for what matters, Ediz.").font(.title3.weight(.medium)).padding(.top,12)
-                        Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(.body).foregroundStyle(Design.muted)
-                        VStack(spacing:9){forPrompt("What should I focus on?");forPrompt("Plan tomorrow");forPrompt("Any loose ends?")}
-                    }
-                    ForEach(entries){entry in
-                        VStack(alignment:.leading,spacing:10){
-                            if entry.role == "user"{Text(entry.text).font(.body).padding(14).background(Design.raised,in:RoundedRectangle(cornerRadius:14)).frame(maxWidth:.infinity,alignment:.trailing)}else{
-                                Text(entry.text).font(.body).lineSpacing(4).textSelection(.enabled)
-                                ForEach(entry.records){RecordRow(record:$0)}
-                                if let draft=entry.draft{Button("Review reminder"){store.captureRequest=draft}.buttonStyle(ActionStyle())}
-                            }
-                        }.id(entry.id)
-                    }
-                    if busy{HStack(spacing:9){ProgressView();Text("Thinking through your context…").font(.subheadline).foregroundStyle(Design.muted)}}
-                    if let message{Text(message).font(.footnote).foregroundStyle(Design.muted)}
-                }.padding(20)
-            }.scrollDismissesKeyboard(.interactively)
+            ScrollView{conversation}
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of:entries.count){_,_ in if let id=entries.last?.id{reader.scrollTo(id,anchor:.bottom)}}
-                .safeAreaInset(edge:.bottom){
-                    VStack(spacing:8){
-                        if store.preferences.labs && !(store.preferences.localEndpoint ?? "").isEmpty{Toggle("Use my local model",isOn:$model).font(.subheadline)}
-                        HStack(alignment:.bottom,spacing:10){TextField("Ask about your work…",text:$question,axis:.vertical).lineLimit(1...5).font(.body).focused($typing).accessibilityIdentifier("assistant-question");Button{send()}label:{Image(systemName:"arrow.up").font(.body.weight(.medium)).frame(width:44,height:44).foregroundStyle(Design.background).background(Design.ink,in:Circle())}.disabled(busy || question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityLabel("Send question")}
-                    }.padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:20)).padding(.horizontal,16).padding(.bottom,8)
-                }
+                .safeAreaInset(edge:.bottom){composer}
         }.background(Design.background).navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+    }
+    var conversation:some View {
+        VStack(alignment:.leading,spacing:22){
+            if entries.isEmpty {
+                Text("Let’s make room for what matters, Ediz.").font(.title3.weight(.medium)).padding(.top,12)
+                Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(.body).foregroundStyle(Design.muted)
+                VStack(spacing:9){forPrompt("What should I focus on?");forPrompt("Plan tomorrow");forPrompt("Any loose ends?")}
+            }
+            ForEach(entries){entry in entryView(entry).id(entry.id)}
+            if busy{HStack(spacing:9){ProgressView();Text("Thinking through your context…").font(.subheadline).foregroundStyle(Design.muted)}}
+            if let message{Text(message).font(.footnote).foregroundStyle(Design.muted)}
+        }.padding(20)
+    }
+    @ViewBuilder func entryView(_ entry:ConversationEntry)->some View {
+        VStack(alignment:.leading,spacing:10){
+            if entry.role == "user"{Text(entry.text).font(.body).padding(14).background(Design.raised,in:RoundedRectangle(cornerRadius:14)).frame(maxWidth:.infinity,alignment:.trailing)}else{
+                Text(entry.text).font(.body).lineSpacing(4).textSelection(.enabled)
+                ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
+                if let draft=entry.draft{Button("Review reminder"){store.captureRequest=draft}.buttonStyle(ActionStyle())}
+            }
+        }
+    }
+    var composer:some View {
+        VStack(spacing:8){
+            if store.preferences.labs && !(store.preferences.localEndpoint ?? "").isEmpty{Toggle("Use my local model",isOn:$model).font(.subheadline)}
+            HStack(alignment:.bottom,spacing:10){
+                TextField("Ask about your work…",text:$question,axis:.vertical).lineLimit(1...5).font(.body).focused($typing).accessibilityIdentifier("assistant-question")
+                Button{send()}label:{Image(systemName:"arrow.up").font(.body.weight(.medium)).frame(width:44,height:44).foregroundStyle(Design.background).background(Design.ink,in:Circle())}.disabled(busy || question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityLabel("Send question")
+            }
+        }.padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:20)).padding(.horizontal,16).padding(.bottom,8)
     }
     func forPrompt(_ prompt:String)->some View{Button{question=prompt;send()}label:{HStack{Text(prompt);Spacer();Image(systemName:"arrow.up.right")}.font(.subheadline).padding(14).background(Design.surface,in:RoundedRectangle(cornerRadius:12))}.buttonStyle(.plain)}
     func send(){
         let q=question.trimmingCharacters(in:.whitespacesAndNewlines);guard !q.isEmpty,!busy else{return}
-        let prior=entries.last(where:{$0.role == "assistant"})?.records ?? []
+        let prior=(entries.last(where:{$0.role == "assistant"})?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}
         let reply=AssistantRules.reply(to:q,records:store.records,history:store.activity,focus:store.preferences.focus,previous:prior)
         let conversation=entries;entries.append(ConversationEntry(role:"user",text:q));question="";typing=false;message=nil
         guard model,store.preferences.labs,let endpoint=store.preferences.localEndpoint,!endpoint.isEmpty,reply.draft == nil else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft));return}

@@ -9,6 +9,7 @@ struct NativeSettings:View {
             Section("Your attention"){Picker("Current focus",selection:Binding(get:{store.preferences.focus},set:{store.setFocus($0)})){Text("Balanced").tag("all");ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Text("This gives the chosen space more weight. Deadlines still matter.").font(.footnote).foregroundStyle(Design.muted)}
             Section("Your data"){
                 Button("Export full backup"){do{file=FilePreview(url:try store.export())}catch{store.error=error.localizedDescription}}
+                Button("Export Ediz OS profile"){do{file=FilePreview(url:try store.exportProfile())}catch{store.error=error.localizedDescription}}
                 if let last=Time.date(store.preferences.lastBackup){LabeledContent("Last shared backup",value:last.formatted(date:.abbreviated,time:.omitted))}
                 NavigationLink("Import & restore"){NativeImport()}
                 NavigationLink("History"){NativeHistory()}
@@ -23,7 +24,7 @@ struct NativeSettings:View {
             }
             Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.0 · No paid API required.").font(.footnote).foregroundStyle(Design.muted)}
         }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Settings")
-            .sheet(item:$file){NativeShare(url:$0.url){completed in if completed{store.markBackupShared()}}}
+            .sheet(item:$file){shared in NativeShare(url:shared.url){completed in if completed && shared.url.lastPathComponent.hasPrefix("ediz-os-"){store.markBackupShared()}}}
     }
 }
 struct NativeShare:UIViewControllerRepresentable {

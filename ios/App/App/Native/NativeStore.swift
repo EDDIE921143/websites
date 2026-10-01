@@ -70,6 +70,13 @@ import EdizCore
         return url
     }
     func markBackupShared() { var next=preferences;next.lastBackup=Time.string(Date());setPreferences(next) }
+    func exportProfile() throws -> URL {
+        let settings=try JSONSerialization.jsonObject(with:JSONEncoder().encode(preferences))
+        let spaces=Catalog.spaces.map{space in ["id":space.id,"name":space.name,"modules":space.modules.map{["kind":$0.kind,"label":$0.label]}] as [String:Any]}
+        let data=try JSONSerialization.data(withJSONObject:["format":"ediz-profile","version":1,"spaces":spaces,"settings":settings],options:[.prettyPrinted,.sortedKeys])
+        let url=FileManager.default.temporaryDirectory.appendingPathComponent("ediz-profile.json")
+        try data.write(to:url,options:[.atomic,.completeFileProtection]);return url
+    }
     func restore(_ data: Data) -> Bool {
         do { guard let database else{throw CoreError.database("unavailable")};try database.snapshot(directory:root.appendingPathComponent("BeforeRestore-\(UUID().uuidString)"));try database.restore(data);try reload();return true }catch{self.error=error.localizedDescription;return false}
     }

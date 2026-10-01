@@ -30,6 +30,7 @@ struct NativeToday:View {
     @EnvironmentObject var store:NativeStore
     @State private var review=false
     @State private var weekly=false
+    var upcoming:[EdizCore.Record]{return store.records.filter{$0.kind == "event" || $0.kind == "rehearsal"}.filter{Time.date($0.due).map{$0>=Date()} ?? false}.sorted{($0.due ?? "")<($1.due ?? "")}}
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:24) {
@@ -55,7 +56,7 @@ struct NativeToday:View {
                 if let recent=store.recent {
                     Surface{VStack(alignment:.leading,spacing:8){Text("Continue").font(.subheadline).foregroundStyle(Design.muted);RecordRow(record:recent)}}
                 }
-                let upcoming=store.records.filter{$0.kind == "event" || $0.kind == "rehearsal"}.filter{Time.date($0.due).map{$0>=Date()} ?? false}.sorted{($0.due ?? "")<($1.due ?? "")}
+
                 if !upcoming.isEmpty { Surface{VStack(alignment:.leading,spacing:8){Text("Coming up").font(.title3.weight(.medium));ForEach(Array(upcoming.prefix(3))){RecordRow(record:$0)}}} }
                 VStack(alignment:.leading,spacing:12){Text("Review").font(.title3.weight(.medium));HStack(spacing:10){Button{weekly=false;review=true}label:{Label("Today",systemImage:"checkmark.circle")}.buttonStyle(ActionStyle());Button{weekly=true;review=true}label:{Label("This week",systemImage:"calendar")}.buttonStyle(ActionStyle())}}
             }.padding(20)
