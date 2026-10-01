@@ -88,10 +88,10 @@ final class EdizOSUITests:XCTestCase {
     func testNativeMetronomeProducesRunningAudioAndStops(){
         app.tabBars.buttons["Spaces"].tap();app.buttons["Songs"].tap()
         for (name,tempo) in [("Audio test song","120"),("Second audio song","144")] {
-            app.buttons["Add song"].firstMatch.tap()
+            XCTAssertTrue(app.buttons["module-add"].waitForExistence(timeout:5));app.buttons["module-add"].tap()
             let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch;title.tap();title.typeText(name)
             let bpm=app.descendants(matching:.any).matching(identifier:"creation-BPM").firstMatch;bpm.tap();bpm.typeText(tempo)
-            app.buttons["creation-save"].tap()
+            app.buttons["creation-save"].tap();XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout:5))
         }
         app.buttons["Rehearsal mode"].tap()
         app.buttons["Select Second audio song"].tap();XCTAssertTrue(app.staticTexts["144"].waitForExistence(timeout:5))
