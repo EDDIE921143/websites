@@ -1,0 +1,2 @@
+import {defineConfig,devices} from '@playwright/test';
+export default defineConfig({testDir:'./tests',outputDir:'/tmp/ediz-qa/playwright-results',fullyParallel:false,use:{baseURL:process.env.EDIZ_TEST_URL||'http://localhost:4173',...devices['iPhone 13'],viewport:{width:402,height:874},deviceScaleFactor:3,browserName:'chromium'},webServer:process.env.EDIZ_TEST_URL?undefined:{command:'npm run preview -- --port 4173',port:4173,reuseExistingServer:true},reporter:'list'});

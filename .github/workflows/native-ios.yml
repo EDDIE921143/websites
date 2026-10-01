@@ -1,0 +1,50 @@
+name: Native iOS checks
+on:
+  push:
+    paths: ['ios/**', 'native/**', '.github/workflows/native-ios.yml']
+  pull_request:
+    paths: ['ios/**', 'native/**', '.github/workflows/native-ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core-and-simulator:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Test durable SQLite core
+        run: swift test --package-path native/Core
+      - name: Select iPhone simulator
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices available -j > /tmp/ediz-devices.json
+          python3 - <<'PY'
+          import json, os
+          devices=json.load(open('/tmp/ediz-devices.json'))['devices']
+          phones=[d for group in devices.values() for d in group if d.get('isAvailable') and d['name'] in ('iPhone 17 Pro','iPhone 16 Pro')]
+          if not phones: raise SystemExit('No supported Pro iPhone simulator is installed.')
+          phones.sort(key=lambda d: d['name'],reverse=True)
+          with open(os.environ['GITHUB_ENV'],'a') as env: env.write('EDIZ_SIM_ID='+phones[0]['udid']+'\n')
+          print(phones[0]['name'])
+          PY
+      - name: Test native navigation, capture, persistence and gestures
+        run: |
+          set -o pipefail
+          xcodebuild test -project ios/App/App.xcodeproj -scheme App -destination "platform=iOS Simulator,id=$EDIZ_SIM_ID" -derivedDataPath /tmp/ediz-derived -resultBundlePath /tmp/ediz-results.xcresult CODE_SIGNING_ALLOWED=NO | tee /tmp/ediz-xcode.log
+      - name: Capture the real empty-state interface
+        if: success()
+        run: |
+          xcrun simctl launch "$EDIZ_SIM_ID" com.ediz.os
+          xcrun simctl io "$EDIZ_SIM_ID" screenshot /tmp/ediz-native-today.png
+      - name: Preserve native test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ios-verification
+          path: |
+            /tmp/ediz-results.xcresult
+            /tmp/ediz-xcode.log
+            /tmp/ediz-native-today.png

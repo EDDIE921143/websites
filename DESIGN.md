@@ -1,0 +1,13 @@
+# Ediz OS native design direction
+
+The owner wants a real installed iPhone application, with comfortable typography and ordinary native gestures. The native project now uses SwiftUI controls and SQLite, rather than displaying the web interface. Its visual identity stays predominantly black, with muted blue, red, plum, amber and sage distinguishing EJJ, CLEARANCE 19, Moshia, School and Personal. No supplied pictures are bundled in either interface. Marks are neutral text, not invented brand logos.
+
+Body text uses native regular-weight typography and Dynamic Type. Medium headings establish hierarchy without making every row bold. Today has one immediate-action area, a compact space index, and a distinct review rail. Spaces exposes actual module destinations. Glass is limited to the system tab bar, sheets and temporary controls; stable content uses opaque surfaces. Native safe areas, keyboard avoidance and navigation behavior are delegated to the framework. Custom list rows hide hairline separators; remaining system form styling requires rendered review.
+
+References inspected: Things compact task grouping (https://culturedcode.com/things/), Flighty information hierarchy (https://flighty.com/), Apple materials guidance (https://developer.apple.com/design/human-interface-guidelines/materials), Practical Typography key rules (https://practicaltypography.com/summary-of-key-rules.html), and Nielsen Norman Group hierarchy (https://www.nngroup.com/articles/visual-hierarchy-ux-definition/). The typography decision follows readable body size, sparing bold and proximity/grouping. There is no objective font category called “AI-made”; the problem is competing emphasis and generic composition.
+
+The Uiverse gallery blocked automated browser access. Its official Galaxy MIT source archive was accessible. Three adapted web controls and their licenses are recorded in THIRD_PARTY_NOTICES.md. Those HTML/CSS controls are not substituted for native iOS navigation or gestures.
+
+A fresh structural concept was generated at /workspace/generated_images/exec-400cee0a-3f0c-4bd5-bb24-33de7f970d7a.png. The native implementation intentionally departs from its large serif titles in response to the owner’s latest typography feedback. No generated screenshot is evidence of a working native UI.
+
+Native core compilation and 14 tests passed on Linux. The UI source passed syntax parsing, and the project graph was validated. No native UI screenshot, simulator execution or physical-device test exists yet. The prepared macOS workflow will compile and run the native tests, preserving real screenshots for visual QA. Native styling must be evaluated at 402×874 points, with long titles, keyboard, Dynamic Type, dark mode and reduced transparency, before release.
