@@ -89,7 +89,7 @@ import EdizCore
         let folder=FileManager.default.temporaryDirectory.appendingPathComponent("EdizFiles",isDirectory:true)
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         let name=URL(fileURLWithPath:attachment.name).lastPathComponent
-        let url=folder.appendingPathComponent("\(attachment.id)-\(name)")
+        let url=folder.appendingPathComponent("\(UUID().uuidString)-\(name)")
         try bytes.write(to:url,options:[.atomic,.completeFileProtection]);return url
     }
 }

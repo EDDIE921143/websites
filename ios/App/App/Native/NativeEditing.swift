@@ -12,7 +12,8 @@ struct NativeCapture:View {
     @State private var date=Date()
     @StateObject private var speech=NativeSpeech()
     @FocusState private var typing:Bool
-    init(seed:EdizCore.Record){_draft=State(initialValue:seed);_automatic=State(initialValue:seed.data["_captureAuto"] == "1");_date=State(initialValue:Time.date(seed.due) ?? Date());_explicitDate=State(initialValue:seed.due != nil)}
+    private var onFinish:(()->Void)?
+    init(seed:EdizCore.Record,onFinish:(()->Void)?=nil){self.onFinish=onFinish;_draft=State(initialValue:seed);_automatic=State(initialValue:seed.data["_captureAuto"] == "1");_date=State(initialValue:Time.date(seed.due) ?? Date());_explicitDate=State(initialValue:seed.due != nil)}
     var preview:EdizCore.Record {
         var parsed=CaptureParser.parse(draft.title)
         parsed.id=draft.id;parsed.created=draft.created
@@ -39,7 +40,7 @@ struct NativeCapture:View {
                     Section("Preview") { VStack(alignment:.leading,spacing:8){Text(preview.title).font(.body.weight(.medium));Text("\(Catalog.space(preview.space).name) · \(preview.kind)").font(.subheadline).foregroundStyle(Design.muted);if let due=Time.date(preview.due){Text(due,format:.dateTime.weekday().day().month().hour().minute()).font(.subheadline).foregroundStyle(Design.muted)};if preview.space == "moshia"{Text("POSSIBLE — canon only when you choose it.").font(.footnote).foregroundStyle(Design.muted)}} }
                 }
             }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
-                .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);dismiss()}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);dismiss()}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save")}}
+                .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);onFinish?();dismiss()}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);onFinish?();dismiss()}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save")}}
                 .onChange(of:draft){_,value in store.draft(value)}
                 .onChange(of:draft.space){_,value in if !Catalog.space(value).modules.contains(where:{$0.kind == draft.kind}){draft.kind=Catalog.space(value).modules[0].kind}}
                 .onChange(of:automatic){_,value in draft.data["_captureAuto"]=value ? "1":nil}
@@ -91,6 +92,9 @@ struct NativeEditor:View {
             .onChange(of:record){_,value in store.editDraft(value)}
             .onChange(of:date){_,value in record.due=hasDate ? Time.string(value):nil}
             .onChange(of:hasDate){_,value in record.due=value ? Time.string(date):nil}
+            .onChange(of:store.focusRequest){previous,current in
+                if previous?.id == record.id,current == nil,let saved=store.records.first(where:{$0.id == record.id}){record.status=saved.status}
+            }
             .confirmationDialog("Delete “\(record.title)”?",isPresented:$deletion,titleVisibility:.visible){Button("Delete item",role:.destructive){if store.remove(record){dismiss()}};Button("Keep it",role:.cancel){}}
             .fileImporter(isPresented:$addingFile,allowedContentTypes:[.item]){result in
                 do{let url=try result.get();let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0;guard size<=32*1024*1024 else{store.error="Choose a file smaller than 32 MB.";return};let bytes=try Data(contentsOf:url);let type=UTType(filenameExtension:url.pathExtension)?.preferredMIMEType ?? "application/octet-stream";try store.database?.attach(Attachment(recordID:record.id,name:url.lastPathComponent,type:type,bytes:bytes));files=try store.database?.attachments(recordID:record.id) ?? []}catch{store.error="That file could not be saved. Your record is unchanged."}

@@ -10,8 +10,11 @@ final class EdizOSUITests:XCTestCase {
         app.launch()
     }
     override func tearDownWithError() throws {
+        snapshot(name)
+    }
+    func snapshot(_ label:String){
         let attachment=XCTAttachment(screenshot:app.screenshot())
-        attachment.name=name;attachment.lifetime = .keepAlways
+        attachment.name=label;attachment.lifetime = .keepAlways
         add(attachment)
     }
     func capture(_ title:String) {
@@ -24,6 +27,7 @@ final class EdizOSUITests:XCTestCase {
         capture("French homework tomorrow")
         let task=app.staticTexts["French homework tomorrow"]
         XCTAssertTrue(task.waitForExistence(timeout:5))
+        snapshot("Today with a real captured task")
         app.terminate();app.launchArguments=["-ui-testing"];app.launch()
         XCTAssertTrue(task.waitForExistence(timeout:5))
         app.buttons["Complete French homework tomorrow"].tap()
@@ -39,16 +43,23 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertFalse(app.buttons["record-save"].exists)
     }
     func testNativeCaptureCanDismissWithSwipeAndRecoverDraft() {
-        app.tabBars.buttons["Capture"].tap()
+        app.buttons["capture-from-today"].tap()
         let input=app.descendants(matching:.any).matching(identifier:"capture-text").firstMatch
         XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText("A pending thought")
         app.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.08)).press(forDuration:0.1,thenDragTo:app.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.9)))
         XCTAssertTrue(app.tabBars.buttons["Capture"].waitForExistence(timeout:5))
-        app.tabBars.buttons["Capture"].tap()
+        app.buttons["capture-from-today"].tap()
         XCTAssertTrue(input.waitForExistence(timeout:5));XCTAssertEqual(input.value as? String,"A pending thought")
+    }
+    func testTabBarCanBeScrubbedAcrossCapture() {
+        let today=app.tabBars.buttons["Today"],spaces=app.tabBars.buttons["Spaces"]
+        today.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).press(forDuration:0.1,thenDragTo:spaces.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)))
+        XCTAssertTrue(app.navigationBars["Spaces"].waitForExistence(timeout:5))
+        snapshot("Native glass dock after sliding to Spaces")
     }
     func testAllSpacesHaveRealModuleDestinations() {
         app.tabBars.buttons["Spaces"].tap()
+        snapshot("Spaces native index")
         for title in ["EJJ Digital","CLEARANCE 19","Moshia","School"] { XCTAssertTrue(app.staticTexts[title].exists) }
         app.buttons["Characters"].tap()
         let add=app.buttons["Add character"].firstMatch
@@ -71,6 +82,7 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","Start with French homework")).firstMatch.waitForExistence(timeout:5))
         ask("Why that?")
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","French homework tomorrow:")).firstMatch.waitForExistence(timeout:5))
+        snapshot("Assistant with a contextual follow-up")
         ask("Remind me call Studio 41 tomorrow at 16")
         let review=app.buttons["Review reminder"];XCTAssertTrue(review.waitForExistence(timeout:5));review.tap()
         XCTAssertTrue(app.buttons["capture-save"].waitForExistence(timeout:5))
@@ -80,7 +92,7 @@ final class EdizOSUITests:XCTestCase {
         capture("A comfortable focus session")
         app.staticTexts["A comfortable focus session"].tap()
         app.buttons["Start focus"].tap()
-        XCTAssertTrue(app.buttons["Begin"].waitForExistence(timeout:5));app.buttons["Begin"].tap()
+        XCTAssertTrue(app.buttons["Begin"].waitForExistence(timeout:5));snapshot("Focus before starting");app.buttons["Begin"].tap()
         XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout:5));app.buttons["Pause"].tap()
         XCTAssertTrue(app.buttons["Continue"].waitForExistence(timeout:5));app.buttons["Continue"].tap()
         app.buttons["Finish"].tap()

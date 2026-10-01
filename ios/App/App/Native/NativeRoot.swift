@@ -9,13 +9,14 @@ struct NativeRoot:View {
         Group {
             if store.ready {
                 TabView(selection:$selected) {
-                    OSNavigation{NativeToday()}.tabItem{Label("Today",systemImage:"house")}.tag(0)
-                    OSNavigation{NativeSpaces()}.tabItem{Label("Spaces",systemImage:"square.grid.2x2")}.tag(1)
-                    Color.clear.tabItem{Label("Capture",systemImage:"plus.app")}.tag(2)
+                    OSNavigation{NativeToday()}.tabItem{Label("Today",systemImage:"house.fill")}.tag(0)
+                    NativeCaptureTab { selected=previous }.tabItem{Label("Capture",systemImage:"plus.circle.fill")}.tag(1)
+                    OSNavigation{NativeSpaces()}.tabItem{Label("Spaces",systemImage:"square.stack.3d.up.fill")}.tag(2)
                     OSNavigation{NativeSearch()}.tabItem{Label("Search",systemImage:"magnifyingglass")}.tag(3)
-                    OSNavigation{NativeAssistant()}.tabItem{Label("Assistant",systemImage:"text.bubble")}.tag(4)
+                    OSNavigation{NativeAssistant()}.tabItem{Label("Assistant",systemImage:"text.bubble.fill")}.tag(4)
                 }.tint(Design.accent)
-                    .onChange(of:selected){_,next in if next == 2 { selected=previous;store.capture() }else{previous=next} }
+                    .background(NativeTabScrubber(selection:$selected))
+                    .onChange(of:selected){_,next in if next != 1 {previous=next} }
                     .sheet(item:$store.captureRequest){NativeCapture(seed:$0).presentationDetents([.large]).presentationDragIndicator(.visible)}
                     .fullScreenCover(item:$store.focusRequest){NativeFocus(record:$0)}
                     .overlay(alignment:.bottom){if store.undoRecord != nil{HStack{Text("Completed").font(.subheadline);Spacer();Button("Undo"){store.undo()}.font(.subheadline.weight(.medium));Button{store.undoRecord=nil}label:{Image(systemName:"xmark").frame(width:30,height:36)}.accessibilityLabel("Dismiss completion")}.padding(.horizontal,16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)).padding(.horizontal,20).padding(.bottom,80)}}
@@ -26,57 +27,64 @@ struct NativeRoot:View {
             .alert("Ediz OS",isPresented:Binding(get:{store.error != nil},set:{if !$0{store.error=nil}})){Button("OK"){store.error=nil}}message:{Text(store.error ?? "")}
     }
 }
+struct NativeCaptureTab:View {
+    @EnvironmentObject var store:NativeStore
+    var finish:()->Void
+    @State private var seed:EdizCore.Record?=nil
+    func prepare(){
+        do { if let draft=try store.database?.draft(){seed=draft;return} }
+        catch{store.error="Your capture draft could not be opened."}
+        var fresh=EdizCore.Record(title:"");fresh.data["_captureAuto"]="1";seed=fresh
+    }
+    var body:some View {
+        Group { if let seed { NativeCapture(seed:seed,onFinish:{self.seed=nil;finish()}).id(seed.id) } else { Color.clear } }.onAppear{prepare()}
+    }
+}
 struct NativeToday:View {
     @EnvironmentObject var store:NativeStore
     @State private var review=false
     @State private var weekly=false
-    var upcoming:[EdizCore.Record]{return store.records.filter{$0.kind == "event" || $0.kind == "rehearsal"}.filter{Time.date($0.due).map{$0>=Date()} ?? false}.sorted{($0.due ?? "")<($1.due ?? "")}}
+    var upcoming:[EdizCore.Record]{store.records.filter{$0.kind == "event" || $0.kind == "rehearsal" || $0.kind == "exam"}.filter{$0.status != "done" && (Time.date($0.due).map{$0>=Date()} ?? false)}.sorted{($0.due ?? "")<($1.due ?? "")}}
     var body:some View {
         ScrollView {
-            VStack(alignment:.leading,spacing:24) {
-                HStack(alignment:.firstTextBaseline){Text("Today").font(.largeTitle.weight(.medium));Spacer();Text(Date.now,format:.dateTime.weekday(.abbreviated).day().month(.abbreviated)).font(.subheadline).foregroundStyle(Design.muted)}
-                Surface {
-                    VStack(alignment:.leading,spacing:15) {
-                        HStack{Text("Next up").font(.title3.weight(.medium));Spacer();NavigationLink { NativeSettings() }label:{Image(systemName:"line.3.horizontal.decrease").foregroundStyle(Design.muted).frame(width:44,height:32)}.accessibilityLabel("Change focus")}
-                        if store.priorities.isEmpty {
-                            Text("Nothing scheduled yet.").font(.body).foregroundStyle(Design.muted)
-                            Text("Capture a task or import your existing work.").font(.subheadline).foregroundStyle(Design.muted)
-                            HStack(spacing:10){Button{store.capture()}label:{Label("Capture",systemImage:"plus")}.buttonStyle(ActionStyle(primary:true));NavigationLink { NativeImport() }label:{Label("Import",systemImage:"square.and.arrow.down")}.buttonStyle(ActionStyle())}
-                        } else {
-                            ForEach(Array(store.priorities.prefix(4))){recommendation in RecordRow(record:recommendation.record)}
-                            Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(.subheadline).foregroundStyle(Design.muted)
-                        }
+            VStack(alignment:.leading,spacing:26) {
+                VStack(alignment:.leading,spacing:6){Text(Date.now,format:.dateTime.weekday(.wide).day().month(.wide)).font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted);Text("Today, Ediz.").font(Design.font(30,weight:"DemiBold",relativeTo:.largeTitle))}
+                VStack(alignment:.leading,spacing:15) {
+                    Text("Your next move").font(Design.font(19,weight:"DemiBold",relativeTo:.headline))
+                    if store.priorities.isEmpty {
+                        VStack(alignment:.leading,spacing:8){Text("Nothing pressing.").font(Design.font(23,relativeTo:.title2));Text("Capture a thought or bring in your existing work.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted)}.padding(.vertical,3)
+                    } else {
+                        Surface{VStack(alignment:.leading,spacing:8){ForEach(Array(store.priorities.prefix(4))){recommendation in RecordRow(record:recommendation.record)};Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted)}}
                     }
+                    HStack(spacing:12){GlassAction{Button{store.capture()}label:{Label("Capture",systemImage:"plus").padding(.horizontal,8).frame(minHeight:44)}.accessibilityIdentifier("capture-from-today")};GlassAction{NavigationLink{NativeImport()}label:{Label("Import",systemImage:"square.and.arrow.down").padding(.horizontal,8).frame(minHeight:44)}}}.font(Design.font(15))
                 }
-                VStack(alignment:.leading,spacing:12) {
-                    HStack{Text("Spaces").font(.title3.weight(.medium));Spacer();NavigationLink("All spaces",destination:NativeSpaces()).font(.subheadline)}
-                    LazyVGrid(columns:[GridItem(.flexible()),GridItem(.flexible())],spacing:10){ForEach([Catalog.spaces[0],Catalog.spaces[3],Catalog.spaces[1],Catalog.spaces[4]]){space in destination(space)}}
-                    destination(Catalog.spaces[2])
-                }
-                if let recent=store.recent {
-                    Surface{VStack(alignment:.leading,spacing:8){Text("Continue").font(.subheadline).foregroundStyle(Design.muted);RecordRow(record:recent)}}
-                }
-
-                if !upcoming.isEmpty { Surface{VStack(alignment:.leading,spacing:8){Text("Coming up").font(.title3.weight(.medium));ForEach(Array(upcoming.prefix(3))){RecordRow(record:$0)}}} }
-                VStack(alignment:.leading,spacing:12){Text("Review").font(.title3.weight(.medium));HStack(spacing:10){Button{weekly=false;review=true}label:{Label("Today",systemImage:"checkmark.circle")}.buttonStyle(ActionStyle());Button{weekly=true;review=true}label:{Label("This week",systemImage:"calendar")}.buttonStyle(ActionStyle())}}
-            }.padding(20)
+                VStack(alignment:.leading,spacing:12){Text("Your spaces").font(Design.font(19,weight:"DemiBold",relativeTo:.headline));ForEach(Catalog.spaces){space in NativeSpaceShortcut(space:space)}}
+                if let recent=store.recent { VStack(alignment:.leading,spacing:10){Text("Continue where you left off").font(Design.font(19,weight:"DemiBold"));Surface{RecordRow(record:recent)}} }
+                if !upcoming.isEmpty { VStack(alignment:.leading,spacing:10){Text("Coming up").font(Design.font(19,weight:"DemiBold"));Surface{VStack{ForEach(Array(upcoming.prefix(3))){RecordRow(record:$0)}}}} }
+                HStack(spacing:12){GlassAction{Button{weekly=false;review=true}label:{Label("Review today",systemImage:"checkmark.circle").frame(maxWidth:.infinity,minHeight:48)}};GlassAction{Button{weekly=true;review=true}label:{Image(systemName:"calendar").frame(minWidth:44,minHeight:48)}.accessibilityLabel("Review this week")}}.font(Design.font(15))
+            }.padding(.horizontal,20).padding(.top,8).padding(.bottom,26)
         }.background(Design.background).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented:$review){NativeReview(weekly:weekly).presentationDragIndicator(.visible)}
     }
-    func destination(_ space:SpaceDefinition)->some View {
-        NavigationLink(value:SpaceRoute(id:space.id)){
-            VStack(alignment:.leading,spacing:11){HStack{SpaceMark(space:space);Spacer();Image(systemName:"arrow.up.right").font(.caption).foregroundStyle(Design.color(space.color))};Text(space.name).font(.subheadline.weight(.medium)).foregroundStyle(Design.ink);Text(space.summary).font(.caption).foregroundStyle(Design.muted)}.frame(maxWidth:.infinity,alignment:.leading).padding(15).background(Design.color(space.color).opacity(0.11),in:RoundedRectangle(cornerRadius:12))
-        }.buttonStyle(.plain)
+}
+struct NativeSpaceShortcut:View {
+    @EnvironmentObject var store:NativeStore
+    let space:SpaceDefinition
+    var shortcut:String {space.id == "band" ? "Setlist":space.id == "school" ? "Week":space.id == "personal" ? "Capture":space.modules[0].label}
+    var body:some View {
+        HStack(spacing:10){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:11){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(16,weight:"DemiBold")).foregroundStyle(Design.ink);Text(space.summary).font(Design.font(12,weight:"Regular")).foregroundStyle(Design.muted)}}.frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain)
+            GlassAction{if space.id == "personal" {Button(shortcut){store.capture(space:"personal")}.frame(minHeight:44)}else{NavigationLink(value:SpaceRoute(id:space.id)){Text(shortcut).frame(minHeight:44)}}}.font(Design.font(13))
+        }.padding(.horizontal,14).padding(.vertical,10).background(Design.surface,in:RoundedRectangle(cornerRadius:20))
     }
 }
 struct NativeSpaces:View {
     var body:some View {
-        ScrollView { VStack(alignment:.leading,spacing:12) {
-            Text("Your work, in context.").font(.subheadline).foregroundStyle(Design.muted).padding(.bottom,8)
+        ScrollView { VStack(alignment:.leading,spacing:18) {
+            Text("Five spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
             ForEach(Catalog.spaces){space in
-                VStack(alignment:.leading,spacing:13){NavigationLink(value:SpaceRoute(id:space.id)){HStack{SpaceMark(space:space);Text(space.name).font(.headline.weight(.medium));Spacer();Image(systemName:"arrow.right").font(.subheadline).foregroundStyle(Design.muted)}}.buttonStyle(.plain)
-                    HStack(spacing:7){ForEach(Catalog.quickModules(for:space.id)){module in NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(.caption.weight(.medium)).frame(maxWidth:.infinity).frame(minHeight:44).background(Design.raised.opacity(0.7),in:RoundedRectangle(cornerRadius:9))}.buttonStyle(.plain)}}
-                }.padding(15).background(Design.color(space.color).opacity(0.10),in:RoundedRectangle(cornerRadius:13))
+                VStack(alignment:.leading,spacing:16){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)};Spacer()}}.buttonStyle(.plain)
+                    HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44)}}}}
+                }.padding(17).background(Design.surface,in:RoundedRectangle(cornerRadius:24))
             }
         }.padding(20) }.background(Design.background).navigationTitle("Spaces")
     }

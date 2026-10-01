@@ -18,9 +18,9 @@ public enum Catalog {
     public static let spaces: [SpaceDefinition] = [
         .init(id:"ejj", name:"EJJ Digital", summary:"Leads · Websites", mark:"EJJ", color:0x7199BF, modules:[.init("lead","Leads"),.init("website","Websites"),.init("task","Tasks"),.init("note","Notes"),.init("idea","Ideas")]),
         .init(id:"band", name:"CLEARANCE 19", summary:"Songs · Rehearsals", mark:"19", color:0xBF7777, modules:[.init("song","Songs"),.init("rehearsal","Rehearsals"),.init("task","Practice"),.init("note","Notes"),.init("idea","Ideas")]),
-        .init(id:"moshia", name:"Moshia", summary:"Chapters · Story world", mark:"M", color:0xAD90B5, modules:[.init("chapter","Chapters"),.init("character","Characters"),.init("thread","Plot threads"),.init("location","Locations"),.init("organization","Organizations"),.init("event","Timeline"),.init("note","Research"),.init("idea","Ideas")]),
+        .init(id:"moshia", name:"Moshia", summary:"Chapters · Story world", mark:"M", color:0xC5B89B, modules:[.init("chapter","Chapters"),.init("character","Characters"),.init("thread","Plot threads"),.init("location","Locations"),.init("organization","Organizations"),.init("event","Timeline"),.init("note","Research"),.init("idea","Ideas")]),
         .init(id:"school", name:"School", summary:"Homework · Tests", mark:"S", color:0xC3A46B, modules:[.init("assignment","Homework"),.init("exam","Tests"),.init("subject","Subjects"),.init("grade","Grades"),.init("event","Timetable"),.init("note","Materials")]),
-        .init(id:"personal", name:"Personal", summary:"Tasks · Notes", mark:"P", color:0x8AA38D, modules:[.init("task","Tasks"),.init("event","Appointments"),.init("note","Notes"),.init("idea","Ideas")])
+        .init(id:"personal", name:"Personal", summary:"Tasks · Notes", mark:"P", color:0x93936F, modules:[.init("task","Tasks"),.init("event","Appointments"),.init("note","Notes"),.init("idea","Ideas")])
     ]
     public static func space(_ id: String) -> SpaceDefinition { spaces.first { $0.id == id } ?? spaces[4] }
     public static func quickModules(for id:String)->[Module] {
