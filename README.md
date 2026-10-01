@@ -16,7 +16,7 @@ Implemented modules include EJJ leads/pipeline and websites; band songs, rehears
 
 ### Verified native build
 
-GitHub Actions run https://github.com/EDDIE921143/websites/actions/runs/36831573574 compiled the app and UI tests with Xcode 26.3 on macOS 15. All 18 Swift core tests and seven XCUITests passed on an iPhone 17 Pro simulator. Tests cover capture/reload/completion/undo, edge swipe-back, sheet dismissal/draft recovery, real space destinations and creative states, assistant follow-ups and reminder preview, focus controls, and sliding across the tab bar. Actual screenshots and test evidence are archived by the workflow. An unsigned physical-iPhone Release archive also built successfully.
+GitHub Actions run https://github.com/EDDIE921143/websites/actions/runs/36847582563 compiled the app and UI tests with Xcode 26.3 on macOS 15. All 18 Swift core tests and seven XCUITests passed on an iPhone 17 Pro simulator. Tests cover capture/reload/completion/undo, edge swipe-back, sheet dismissal/draft recovery, real space destinations and creative states, assistant follow-ups and reminder preview, focus controls, and sliding across the tab bar. Actual screenshots and test evidence are archived by the workflow. An unsigned physical-iPhone Release archive also built successfully.
 
 **Installation remains blocked by Apple signing access.** An unsigned archive or simulator build is not an installable iPhone app. No signing identity, owner-authorized Mac/device access or distribution credentials are available in this workspace. No Apple membership or paid service was purchased. Physical-device testing has not been performed.
 

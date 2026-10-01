@@ -1,6 +1,6 @@
 # 0.3.0
 
-A new warm-black design with humanist typography, neutral space rows, useful glass shortcuts and draggable bottom navigation. Today gives one clear starting point and room to continue. Assistant supports contextual follow-ups, saved information, tomorrow and reminder previews. Focus begins gently, counts elapsed time and can pause and resume.
+A new warm-black design with humanist typography, glass lettering, neutral space rows, useful glass shortcuts and draggable bottom navigation. Chat replies use glass bubbles; tasks settle away with a short completion animation. Phone spacing is compact and the chat composer stays near the dock. Today gives one clear starting point and room to continue. Assistant supports contextual follow-ups, saved information, tomorrow and reminder previews. Focus begins gently, counts elapsed time and can pause and resume.
 
 The genuine SwiftUI iPhone app replaces the old Capacitor shell. Its SQLite core, native gestures, glass controls, capture, modules, assistant and focus passed 18 core tests and seven iPhone 17 Pro UI tests. An unsigned device Release archive is built; Apple signing is required before installation.
 
