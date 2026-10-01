@@ -1,54 +1,41 @@
-# Ediz OS
+# Ediz OS 0.3.0
 
-Live web edition: 0.2.0. Native edition: 0.3.0 development, not yet built or distributed.
+An owner-specific personal operating system, primarily a genuine SwiftUI iPhone app. The web companion is available at https://ediz-os.vercel.app. Both editions work locally without paid APIs, analytics or a server database.
 
-Production: https://ediz-os.vercel.app
+## Native iPhone edition
 
-A private, phone-first personal operating system. React, TypeScript, Vite, IndexedDB, and a precached PWA. No account, telemetry, server database, or paid API is required by the application.
+`ios/` contains a real SwiftUI application with no WebView or Capacitor runtime. It uses iOS TabView, NavigationStack, sheets, file pickers, sharing, Quick Look, on-device speech and AVFoundation. The iPhone 17 Pro is the primary test device. iOS 26 supplies native liquid-glass controls; older supported versions use material controls. Content remains on stable warm charcoal surfaces, with Avenir Next typography, neutral space rows and restrained identity colors. No personal images or fabricated data are included.
 
-## Development
+The floating system tab bar supports horizontal scrubbing through Today, Capture, Spaces, Search and Assistant. Capture is a real tab; contextual capture remains available as a dismissible sheet. Native swipe-back and sheet dismissal are preserved.
 
-`npm ci`, then `npm run dev`. Production: `npm run build`. Verification: `npm test` and `npm run test:e2e`. Production browser verification: `EDIZ_TEST_URL=https://ediz-os.vercel.app npm run test:e2e` (install Chromium with `npx playwright install chromium`).
+The local `native/Core` Swift package uses durable SQLite with WAL, foreign keys, transactions, history, recoverable capture/edit drafts and seven daily safety snapshots. Attachments and structured data are separate. Full JSON backups, readable Markdown and profile exports support migration and recovery. Daily snapshots protect recent edits; external exports are still needed for device loss.
 
-## Ownership and durability
+Today uses explainable deterministic priorities. The contextual assistant handles next steps, reasons, tomorrow, waiting items, saved information and reminder drafts. It never saves a proposed reminder without review or changes canon silently. Optional OpenAI-compatible local models are disabled by default and require explicit exposure of context. No cloud API key or model download is required. The adapter has not been verified against a live LM Studio server.
 
-The production origin owns the IndexedDB database. Each browser/device has independent data. The source repository contains no personal records. IndexedDB transactions keep entity updates and history together. Browser storage persistence is requested; daily local snapshots are supplementary protection, not external backups. Full JSON backups include base64 attachments, records, settings, and history. Markdown and profile exports provide additional portability. Complete restore is explicitly confirmed and performed transactionally after validating and decoding the backup.
+Implemented modules include EJJ leads/pipeline and websites; band songs, rehearsals, practice audio and metronome; Moshia chapters, characters, creative states, timeline and plot threads; school assignments, tests, workload and weighted grade estimates; Personal tasks, appointments, ideas and notes. Native focus uses an elapsed timer with begin, pause and continue controls.
 
-The five built-in spaces do not contain fabricated clients, homework, or fiction canon. New creative records default to POSSIBLE. Canon changes are made explicitly in the editor. CSV, JSON, Markdown and ICS imports are previewed locally with duplicate detection.
+### Verified native build
 
-## Release scope
+GitHub Actions run https://github.com/EDDIE921143/websites/actions/runs/36831573574 compiled the app and UI tests with Xcode 26.3 on macOS 15. All 18 Swift core tests and seven XCUITests passed on an iPhone 17 Pro simulator. Tests cover capture/reload/completion/undo, edge swipe-back, sheet dismissal/draft recovery, real space destinations and creative states, assistant follow-ups and reminder preview, focus controls, and sliding across the tab bar. Actual screenshots and test evidence are archived by the workflow. An unsigned physical-iPhone Release archive also built successfully.
 
-Today priority ranking, deterministic capture, browser voice capture where supported, cross-space fuzzy search, command palette, focus, evening/weekly reviews, history, lead pipeline, website metadata, songs, audio looping and pitch-preserving playback, rehearsal mode/metronome, chapter index, creative states, timeline filtering, school workload, weighted grade projections, tasks/notes/ideas, attachments, backups, dark mode and offline core are implemented.
+**Installation remains blocked by Apple signing access.** An unsigned archive or simulator build is not an installable iPhone app. No signing identity, owner-authorized Mac/device access or distribution credentials are available in this workspace. No Apple membership or paid service was purchased. Physical-device testing has not been performed.
 
-Optional localhost OpenAI-compatible suggestions are isolated in `src/ai.ts`, disabled by default, and never mutate records. HTTPS/mixed-content and model-server CORS restrictions vary by browser. No model or embedding package is automatically downloaded.
+## Web companion
 
-Not implemented in this release: cross-device sync, scheduled background iOS notifications, automatic authenticated GitHub/Vercel/calendar sync, semantic embeddings, automated continuity reasoning, signed native distribution, multiuser authentication, secure app lock, automatic remote backups, waveform decoding, or fully normalized creative relationship editing. Website deployment status is manually recorded metadata. Grade calculations are estimates, not official results. Voice capture availability depends on browser/device support and their speech service.
+React, TypeScript, Vite, IndexedDB and a precached PWA. The 0.3.0 redesign includes humanist typography, glass controls and a draggable dock, a deliberate Today layout, actionable space shortcuts, contextual assistant conversation and gentle focus controls. The domain model and existing production origin preserve browser data.
 
-## Layout
+`npm ci`, `npm run dev`. Production build: `npm run build`. Unit verification: `npm test`. Browser verification: `npm run test:e2e`. Production verification: `EDIZ_TEST_URL=https://ediz-os.vercel.app npm run test:e2e`. Install Chromium with `npx playwright install chromium` when needed.
 
-- `src/core.ts`: domain types, parsing, search and explainable priority rules.
-- `src/db.ts`: structured IndexedDB stores, transactions, import/export, attachments, snapshots.
-- `src/main.tsx`: adaptive app shell and page composition.
-- `src/components.tsx`: mobile sheets, editing, focus, rehearsal, audio, assistant and health.
-- `src/modules.tsx`: specialized space surfaces.
-- `src/primitives.tsx`, `src/style.css`: shared visual system.
+16 web unit/database/assistant tests and ten Chromium browser workflows verify editing, capture, completion/undo, offline writes, fuzzy search, backup/restore with files, creative states, lead stages, songs/rehearsal, grades, draft recovery, short keyboard viewport, accessible switches, drag navigation, contextual assistant and focus. Layout checks cover 320/402/768/1440px. Screenshot QA covers Today, Spaces, Assistant, Focus and desktop. WebKit cannot run in this workspace because its required system libraries are unavailable.
 
-Vercel uses the static `dist` output. Service workers are available in production and preview builds, not development. Installing on iPhone: Safari → Share → Add to Home Screen.
+Browser storage and native SQLite are independent. Each device has its own data. Full JSON export/restore, including attachments, is the migration route. Automatic sync is not implemented. IndexedDB transactions protect saves and history; storage persistence is requested and local daily snapshots are retained. All imports are processed locally with a preview, duplicate detection and confirmation before complete replacement. Creative entities default to POSSIBLE.
 
-## Native iPhone application — in development
+Bundled Lato font subsets are self-hosted; iOS uses its installed Avenir Next font. Uiverse-inspired controls and licenses are credited in THIRD_PARTY_NOTICES.md. No private records, local databases or imported files belong in source control.
 
-The primary layout targets the iPhone 17 Pro’s 402×874 point viewport, with safe-area insets, subtly translucent bottom navigation, compact capture sheets, black surfaces and neutral space identifiers. Appearance remains configurable. Uiverse-derived controls are credited in THIRD_PARTY_NOTICES.md.
+## Source and limits
 
-The Home Screen version is an installable PWA with a 180px Apple icon and a targeted startup image. Settings includes installation instructions and detects standalone mode. The OS requires the owner to approve adding the icon.
+Approved source branch: https://github.com/EDDIE921143/websites/tree/ediz-os-native. Vercel hosts the static web build at the existing origin. The native build does not depend on Vercel.
 
-`ios/` now contains a genuine SwiftUI application, using native TabView, NavigationStack, forms, sheets, file picker, Quick Look and sharing. It uses the local `EdizCore` Swift package and durable SQLite storage, with no WebView or Capacitor runtime. Its own Today layout, actionable Spaces index, capture, search, editors, domain modules, review/history, focus, audio practice and rehearsal mode are implemented in source. Audio uses AVFoundation; speech explicitly requires on-device recognition. Native and web storage are independent; full JSON export/restore is the migration route, including files and creative states.
+Not implemented: signed native distribution, cross-device sync, reliable scheduled background notifications, authenticated third-party sync, semantic embeddings, automated continuity reasoning, secure app lock, remote backups, waveform decoding or fully normalized creative relationship editing. Website deployment information is saved metadata, not a live integration. Grade estimates are unofficial. The local assistant is a transparent rules-based helper; optional local models expand its language capabilities.
 
-Native verification completed here: Swift 6.1.2 compiled the core on Linux and passed 14 SQLite/domain/import tests. Native SwiftUI sources passed syntax parsing; Xcode project references, scheme and Info.plist were validated. This does **not** establish an iOS build or functioning interface. Four XCUITest workflows are prepared for capture/persistence/undo, swipe-back, swipe dismissal/draft recovery and module navigation. They have not run. The GitHub Actions macOS workflow is prepared but not published or executed, pending authorization for the available public source branch. No personal data is included.
-
-A signed iPhone install still requires Apple signing access and an appropriate distribution path. This Linux environment has no Xcode or Apple signing identity. A simulator build will not be advertised as an installable iPhone app. No membership, paid service or hosting upgrade has been purchased. The existing production web app remains available at its existing origin, preserving its browser data.
-
-## Verification — 2026-10-01
-
-13 unit/database tests plus eight Chromium integration workflows cover capture/edit/completion/undo, search, offline writes and app icons, restore with attachments, creative states, lead stages, songs/rehearsal, grades, installation help, keyboard switch interaction, short viewport and capture draft recovery. Layouts are checked at 320/402/768/1440px and screenshot-reviewed with simulated top/bottom safe areas. Physical iPhone testing has not been performed. WebKit was downloaded but could not launch because required system libraries are unavailable and installing them requires root credentials not present in this workspace.
-
-GitHub repository creation remains blocked: both GraphQL and REST returned `Resource not accessible by integration`, including after explicit repository-scope device authorization. Source remains committed in the local Git repository and included in the source archive.
+Core source: `native/Core/Sources/EdizCore`; native UI: `ios/App/App/Native`; native gesture tests: `ios/App/EdizOSUITests`. Web domain/storage: `src/core.ts`, `src/db.ts`; shell: `src/main.tsx`; design/navigation: `src/Today.tsx`, `src/Dock.tsx`, `src/primitives.tsx`, `src/style.css`; assistant: `src/assistant.ts`, `src/ConversationAssistant.tsx`.

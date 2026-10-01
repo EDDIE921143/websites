@@ -1,9 +1,9 @@
 export const spaces = [
- {id:'ejj',name:'EJJ Digital',description:'Leads & websites',mark:'E',color:'#405d7b'},
- {id:'band',name:'CLEARANCE 19',description:'Songs & rehearsal',mark:'19',color:'#a62d3d'},
- {id:'moshia',name:'Moshia',description:'Chapters & story world',mark:'M',color:'#635078'},
- {id:'school',name:'School',description:'Homework & timetable',mark:'S',color:'#9a7239'},
- {id:'personal',name:'Personal',description:'Tasks & everyday life',mark:'P',color:'#65517c'}
+ {id:'ejj',name:'EJJ Digital',description:'Leads & websites',mark:'E',color:'#7199bf'},
+ {id:'band',name:'CLEARANCE 19',description:'Songs & rehearsal',mark:'19',color:'#bf7777'},
+ {id:'moshia',name:'Moshia',description:'Chapters & story world',mark:'M',color:'#c5b89b'},
+ {id:'school',name:'School',description:'Homework & timetable',mark:'S',color:'#c3a46b'},
+ {id:'personal',name:'Personal',description:'Tasks & everyday life',mark:'P',color:'#93936f'}
 ];
 export type Kind='task'|'note'|'idea'|'event'|'lead'|'song'|'rehearsal'|'character'|'chapter'|'thread'|'location'|'organization'|'assignment'|'exam'|'subject'|'grade'|'website';
 export interface Entity {id:string;space:string;kind:Kind;title:string;body:string;status:string;created:string;updated:string;due?:string;duration?:number;importance?:number;blocked?:boolean;data:Record<string,string>;}

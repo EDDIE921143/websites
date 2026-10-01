@@ -1,10 +1,10 @@
-# 0.3.0 — native development, not released
+# 0.3.0
 
-Replaced the Capacitor iOS shell with a SwiftUI interface and local SQLite core. Today groups immediate actions, a compact space index and review. Native navigation, sheets, capture, editing, search, domain modules, backups, practice audio and rehearsal controls are implemented in source. Typography uses regular body text and restrained medium headings; muted colors distinguish the five spaces. Pictures remain removed. Native core tests pass; iOS compilation, UI execution, signing and installation are pending.
+A new warm-black design with humanist typography, neutral space rows, useful glass shortcuts and draggable bottom navigation. Today gives one clear starting point and room to continue. Assistant supports contextual follow-ups, saved information, tomorrow and reminder previews. Focus begins gently, counts elapsed time and can pause and resume.
 
-# 0.2.1 — web refinement, not deployed
+The genuine SwiftUI iPhone app replaces the old Capacitor shell. Its SQLite core, native gestures, glass controls, capture, modules, assistant and focus passed 18 core tests and seven iPhone 17 Pro UI tests. An unsigned device Release archive is built; Apple signing is required before installation.
 
-Refined Ediz OS’s own visual identity: subtler translucent navigation, compact rectangular tab selection and capture control, and solid sheets. Removed the stronger iOS imitation while preserving the black base, no pictures, no thin dividers, module colors and phone layout.
+The updated web companion preserves the existing origin and data format. Pictures, purple space colors, repeated arrows and thin dividers remain removed. Licensed Uiverse-derived inputs, completion controls and switches retain accessible behavior. Local-first backups and offline core remain available without paid services.
 
 # 0.2.0
 
