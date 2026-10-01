@@ -9,12 +9,12 @@ permissions:
   contents: read
 jobs:
   core-and-simulator:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 26
-        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
       - name: Test durable SQLite core
         run: swift test --package-path native/Core
       - name: Select iPhone simulator
@@ -24,20 +24,27 @@ jobs:
           python3 - <<'PY'
           import json, os
           devices=json.load(open('/tmp/ediz-devices.json'))['devices']
-          phones=[d for group in devices.values() for d in group if d.get('isAvailable') and d['name'] in ('iPhone 17 Pro','iPhone 16 Pro')]
-          if not phones: raise SystemExit('No supported Pro iPhone simulator is installed.')
-          phones.sort(key=lambda d: d['name'],reverse=True)
-          with open(os.environ['GITHUB_ENV'],'a') as env: env.write('EDIZ_SIM_ID='+phones[0]['udid']+'\n')
-          print(phones[0]['name'])
+          phones=[]
+          for runtime,group in devices.items():
+              if 'iOS-26-' not in runtime: continue
+              version=tuple(int(p) for p in runtime.split('iOS-')[1].split('-'))
+              for d in group:
+                  if d.get('isAvailable') and d['name'] in ('iPhone 17 Pro','iPhone 16 Pro'): phones.append((version,d['name'],d))
+          if not phones: raise SystemExit('No stable iOS 26 Pro iPhone simulator is installed.')
+          phones.sort(key=lambda entry:(entry[0],entry[1]),reverse=True)
+          phone=phones[0][2]
+          with open(os.environ['GITHUB_ENV'],'a') as env: env.write('EDIZ_SIM_ID='+phone['udid']+'\n')
+          print(phone['name'],phones[0][0])
           PY
       - name: Compile native application and UI tests
         run: |
           set -o pipefail
           xcodebuild build-for-testing -project ios/App/App.xcodeproj -scheme App -destination "platform=iOS Simulator,id=$EDIZ_SIM_ID" -derivedDataPath /tmp/ediz-derived CODE_SIGNING_ALLOWED=NO | tee /tmp/ediz-xcode-build.log
       - name: Capture the real empty-state interface
+        timeout-minutes: 5
         run: |
           xcrun simctl boot "$EDIZ_SIM_ID" || true
-          xcrun simctl bootstatus "$EDIZ_SIM_ID" -b
+          xcrun simctl bootstatus "$EDIZ_SIM_ID" -b | tee /tmp/ediz-simulator-boot.log
           xcrun simctl ui "$EDIZ_SIM_ID" appearance dark
           xcrun simctl install "$EDIZ_SIM_ID" /tmp/ediz-derived/Build/Products/Debug-iphonesimulator/App.app
           xcrun simctl launch "$EDIZ_SIM_ID" com.ediz.os
@@ -65,6 +72,7 @@ jobs:
           name: native-ios-verification
           path: |
             /tmp/ediz-results.xcresult
+            /tmp/ediz-simulator-boot.log
             /tmp/ediz-xcode-build.log
             /tmp/ediz-xcode.log
             /tmp/ediz-native-today.png
