@@ -9,7 +9,7 @@ struct NativeSpace:View {
     @State private var rehearsal=false
     var space:SpaceDefinition{Catalog.space(route.id)}
     var creationNoun:String {kind == "thread" ? "plot thread":kind == "assignment" ? "homework":kind == "note" && route.id == "moshia" ? "research":kind}
-    var records:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind && (filter == "all" || $0.status == filter)}.sorted{$0.updated>$1.updated}}
+    var records:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind && (filter == "all" || $0.status == filter)}.sorted{kind == "chapter" ? ($0.created == $1.created ? $0.id<$1.id:$0.created<$1.created):$0.updated>$1.updated}}
     var songs:[EdizCore.Record]{store.records.filter{$0.space == "band" && $0.kind == "song" && $0.status != "archived"}.sorted{$0.created<$1.created}}
     var body:some View {
         List {
@@ -30,7 +30,7 @@ struct NativeSpace:View {
             Section(space.modules.first{$0.kind == kind}?.label ?? "Records") {
                 if records.isEmpty{QuietEmpty(title:"Ready for your \(kind == "assignment" ? "homework":kind == "lead" ? "leads":kind == "chapter" ? "chapters":"work").",message:"Add your own material or bring in an existing file.");Button("Add \(creationNoun)"){store.capture(space:route.id,kind:kind)}}
                 ForEach(records){record in
-                    VStack(alignment:.leading,spacing:7){RecordRow(record:record)
+                    VStack(alignment:.leading,spacing:10){if record.kind == "chapter"{Text("Chapter \((records.firstIndex(where:{$0.id == record.id}) ?? 0)+1)").font(Design.font(13)).foregroundStyle(Design.muted)};RecordRow(record:record)
                         if route.id == "moshia"{Text(record.status).font(.caption.weight(.medium)).foregroundStyle(Design.color(space.color))}
                         if record.kind == "song"{Text([record.data["artist"],record.data["BPM"].map{"\($0) BPM"},record.data["tuning"],record.status].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}
                         if record.kind == "chapter"{Text([record.data["POV"],record.data["wordCount"].map{"\($0) words"},record.data["location"]].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}

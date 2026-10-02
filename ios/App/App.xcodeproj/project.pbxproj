@@ -332,7 +332,7 @@ ED1500000000000000000002 /* NativeAssistant.swift */ = {isa = PBXFileReference; 
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.5;
+				MARKETING_VERSION = 0.3.7;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DDEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ediz.os;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -354,7 +354,7 @@ ED1500000000000000000002 /* NativeAssistant.swift */ = {isa = PBXFileReference; 
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.5;
+				MARKETING_VERSION = 0.3.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ediz.os;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";

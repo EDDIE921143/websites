@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import Security
 import EdizCore
 
 @MainActor final class NativeStore: ObservableObject {
@@ -23,6 +24,9 @@ import EdizCore
         } else { root=base }
         open()
     }
+    @Published var assistantConnected=false
+    var assistantToken:String? {let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
+    func connectAssistant(_ url:URL){guard url.scheme == "edizos",url.host == "assistant",let token=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "token"})?.value,token.count == 64,token.allSatisfy({$0.isHexDigit}) else{return};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device"];SecItemDelete(query as CFDictionary);var item=query;item[kSecValueData as String]=Data(token.utf8);item[kSecAttrAccessible as String]=kSecAttrAccessibleWhenUnlockedThisDeviceOnly;if SecItemAdd(item as CFDictionary,nil)==errSecSuccess{assistantConnected=true}else{error="This device could not connect to the assistant."}}
     func open() {
         do {
             let database = try Database(url:root.appendingPathComponent("ediz.sqlite"))

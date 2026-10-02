@@ -20,7 +20,7 @@ export function Today({greeting,priorities,items,upcoming,last,onCapture,onImpor
  const urgentElsewhere=focused?priorities.filter(p=>p.entity.space!==focus&&p.entity.due&&new Date(p.entity.due).getTime()<=Date.now()+86400000):[];
  const date=new Date();
  return <div className={'today-v2'+(focused?' workspace-focused':'')} style={{'--workspace-color':space?.color||'#b6afa1'} as CSSProperties}>
-  <header className="day-heading"><div><span className="day-date">{date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}</span><h1 aria-label="Today">{greeting}, Ediz</h1></div><button className="icon-button glass-control" aria-label="Change focus" onClick={onFocus}><SlidersHorizontal size={19}/></button></header>
+  <header className="day-heading"><div className="day-brand" aria-label="Ediz OS"><span className="e-mark"><i/><i/><i/></span></div><div><span className="day-date">{date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}</span><h1 aria-label="Today">{greeting}, Ediz</h1></div><button className="icon-button glass-control" aria-label="Change focus" onClick={onFocus}><SlidersHorizontal size={19}/></button></header>
   {focused&&space&&copy?<section className="workspace-stage" aria-label={'Focused on '+space.name}>
    <div className="workspace-stage-top"><span className="workspace-mode"><span/>IN FOCUS</span><button onClick={()=>onSelectFocus('all')} className="workspace-reset"><Layers size={15}/> All spaces</button></div>
    <div className="workspace-title"><Mark space={focus} size="large"/><h2>{space.name}</h2></div><p className="workspace-line">{copy.line}</p>

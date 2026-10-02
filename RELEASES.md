@@ -1,3 +1,7 @@
+## Ediz OS 0.3.7
+
+Centered Capture, numbered chapters, separated creation fields, workspace assistant perspectives, and private Gemini connection with reviewable record actions. Native Today isolates its selected workspace; native assistant connection is stored in Keychain.
+
 # Ediz OS 0.3.4
 
 - Native controls use interactive system glass on iOS 26, with solid surfaces for reduced transparency and clearer disabled states.

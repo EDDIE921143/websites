@@ -28,7 +28,7 @@ struct NativeCapture:View {
             Form {
                 Section {
                     TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...7).font(.body).focused($typing).accessibilityIdentifier("capture-text")
-                    HStack{Spacer();Button{if !speech.listening{voicePrefix=draft.title};speech.toggle()}label:{Label(speech.listening ? "Stop listening":"Speak",systemImage:speech.listening ? "stop.circle":"mic")}.disabled(speech.requesting)}
+                    HStack{Spacer();Button{if !speech.listening{voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Requesting microphone…":speech.listening ? "Stop listening":"Speak",systemImage:speech.listening ? "stop.circle":"mic")}.disabled(speech.requesting)}
                     if let error=speech.message { Text(error).font(.footnote).foregroundStyle(Design.muted) }
                 }
                 Section {
@@ -145,9 +145,9 @@ struct NativeCreation:View {
     var body:some View {
         NavigationStack {
             Form {
-                Section {
+                Section("Title & context") {
                     Text(Catalog.space(record.space).name).font(.subheadline).foregroundStyle(Design.muted).listRowSeparator(.hidden)
-                    TextField(record.kind == "chapter" ? "Chapter title":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title").listRowSeparator(.hidden)
+                    TextField(record.kind == "chapter" ? "Chapter title":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title").padding(12).background(Design.raised,in:RoundedRectangle(cornerRadius:12)).listRowSeparator(.hidden)
                     TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"Context worth keeping",text:$record.body,axis:.vertical).lineLimit(2...7).listRowSeparator(.hidden)
                 }
                 if !detailKeys.isEmpty {
