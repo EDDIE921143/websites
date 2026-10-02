@@ -16,6 +16,37 @@ enum Design {
     }
     static func color(_ hex:UInt32)->Color { Color(red:Double((hex >> 16)&255)/255,green:Double((hex >> 8)&255)/255,blue:Double(hex&255)/255) }
 }
+struct AppBackdrop:View {
+    var scope:String = "all"
+    var accent:Color { scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color) }
+    var body:some View {
+        ZStack {
+            Design.background
+            LinearGradient(colors:[accent.opacity(scope == "all" ? 0.035:0.10),.clear,accent.opacity(0.025)],startPoint:.topLeading,endPoint:.bottomTrailing)
+            Canvas { context,size in
+                var pattern=Path()
+                let step:CGFloat=32
+                for y in stride(from:CGFloat(0),through:size.height,by:step) {
+                    for x in stride(from:CGFloat(0),through:size.width,by:step) {
+                        switch scope {
+                        case "ejj":
+                            pattern.move(to:CGPoint(x:x-2,y:y));pattern.addLine(to:CGPoint(x:x+2,y:y))
+                            pattern.move(to:CGPoint(x:x,y:y-2));pattern.addLine(to:CGPoint(x:x,y:y+2))
+                        case "band":
+                            pattern.move(to:CGPoint(x:x,y:y+2));pattern.addQuadCurve(to:CGPoint(x:x+10,y:y+2),control:CGPoint(x:x+5,y:y-3))
+                        case "moshia":
+                            pattern.move(to:CGPoint(x:x,y:y-2));pattern.addLine(to:CGPoint(x:x+2,y:y));pattern.addLine(to:CGPoint(x:x,y:y+2));pattern.addLine(to:CGPoint(x:x-2,y:y));pattern.closeSubpath()
+                        case "school":
+                            pattern.move(to:CGPoint(x:x,y:y));pattern.addLine(to:CGPoint(x:x+8,y:y))
+                        default: pattern.addEllipse(in:CGRect(x:x,y:y,width:1,height:1))
+                        }
+                    }
+                }
+                context.stroke(pattern,with:.color(accent.opacity(0.065)),lineWidth:0.7)
+            }
+        }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+    }
+}
 struct SpaceMark: View {
     var space:SpaceDefinition
     var symbol:String { switch space.id { case "ejj":return "rectangle.3.group.fill";case "band":return "waveform";case "moshia":return "book.closed.fill";case "school":return "graduationcap.fill";default:return "person.fill" } }

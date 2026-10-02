@@ -39,7 +39,7 @@ struct NativeCapture:View {
                 if !draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
                     Section("Preview") { VStack(alignment:.leading,spacing:8){Text(preview.title).font(.body.weight(.medium));Text("\(Catalog.space(preview.space).name) · \(preview.kind)").font(.subheadline).foregroundStyle(Design.muted);if let due=Time.date(preview.due){Text(due,format:.dateTime.weekday().day().month().hour().minute()).font(.subheadline).foregroundStyle(Design.muted)};if preview.space == "moshia"{Text("POSSIBLE — canon only when you choose it.").font(.footnote).foregroundStyle(Design.muted)}} }
                 }
-            }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
+            }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);onFinish?();dismiss()}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);onFinish?();dismiss()}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save")}}
                 .onChange(of:draft){_,value in store.draft(value)}
                 .onChange(of:draft.space){_,value in if !Catalog.space(value).modules.contains(where:{$0.kind == draft.kind}){draft.kind=Catalog.space(value).modules[0].kind}}
@@ -88,7 +88,7 @@ struct NativeEditor:View {
                 Button("Attach a file"){addingFile=true}
             }
             Section { Button("Delete item",role:.destructive){deletion=true} }
-        }.scrollContentBackground(.hidden).background(Design.background).navigationTitle(Catalog.space(record.space).name).navigationBarTitleDisplayMode(.inline)
+        }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle(Catalog.space(record.space).name).navigationBarTitleDisplayMode(.inline)
             .toolbar{ToolbarItem(placement:.confirmationAction){Button("Save"){record.due=hasDate ? Time.string(date):nil;if store.save(record){dismiss()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-save")}}
             .task{store.remember(record);do{if let draft=try store.database?.editDraft(recordID:record.id){record=draft};files=try store.database?.attachments(recordID:record.id) ?? []}catch{store.error=error.localizedDescription};hasDate=record.due != nil;date=Time.date(record.due) ?? Date()}
             .onChange(of:record){_,value in store.editDraft(value)}
@@ -124,7 +124,7 @@ struct NativeImport:View {
                 Section{Button("Import records"){if store.merge(items){message="Records imported. Title duplicates were skipped.";items=[]}};if backup{Text("Merge imports records only. Complete restore also includes files, history and preferences.").font(.footnote).foregroundStyle(Design.muted);Button("Restore this backup completely",role:.destructive){confirm=true}}}
             }
             if !message.isEmpty{Section{Text(message).font(.subheadline)}}
-        }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Import")
+        }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Import")
             .fileImporter(isPresented:$choose,allowedContentTypes:[.json,.commaSeparatedText,.plainText,.text,UTType(filenameExtension:"ics") ?? .data]){result in
                 do{let url=try result.get();let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0;guard size<=32*1024*1024 else{store.error="Choose a file smaller than 32 MB.";return};let data=try Data(contentsOf:url);items=try ImportParser.records(data:data,filename:url.lastPathComponent,space:space);raw=data;backup=(try? JSONDecoder().decode(Backup.self,from:data)) != nil;message=""}catch{store.error="That import could not be read. Your current records are unchanged."}
             }.confirmationDialog("Replace all current records, files, history and preferences?",isPresented:$confirm,titleVisibility:.visible){Button("Replace current data & restore",role:.destructive){if let raw,store.restore(raw){items=[];message="Backup restored."}};Button("Keep current data",role:.cancel){}}
@@ -165,7 +165,7 @@ struct NativeCreation:View {
                     if record.space == "moshia" {Text("POSSIBLE — canon only when you choose it.").font(.footnote).foregroundStyle(Design.muted)}
                     if ["task","assignment","exam","event","rehearsal","lead"].contains(record.kind) {Toggle("Set a date",isOn:$scheduled);if scheduled{DatePicker("When",selection:$date)}}
                 }
-            }.scrollContentBackground(.hidden).background(Design.background).navigationTitle("Add "+noun).navigationBarTitleDisplayMode(.inline)
+            }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Add "+noun).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement:.cancellationAction){Button("Close"){keepDraft();dismiss()}}
                     ToolbarItem(placement:.confirmationAction){Button("Add"){if record.status == "CANON" {confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("creation-save").accessibilityLabel("Add "+noun)}

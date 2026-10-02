@@ -9,7 +9,7 @@ struct NativeSpace:View {
     @State private var rehearsal=false
     var space:SpaceDefinition{Catalog.space(route.id)}
     var creationNoun:String {kind == "thread" ? "plot thread":kind == "assignment" ? "homework":kind == "note" && route.id == "moshia" ? "research":kind}
-    var orderedRecords:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind}.sorted{kind == "chapter" ? ($0.created == $1.created ? $0.id<$1.id:$0.created<$1.created):$0.updated>$1.updated}}
+    var orderedRecords:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind}.sorted{kind == "chapter" ? chapterBefore($0,$1):$0.updated>$1.updated}}
     var records:[EdizCore.Record]{orderedRecords.filter{filter == "all" || $0.status == filter}}
     var songs:[EdizCore.Record]{store.records.filter{$0.space == "band" && $0.kind == "song" && $0.status != "archived"}.sorted{$0.created<$1.created}}
     var body:some View {
@@ -30,7 +30,7 @@ struct NativeSpace:View {
             if route.id == "school" && ["assignment","exam"].contains(kind){NativeWorkload()}
             if kind == "chapter" && !records.isEmpty {
                 ForEach(records) { record in
-                    Section("Chapter \((orderedRecords.firstIndex(where: {$0.id == record.id}) ?? 0) + 1)") {
+                    Section(chapterLabel(record)) {
                         NavigationLink(value: record) {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(record.title).font(Design.font(21)).foregroundStyle(Design.ink)
@@ -39,7 +39,7 @@ struct NativeSpace:View {
                                     Text(record.body).font(Design.font(15, weight: "Regular"))
                                         .foregroundStyle(Design.muted).lineLimit(2)
                                 }
-                                let details = [record.data["POV"], record.data["location"], record.data["wordCount"].map { "\($0) words" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                                let details = [record.data["POV"], record.data["purpose"], record.data["location"], record.data["wordCount"].map { "\($0) words" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                                 if !details.isEmpty { Text(details).font(.subheadline).foregroundStyle(Design.muted) }
                                 Text(record.status).font(.caption.weight(.medium))
                                     .foregroundStyle(Design.color(space.color))
@@ -63,11 +63,21 @@ struct NativeSpace:View {
             }
             }
             if route.id == "moshia" && kind == "event"{NativeTimeline()}
-        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Design.background).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop(scope:route.id)).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
             .toolbar{ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add")}}
             .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind}}
             .onChange(of:kind){_,_ in filter="all"}
             .fullScreenCover(isPresented:$rehearsal){NativeRehearsal(songs:songs)}
+    }
+    func chapterBefore(_ a:EdizCore.Record,_ b:EdizCore.Record)->Bool {
+        let first=WorkspaceContext.chapterNumber(a),second=WorkspaceContext.chapterNumber(b)
+        if first != second {return (first ?? Int.max)<(second ?? Int.max)}
+        return a.created == b.created ? a.id<b.id:a.created<b.created
+    }
+    func chapterLabel(_ record:EdizCore.Record)->String {
+        if let number=WorkspaceContext.chapterNumber(record){return number == 0 ? "Prologue":"Chapter \(number)"}
+        let offset=orderedRecords.contains{WorkspaceContext.chapterNumber($0) == 0} ? 0:1
+        return "Chapter \((orderedRecords.firstIndex(where:{$0.id == record.id}) ?? 0)+offset)"
     }
     func metric(_ title:String,_ count:Int)->some View{VStack(alignment:.leading,spacing:5){Text(count,format:.number).font(.title2.weight(.medium));Text(title).font(.caption).foregroundStyle(Design.muted)}}
 }
@@ -136,7 +146,7 @@ struct NativeFocus:View {
                     }.padding(.top,4)
                 }
                 }.frame(maxWidth:.infinity).padding(24)
-            }.background(Design.background).navigationTitle("Focus").navigationBarTitleDisplayMode(.inline)
+            }.background(AppBackdrop()).navigationTitle("Focus").navigationBarTitleDisplayMode(.inline)
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}
         }.preferredColorScheme(.dark).tint(Design.accent)
     }
@@ -151,6 +161,6 @@ struct NativeReview:View {
         NavigationStack{List{Section("Progress"){Text("\(events.filter{$0.action == "Completed"}.count) completed \(weekly ? "this week":"today")").font(.body.weight(.medium))}
             Section("Next steps"){ForEach(Array(store.priorities.prefix(5))){p in VStack(alignment:.leading,spacing:8){Text(p.record.title);Text(p.reasons.first ?? "").font(.subheadline).foregroundStyle(Design.muted);if let due=Time.date(p.record.due),due<Date(){Button("Move to tomorrow"){var record=p.record;record.due=Time.string(Calendar.current.date(byAdding:.day,value:1,to:Date()) ?? Date());_ = store.save(record,action:"Rescheduled")}}}}}
             Section("What changed"){if events.isEmpty{Text("Your history starts with your first saved item.").foregroundStyle(Design.muted)};ForEach(events){event in VStack(alignment:.leading,spacing:5){Text(event.title);Text(event.action).font(.caption).foregroundStyle(Design.muted)}}}
-        }.scrollContentBackground(.hidden).background(Design.background).navigationTitle(weekly ? "This week":"Today’s review").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}}}}
+        }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle(weekly ? "This week":"Today’s review").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}}}}
     }
 }

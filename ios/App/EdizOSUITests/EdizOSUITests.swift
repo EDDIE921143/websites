@@ -150,6 +150,28 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertFalse(app.staticTexts["Hello"].exists)
         snapshot("Dedicated EJJ Digital chat")
     }
+    func testInstalledContextAndWorkspaceBackgroundsReadOnly(){
+        app.terminate()
+        app.launchArguments=[];app.launchEnvironment=[:];app.launch()
+        app.buttons["Settings and backup"].tap()
+        app.staticTexts["Review saved context"].tap()
+        XCTAssertTrue(app.buttons["refresh-assistant-context"].waitForExistence(timeout:5))
+        snapshot("Imported assistant context in Settings")
+        app.navigationBars.buttons.firstMatch.tap();app.navigationBars.buttons.firstMatch.tap()
+        app.tabBars.buttons["Spaces"].tap();app.buttons["Chapters"].tap()
+        let chapter=app.staticTexts["Chapter 3"]
+        for _ in 0..<5 {if chapter.exists{break};app.swipeUp()}
+        XCTAssertTrue(chapter.exists)
+        snapshot("Real imported Moshia chapter summaries")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.tabBars.buttons["Assistant"].tap()
+        let ejj=app.buttons["assistant-workspace-ejj"]
+        XCTAssertTrue(ejj.waitForExistence(timeout:5));ejj.tap()
+        snapshot("EJJ Digital subtle blue background")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["assistant-workspace-moshia"].tap()
+        snapshot("Moshia subtle warm background")
+    }
     func testDensityChangesAllAssistantCardsImmediately(){
         app.tabBars.buttons["Assistant"].tap()
         let card=app.buttons["assistant-workspace-all"]

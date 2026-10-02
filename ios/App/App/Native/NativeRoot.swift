@@ -25,7 +25,7 @@ struct NativeRoot:View {
             } else {
                 VStack(spacing:20){Text("Ediz OS").font(.title2.weight(.medium));Text("Your local data couldn’t be opened.").foregroundStyle(Design.muted);Button("Try again"){store.open()}.buttonStyle(ActionStyle())}.padding(24)
             }
-        }.onOpenURL{url in store.connectAssistant(url);if url.host == "assistant"{selected=4}}.environmentObject(store).preferredColorScheme(.dark).background(Design.background)
+        }.onOpenURL{url in store.connectAssistant(url);if url.host == "assistant"{selected=4}}.environmentObject(store).preferredColorScheme(.dark).background(AppBackdrop())
             .environment(\.edizCompact,store.preferences.density == "compact")
             .environment(\.defaultMinListRowHeight,store.preferences.density == "compact" ? 44:60)
             .listSectionSpacing(.custom(store.preferences.density == "compact" ? 12:28))
@@ -77,7 +77,7 @@ struct NativeToday:View {
 
                 HStack(spacing:12){GlassAction{Button{weekly=false;review=true}label:{Label("Review today",systemImage:"checkmark.circle").frame(maxWidth:.infinity,minHeight:48)}};GlassAction{Button{weekly=true;review=true}label:{Image(systemName:"calendar").frame(minWidth:44,minHeight:48)}.accessibilityLabel("Review this week")}}.font(Design.font(15))
             }.padding(.horizontal,20).padding(.top,8).padding(.bottom,26)
-        }.refreshable{await store.refresh()}.background(Design.background).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
+        }.refreshable{await store.refresh()}.background(AppBackdrop()).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented:$choosingFocus){NativeFocusChoice().presentationDragIndicator(.visible)}
             .sheet(isPresented:$review){NativeReview(weekly:weekly).presentationDragIndicator(.visible)}
     }
@@ -124,7 +124,7 @@ struct NativeSpaces:View {
                     HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44)}}}}
                 }.padding(store.preferences.density == "compact" ? 12:24).background(Design.surface,in:RoundedRectangle(cornerRadius:24))
             }
-        }.padding(20) }.refreshable{await store.refresh()}.background(Design.background).navigationTitle("Spaces")
+        }.padding(20) }.refreshable{await store.refresh()}.background(AppBackdrop()).navigationTitle("Spaces")
     }
 }
 struct NativeSearch:View {
@@ -139,6 +139,6 @@ struct NativeSearch:View {
                 if results.isEmpty{QuietEmpty(title:query.isEmpty ? "Your work will appear here.":"No matches yet.",message:query.isEmpty ? "Capture or import something to make it searchable.":"Try a shorter name or a different space.")}
                 ForEach(Array(results.prefix(100))){RecordRow(record:$0)}
             }
-        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Design.background).listRowSpacing(store.preferences.density == "compact" ? 4:12).refreshable{await store.refresh()}.navigationTitle("Search").searchable(text:$query,prompt:"A person, a project, Friday…")
+        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop()).listRowSpacing(store.preferences.density == "compact" ? 4:12).refreshable{await store.refresh()}.navigationTitle("Search").searchable(text:$query,prompt:"A person, a project, Friday…")
     }
 }

@@ -42,11 +42,11 @@ import EdizCore
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
                 let context = try JSONDecoder().decode(WorkspaceContextBundle.self, from: data)
-                let additions = context.items.filter { item in
-                    item.valid && item.kind == "note" && item.id.hasPrefix("ediz-context-")
-                        && !self.records.contains(where: { $0.id == item.id })
+                let changes = WorkspaceContext.changes(incoming:context.items,existing:records)
+                if !changes.isEmpty,let database {
+                    for item in changes { try database.save(item,action:"Context imported") }
+                    try reload()
                 }
-                if !additions.isEmpty { _ = self.merge(additions) }
             } catch {
                 self.error = "Your workspace context could not be downloaded. Try connecting again when online."
             }

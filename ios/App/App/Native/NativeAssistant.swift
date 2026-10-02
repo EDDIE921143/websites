@@ -67,7 +67,7 @@ struct NativeAssistant:View {
                     }
                 }
             }.padding(20)
-        }.refreshable{await store.refresh()}.background(Design.background).navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+        }.refreshable{await store.refresh()}.background(AppBackdrop()).navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
     }
     func workspace(_ id:String,_ title:String,_ symbol:String)->some View {
         NavigationLink {
@@ -75,10 +75,11 @@ struct NativeAssistant:View {
                                 question:Binding(get:{drafts[id] ?? ""},set:{drafts[id]=$0}),scope:id)
         } label: {
             (compact ? AnyLayout(HStackLayout(spacing:14)):AnyLayout(VStackLayout(spacing:12))) {
-                Image(systemName:symbol).font(.system(size:24,weight:.medium)).accessibilityHidden(true)
+                Image(systemName:symbol).font(.system(size:24,weight:.medium)).foregroundStyle(id == "all" ? Design.ink:Design.color(Catalog.space(id).color)).accessibilityHidden(true)
                 Text(title).font(Design.font(15)).multilineTextAlignment(.center).lineLimit(2)
             }.padding(.horizontal,10).frame(maxWidth:.infinity).frame(height:compact ? 64:124)
                 .foregroundStyle(Design.ink).background(.regularMaterial,in:RoundedRectangle(cornerRadius:28))
+                .overlay(RoundedRectangle(cornerRadius:28).fill((id == "all" ? Design.ink:Design.color(Catalog.space(id).color)).opacity(0.055)).allowsHitTesting(false))
                 .contentShape(RoundedRectangle(cornerRadius:28))
         }.buttonStyle(.plain).accessibilityIdentifier("assistant-workspace-"+id)
     }
@@ -91,6 +92,7 @@ struct NativeAssistantChat:View {
     @Environment(\.edizCompact) private var compact
     @State private var proposal:GeminiProposal?
     @State private var cloud=true
+    var accent:Color {scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)}
     var scopedRecords:[EdizCore.Record]{store.records.filter{scope == "all" || $0.space == scope}}
     @State private var busy=false
     @State private var model=false
@@ -102,7 +104,7 @@ struct NativeAssistantChat:View {
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of:entries.count){_,_ in if let id=entries.last?.id{reader.scrollTo(id,anchor:.bottom)}}
                 .safeAreaInset(edge:.bottom){composer}
-        }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}.background(Design.background).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
+        }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement:.topBarTrailing) { Menu {
                 if store.assistantToken != nil { Toggle("Use Gemini",isOn:$cloud) }
                 if store.preferences.labs { Toggle("Use my local model",isOn:$model) }
@@ -128,7 +130,7 @@ struct NativeAssistantChat:View {
     @ViewBuilder func entryView(_ entry:ConversationEntry)->some View {
         VStack(alignment:entry.role == "user" ? .trailing:.leading,spacing:10){
             if entry.role == "user" {
-                Text(entry.text).font(Design.font(16,weight:"Regular")).padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:23)).frame(maxWidth:.infinity,alignment:.trailing)
+                Text(entry.text).font(Design.font(16,weight:"Regular")).padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:23)).frame(maxWidth:.infinity,alignment:.trailing)
             } else {
                 VStack(alignment:.leading,spacing:10){Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
                     ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
@@ -162,7 +164,7 @@ struct NativeAssistantChat:View {
             Button { send() } label: {
                 Image(systemName:"arrow.up").font(.body.weight(.medium))
                     .frame(width:44,height:44).foregroundStyle(Design.background)
-                    .background(Design.ink,in:Circle())
+                    .background(accent,in:Circle())
             }.disabled(busy || question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel("Send question")
         }.padding(8).background(.regularMaterial,in:RoundedRectangle(cornerRadius:28))
@@ -228,5 +230,5 @@ struct NativeAssistantReview:View {
     let action:GeminiProposal
     var existing:EdizCore.Record?{store.records.first{$0.id == action.entityId}}
     var draft:EdizCore.Record {var record=existing ?? EdizCore.Record(space:action.fields?.space ?? "personal",kind:action.fields?.kind ?? "task",title:action.fields?.title ?? "");if let f=action.fields{if let value=f.title{record.title=value};if let value=f.body{record.body=value};if let value=f.space{record.space=value};if let value=f.kind{record.kind=value};if let value=f.status{record.status=value};if let value=f.due{record.due=value};if let value=f.duration{record.duration=value};if let value=f.importance{record.importance=value};if let value=f.data{record.data.merge(value){_,new in new}}};if !Catalog.states(kind:record.kind,space:record.space).contains(record.status){record.status=Catalog.states(kind:record.kind,space:record.space)[0]};return record}
-    var body:some View {NavigationStack{ScrollView{VStack(alignment:.leading,spacing:18){Text(action.title).font(Design.font(23));Text(action.type == "delete" ? "This permanently deletes the item and attachments.":draft.status == "CANON" ? "Confirming this establishes canon in Moshia.":"Nothing changes until you confirm.").foregroundStyle(Design.muted);if action.type != "delete"{Surface{VStack(alignment:.leading,spacing:12){Text(draft.title);Text(draft.body);Text(draft.status);if let due=draft.due{Text(due)};ForEach(draft.data.keys.sorted(),id:\.self){key in Text(key+": "+(draft.data[key] ?? ""))}}}};Button(action.type == "create" ? "Review new item":action.type == "delete" ? "Confirm deletion":"Confirm changes"){if action.type == "create"{var record=draft;record.data["_creation"]="1";dismiss();DispatchQueue.main.asyncAfter(deadline:.now()+0.35){store.captureRequest=record}}else if let existing{if action.type == "delete"{if store.remove(existing){dismiss()}}else if store.save(draft){dismiss()}}}.buttonStyle(ActionStyle())}.padding(20)}}.background(Design.background).navigationTitle("Review suggestion").toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}}
+    var body:some View {NavigationStack{ScrollView{VStack(alignment:.leading,spacing:18){Text(action.title).font(Design.font(23));Text(action.type == "delete" ? "This permanently deletes the item and attachments.":draft.status == "CANON" ? "Confirming this establishes canon in Moshia.":"Nothing changes until you confirm.").foregroundStyle(Design.muted);if action.type != "delete"{Surface{VStack(alignment:.leading,spacing:12){Text(draft.title);Text(draft.body);Text(draft.status);if let due=draft.due{Text(due)};ForEach(draft.data.keys.sorted(),id:\.self){key in Text(key+": "+(draft.data[key] ?? ""))}}}};Button(action.type == "create" ? "Review new item":action.type == "delete" ? "Confirm deletion":"Confirm changes"){if action.type == "create"{var record=draft;record.data["_creation"]="1";dismiss();DispatchQueue.main.asyncAfter(deadline:.now()+0.35){store.captureRequest=record}}else if let existing{if action.type == "delete"{if store.remove(existing){dismiss()}}else if store.save(draft){dismiss()}}}.buttonStyle(ActionStyle())}.padding(20)}}.background(AppBackdrop()).navigationTitle("Review suggestion").toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}}
 }
