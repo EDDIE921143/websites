@@ -21,3 +21,6 @@ native/**/.build/
 native/**/.swiftpm/
 *.sqlite-wal
 *.sqlite-shm
+
+# Private handoff is distributed separately, never source-controlled.
+/MAC-HANDOFF.md
