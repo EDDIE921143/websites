@@ -136,9 +136,9 @@ struct NativeSpaces:View {
             ForEach(Catalog.spaces){space in
                 VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain)
                     HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44).walkthroughTarget(module.kind == "chapter" ? "chapters":"",session:store.walkthrough)}}}}
-                }.padding(store.preferences.density == "compact" ? 12:24).background(Design.surface,in:RoundedRectangle(cornerRadius:24))
+                }.padding(store.preferences.density == "compact" ? 12:24).background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(space.id).opacity(0.18),lineWidth:1)}
             }
-        }.padding(20) }.refreshable{await store.refresh()}.background(AppBackdrop()).navigationTitle("Spaces")
+        }.padding(20) }.refreshable{await store.refresh()}.background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces")
     }
 }
 struct NativeSearch:View {

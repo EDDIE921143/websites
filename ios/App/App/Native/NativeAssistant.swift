@@ -109,6 +109,8 @@ struct NativeAssistantChat:View {
     @State private var choosingMedia=false
     @State private var preparing=0
     @State private var mediaError:String?
+    @State private var memoOpen=false
+    @State private var memoPreview:FilePreview?
     @State private var voiceOpen=false
     @State private var voiceWanted=false
     @State private var voiceAuto=false
@@ -117,7 +119,7 @@ struct NativeAssistantChat:View {
     @StateObject private var speaker=NativeAssistantSpeaker()
     @Environment(\.scenePhase) private var scenePhase
     @State private var mode="cloud"
-    var accent:Color {scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)}
+    var accent:Color {WorkspaceTheme.accent(scope)}
     var corners:CGFloat {scope == "moshia" ? 12:scope == "ejj" || scope == "school" ? 16:24}
     var contextTitle:String {switch scope{case "ejj":return "Business context";case "band":return "Band notes";case "moshia":return "Story context";case "school":return "Study notes";case "personal":return "Your saved notes";default:return "Across your spaces"}}
     var opening:String {switch scope{case "ejj":return "What are we building?";case "band":return "What are we rehearsing?";case "moshia":return "Where does the story go next?";case "school":return "What needs your attention?";case "personal":return "What would you like to keep?";default:return "What’s on your mind, Ediz?"}}
@@ -136,10 +138,13 @@ struct NativeAssistantChat:View {
                 .safeAreaInset(edge:.bottom){composer}
         }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}
             .sheet(isPresented:$choosingMedia){NativeAssistantMediaPicker(receive:{url in prepareAttachment(url,temporary:true)},close:{choosingMedia=false},failed:{mediaError=$0})}
-            .fileImporter(isPresented:$importingFiles,allowedContentTypes:[.image,.movie,.pdf,.plainText,.text,.json,.commaSeparatedText],allowsMultipleSelection:true){result in switch result{case .success(let urls):for url in urls{prepareAttachment(url)};case .failure:mediaError="That file couldn’t be opened. Try choosing it again."}}
-            .fullScreenCover(isPresented:$voiceOpen,onDismiss:{endVoice()}){NativeAssistantVoicePanel(speech:speech,speaker:speaker,busy:busy,reply:entries.last(where:{$0.role == "assistant"})?.text ?? "",error:message,scope:scope,listen:{beginListening()},send:{sendVoice()},read:{voiceAuto=false;speech.stop();speaker.say(entries.last(where:{$0.role == "assistant"})?.text ?? "Hi Ediz. I’m here to help with your day, your projects, and your ideas.",token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true)},end:{endVoice()})}
+            .sheet(isPresented:$memoOpen){NativeMemoSheet(scope:scope,attach:{file in stage(file)}).presentationDetents([.large]).presentationDragIndicator(.visible)}
+            .sheet(item:$memoPreview,onDismiss:{memoPreview=nil}){clip in NativeAudioPractice(url:clip.url).presentationDragIndicator(.visible)}
+            .fileImporter(isPresented:$importingFiles,allowedContentTypes:[.image,.movie,.audio,.pdf,.plainText,.text,.json,.commaSeparatedText],allowsMultipleSelection:true){result in switch result{case .success(let urls):for url in urls{prepareAttachment(url)};case .failure:mediaError="That file couldn’t be opened. Try choosing it again."}}
+            .fullScreenCover(isPresented:$voiceOpen,onDismiss:{endVoice()}){NativeAssistantVoicePanel(speech:speech,speaker:speaker,busy:busy,reply:entries.last(where:{$0.role == "assistant"})?.text ?? "",error:message,scope:scope,listen:{beginListening()},pause:{voiceAuto=false;voiceTurn?.cancel();speech.stop();speaker.stop()},send:{sendVoice()},read:{voiceAuto=false;speech.stop();speaker.say(entries.last(where:{$0.role == "assistant"})?.text ?? "Hi Ediz. I’m here to help with your day, your projects, and your ideas.",token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true)},end:{endVoice()})}
             .onChange(of:speech.transcript){_,value in scheduleVoice(value)}
             .onChange(of:entries.count){_,_ in if voiceWanted,let last=entries.last,last.role == "assistant"{speech.stop();speaker.say(last.text,token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true)}}
+            .onDisappear{if !voiceOpen{voiceAuto=false;voiceWanted=false;voiceTurn?.cancel();speech.stop();speaker.stop()}}
             .onChange(of:scenePhase){_,phase in if phase == .background{endVoice()}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
             .onAppear{if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
             .toolbar { ToolbarItem(placement:.topBarTrailing) { Menu {
@@ -171,7 +176,7 @@ struct NativeAssistantChat:View {
                 }
                 if scope == "band" || scope == "school" {
                     HStack(alignment:.top,spacing:10){ForEach(Array(prompts.prefix(2)),id:\.self){prompt in
-                        Button{question=prompt;send()}label:{VStack(alignment:.leading,spacing:12){Image(systemName:scope == "band" ? "music.note":"pencil").foregroundStyle(accent);Text(prompt).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading).foregroundStyle(Design.ink)}.padding(16).frame(maxWidth:.infinity,minHeight:104,alignment:.topLeading).background(Design.surface,in:RoundedRectangle(cornerRadius:corners))}.buttonStyle(.plain)
+                        Button{question=prompt;send()}label:{VStack(alignment:.leading,spacing:12){Image(systemName:scope == "band" ? "music.note":"pencil").foregroundStyle(accent);Text(prompt).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading).foregroundStyle(Design.ink)}.padding(16).frame(maxWidth:.infinity,minHeight:104,alignment:.topLeading).background{WorkspacePanel(scope:scope).clipShape(RoundedRectangle(cornerRadius:corners))}}.buttonStyle(.plain)
                     }}
                     if let last=prompts.last{forPrompt(last)}
                 } else {VStack(spacing:8){ForEach(prompts,id:\.self){forPrompt($0)}}}
@@ -196,7 +201,10 @@ struct NativeAssistantChat:View {
         VStack(alignment:entry.role == "user" ? .trailing:.leading,spacing:10){
             if entry.role == "user" {
                 VStack(alignment:.trailing,spacing:8){
-                    ForEach(entry.attachments ?? []){file in Label(file.name,systemImage:file.mimeType.hasPrefix("image/") ? "photo":file.mimeType.hasPrefix("video/") ? "video":"doc.text").font(.caption).lineLimit(2)}
+                    ForEach(entry.attachments ?? []){file in
+                        if file.mimeType.hasPrefix("audio/"),file.localFile != nil {Button{do{memoPreview=FilePreview(url:try store.memoURL(file))}catch{mediaError="This recording isn’t available on this device."}}label:{Label("Play voice memo",systemImage:"play.circle.fill")}.font(.subheadline)}
+                        else{Label(file.name,systemImage:file.mimeType.hasPrefix("image/") ? "photo":file.mimeType.hasPrefix("video/") ? "video":file.mimeType.hasPrefix("audio/") ? "waveform":"doc.text").font(.caption).lineLimit(2)}
+                    }
                     Text(entry.text).font(Design.font(16,weight:"Regular"))
                 }.padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:corners)).frame(maxWidth:.infinity,alignment:.trailing)
             } else {
@@ -208,7 +216,7 @@ struct NativeAssistantChat:View {
                     }
                     if let html=entry.searchSuggestions,!html.isEmpty { NativeSearchSuggestions(html:html).frame(height:110) }
                     if let draft=entry.draft{Button("Review reminder"){store.captureRequest=draft}.buttonStyle(ActionStyle())}
-                }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:corners))
+                }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background{WorkspacePanel(scope:scope).clipShape(RoundedRectangle(cornerRadius:corners))}
             }
         }
     }
@@ -228,9 +236,9 @@ struct NativeAssistantChat:View {
                 ScrollView(.horizontal,showsIndicators:false){HStack(spacing:8){ForEach(attachments){file in
                     HStack(spacing:8){
                         if file.mimeType.hasPrefix("image/"),let picture=UIImage(data:file.bytes){Image(uiImage:picture).resizable().scaledToFill().frame(width:36,height:36).clipped().clipShape(RoundedRectangle(cornerRadius:6))}else{Image(systemName:file.symbol)}
-                        Text(file.name).font(.caption).lineLimit(1).frame(maxWidth:140)
+                        if file.mimeType.hasPrefix("audio/"){Button{previewMemo(file)}label:{Label("Voice memo",systemImage:"play.circle.fill")}.font(.caption).accessibilityIdentifier("assistant-memo-preview")}else{Text(file.name).font(.caption).lineLimit(1).frame(maxWidth:140)}
                         Button{attachments.removeAll{$0.id == file.id}}label:{Image(systemName:"xmark.circle.fill").frame(width:32,height:36)}.accessibilityLabel("Remove "+file.name).disabled(busy)
-                    }.padding(6).background(Design.surface,in:RoundedRectangle(cornerRadius:12))
+                    }.padding(6).background{WorkspacePanel(scope:scope).clipShape(RoundedRectangle(cornerRadius:12))}
                 }}}
                 Text("Shared with Gemini when you send · 2.5 MB total").font(.caption2).foregroundStyle(Design.muted)
             }
@@ -246,17 +254,25 @@ struct NativeAssistantChat:View {
                     .focused($typing).accessibilityIdentifier("assistant-question").walkthroughTarget("assistant-message",session:store.walkthrough)
                     .padding(.vertical,11).frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
                     .contentShape(Rectangle()).onTapGesture { typing=true }
-                Button{typing=false;voiceWanted=true;voiceOpen=true;speaker.finished={if voiceWanted && voiceAuto{beginListening()}}}label:{Image(systemName:"waveform").font(.body).frame(width:40,height:44)}.accessibilityLabel("Talk to your assistant").accessibilityIdentifier("assistant-voice").disabled(busy || preparing>0)
-                Button { send() } label: {
-                    Image(systemName:"arrow.up").font(.body.weight(.medium))
-                        .frame(width:44,height:44).foregroundStyle(Design.background)
-                        .background(accent,in:Circle())
-                }.disabled(busy || preparing>0 || (question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && attachments.isEmpty))
-                    .accessibilityLabel("Send question").walkthroughTarget("assistant-send",session:store.walkthrough)
+                Button{typing=false;endVoice();memoOpen=true}label:{Image(systemName:"mic").font(.body).frame(width:40,height:44)}.accessibilityLabel("Record voice memo").accessibilityIdentifier("assistant-memo").disabled(busy || preparing>0)
+                let hasMessage = !question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+                Button {
+                    if hasMessage{send()}else{typing=false;voiceWanted=true;voiceOpen=true;speaker.finished={if voiceWanted && voiceAuto{beginListening()}}}
+                } label: {
+                    Image(systemName:hasMessage ? "arrow.up":"waveform").font(.body.weight(.medium)).frame(width:44,height:44).foregroundStyle(Design.background).background(accent,in:Circle())
+                }.disabled(busy || preparing>0).accessibilityLabel(hasMessage ? "Send question":"Talk to your assistant").accessibilityIdentifier(hasMessage ? "assistant-send":"assistant-voice").walkthroughTarget("assistant-send",session:store.walkthrough)
+
             }
         }.onChange(of:question){_,value in if !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("assistant-typed")}}
             .padding(8).background(Design.raised,in:RoundedRectangle(cornerRadius:corners))
             .padding(.horizontal,16).padding(.bottom,8)
+    }
+    func stage(_ file:AssistantAttachment){
+        guard attachments.count<3,attachments.reduce(0,{$0+$1.bytes.count})+file.bytes.count<=AssistantMedia.limit else{mediaError="Attach up to three files and 2.5 MB total.";return}
+        attachments.append(file);mediaError=nil
+    }
+    func previewMemo(_ file:AssistantAttachment){
+        do{let url=FileManager.default.temporaryDirectory.appendingPathComponent(file.id.uuidString+".wav");try file.bytes.write(to:url,options:[.atomic,.completeFileProtection]);memoPreview=FilePreview(url:url)}catch{mediaError="This memo couldn’t be played. Try recording again."}
     }
     func prepareAttachment(_ url:URL,temporary:Bool=false){
         let access=url.startAccessingSecurityScopedResource();preparing+=1;mediaError=nil
@@ -282,13 +298,15 @@ struct NativeAssistantChat:View {
     }
     func send(){
         var q=question.trimmingCharacters(in:.whitespacesAndNewlines);guard !busy,preparing==0 else{return}
-        if q.isEmpty,!attachments.isEmpty{q="What can you tell me about these attachments?"}
+        if q.isEmpty,!attachments.isEmpty{q=attachments.allSatisfy{$0.mimeType.hasPrefix("audio/")} ? "Please transcribe this voice memo and respond to it.":"What can you tell me about these attachments?"}
         guard !q.isEmpty else{return}
         if !attachments.isEmpty,(mode != "cloud" || store.assistantToken == nil){mediaError="Choose Gemini from Chat context to ask about attached media. Saved context and local text models can’t read these files.";return}
         let outgoing=attachments
+        let outgoingInfo:[AssistantAttachmentInfo]
+        do{outgoingInfo=try outgoing.map{try store.keepMemo($0)}}catch{mediaError="Your voice memo couldn’t be saved. Try again before sending.";return}
         let prior=(entries.last(where:{$0.role == "assistant"})?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}
         let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity.filter{scope == "all" || Set(scopedRecords.map(\.id)).contains($0.entityId)},focus:scope,previous:prior)
-        let conversation=entries;entries.append(ConversationEntry(role:"user",text:q,attachments:outgoing.isEmpty ? nil:outgoing.map{AssistantAttachmentInfo(name:$0.name,mimeType:$0.mimeType)}));question="";typing=false;message=nil;failedQuestion=nil
+        let conversation=entries;entries.append(ConversationEntry(role:"user",text:q,attachments:outgoing.isEmpty ? nil:outgoingInfo));question="";typing=false;message=nil;failedQuestion=nil
         if mode == "cloud",let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing);attachments.removeAll{file in outgoing.contains{$0.id == file.id}};entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:"Gemini"))}catch{message=error.localizedDescription;failedQuestion=q}};return}
         guard mode == "local" else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft,provider:"Saved context"));store.walkthrough?.event("assistant-replied");return}
         guard store.preferences.labs,let endpoint=store.preferences.localEndpoint,!endpoint.isEmpty else{message="Add your local model’s network address and test the connection in Settings.";failedQuestion=q;return}
@@ -306,7 +324,7 @@ struct NativeChatHeader:View {
     @EnvironmentObject var store:NativeStore
     let scope:String
     @Environment(\.dynamicTypeSize) private var textSize
-    var accent:Color{scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)}
+    var accent:Color{WorkspaceTheme.accent(scope)}
     func count(_ kind:String)->Int{store.records.filter{$0.space == scope && $0.kind == kind}.count}
     func badge(_ title:String,_ value:Int)->some View {
         Text("\(value) "+title).font(.caption.weight(.medium)).foregroundStyle(accent).padding(.horizontal,11).padding(.vertical,7).background(accent.opacity(0.10),in:Capsule())
@@ -323,7 +341,7 @@ struct NativeChatHeader:View {
                     HStack{Text("BUSINESS WORKSPACE").font(.caption).tracking(1.5);Spacer();Image(systemName:"rectangle.3.group.fill").font(.title2)}.foregroundStyle(accent)
                     Text("EJJ Digital").font(.title.weight(.semibold))
                     badges("leads",count("lead"),"websites",count("website"))
-                }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:18))
+                }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background{WorkspacePanel(scope:scope).clipShape(RoundedRectangle(cornerRadius:18))}
             case "band":
                 VStack(alignment:.leading,spacing:16){
                     HStack(alignment:.center){VStack(alignment:.leading,spacing:8){Text("CLEARANCE 19").font(.title2.weight(.bold));Text("Your rehearsal room").font(.subheadline).foregroundStyle(Design.muted)};Spacer();Image(systemName:"waveform").font(.system(size:42,weight:.medium)).foregroundStyle(accent).accessibilityHidden(true)}
@@ -339,7 +357,7 @@ struct NativeChatHeader:View {
                     Label("Study desk",systemImage:"graduationcap.fill").font(.system(.title2,design:.rounded).weight(.semibold)).foregroundStyle(accent)
                     badges("homework",count("assignment"),"tests",count("exam"))
                     Text("One subject. One next step.").font(.subheadline).foregroundStyle(Design.muted)
-                }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:16))
+                }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background{WorkspacePanel(scope:scope).clipShape(RoundedRectangle(cornerRadius:16))}
             case "personal":
                 HStack(alignment:.top,spacing:16){Image(systemName:"text.book.closed.fill").font(.title).foregroundStyle(accent);VStack(alignment:.leading,spacing:12){Text("Your notebook").font(.system(.title2,design:.rounded).weight(.medium));Text("A place for the everyday things.").font(.subheadline).foregroundStyle(Design.muted);badges("tasks",count("task"),"notes",count("note"))}}.padding(.vertical,14)
             default:

@@ -16,43 +16,81 @@ enum Design {
     }
     static func color(_ hex:UInt32)->Color { Color(red:Double((hex >> 16)&255)/255,green:Double((hex >> 8)&255)/255,blue:Double(hex&255)/255) }
 }
+enum WorkspaceTheme {
+    static func base(_ scope:String)->Color {
+        switch scope {
+        case "ejj":return Color(red:0.035,green:0.075,blue:0.15)
+        case "band":return Color(red:0.13,green:0.035,blue:0.075)
+        case "moshia":return Color(red:0.14,green:0.105,blue:0.065)
+        case "school":return Color(red:0.025,green:0.105,blue:0.09)
+        case "personal":return Color(red:0.115,green:0.075,blue:0.12)
+        case "capture":return Color(red:0.095,green:0.105,blue:0.13)
+        case "spaces":return Color(red:0.045,green:0.065,blue:0.10)
+        default:return Design.background
+        }
+    }
+    static func accent(_ scope:String)->Color {
+        switch scope {
+        case "ejj":return Color(red:0.39,green:0.69,blue:1)
+        case "band":return Color(red:1,green:0.43,blue:0.51)
+        case "moshia":return Color(red:0.89,green:0.72,blue:0.43)
+        case "school":return Color(red:0.40,green:0.85,blue:0.67)
+        case "personal":return Color(red:0.78,green:0.65,blue:0.95)
+        default:return Design.ink
+        }
+    }
+}
 struct AppBackdrop:View {
     var scope:String = "all"
-    var accent:Color { scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color) }
+    var accent:Color {WorkspaceTheme.accent(scope)}
     var body:some View {
         ZStack {
-            Design.background
-            RadialGradient(colors:[(scope == "all" ? Color(red:0.80,green:0.56,blue:0.31):accent).opacity(scope == "all" ? 0.14:0.18),.clear],center:.topLeading,startRadius:0,endRadius:650)
+            WorkspaceTheme.base(scope)
+            LinearGradient(colors:[accent.opacity(scope == "all" ? 0.035:0.07),.clear,Color.black.opacity(0.34)],startPoint:.topLeading,endPoint:.bottomTrailing)
             Canvas { context,size in
                 var pattern=Path()
-                if scope == "all" {
-                    for offset in stride(from:CGFloat(-100),through:500,by:80){
-                        pattern.move(to:CGPoint(x:size.width+offset,y:-80))
-                        pattern.addCurve(to:CGPoint(x:-120,y:size.height*0.8+offset),control1:CGPoint(x:size.width*0.12+offset,y:size.height*0.18),control2:CGPoint(x:size.width*1.3,y:size.height*0.58+offset))
-                    }
+                switch scope {
+                case "ejj":
+                    // Blueprints: a broad technical grid, with sparse registration marks.
+                    let step:CGFloat=72
+                    for x in stride(from:CGFloat(0),through:size.width,by:step){pattern.move(to:CGPoint(x:x,y:0));pattern.addLine(to:CGPoint(x:x,y:size.height))}
+                    for y in stride(from:CGFloat(0),through:size.height,by:step){pattern.move(to:CGPoint(x:0,y:y));pattern.addLine(to:CGPoint(x:size.width,y:y))}
+                    context.stroke(pattern,with:.color(accent.opacity(0.14)),lineWidth:0.7)
+                    var markers=Path()
+                    for y in stride(from:CGFloat(72),through:size.height,by:144){for x in stride(from:CGFloat(72),through:size.width,by:144){markers.move(to:CGPoint(x:x-5,y:y));markers.addLine(to:CGPoint(x:x+5,y:y));markers.move(to:CGPoint(x:x,y:y-5));markers.addLine(to:CGPoint(x:x,y:y+5))}}
+                    context.stroke(markers,with:.color(accent.opacity(0.25)),lineWidth:1)
+                case "band":
+                    // Stage spotlights and large vinyl grooves, rather than repeated icons.
+                    for index in 0..<3 {let x=size.width*CGFloat(index+1)/4;var beam=Path();beam.move(to:CGPoint(x:x,y:0));beam.addLine(to:CGPoint(x:x-110,y:size.height));beam.addLine(to:CGPoint(x:x+110,y:size.height));beam.closeSubpath();context.fill(beam,with:.linearGradient(Gradient(colors:[accent.opacity(0.09),.clear]),startPoint:CGPoint(x:x,y:0),endPoint:CGPoint(x:x,y:size.height)))}
+                    for radius in stride(from:CGFloat(110),through:330,by:28){pattern.addEllipse(in:CGRect(x:size.width-radius,y:size.height*0.62-radius,width:radius*2,height:radius*2))}
+                    context.stroke(pattern,with:.color(accent.opacity(0.12)),lineWidth:1)
+                case "moshia":
+                    // A book's double folio border and gently drawn landscape at its foot.
+                    pattern.addRoundedRect(in:CGRect(x:14,y:24,width:max(0,size.width-28),height:max(0,size.height-48)),cornerSize:CGSize(width:4,height:4))
+                    pattern.addRoundedRect(in:CGRect(x:21,y:31,width:max(0,size.width-42),height:max(0,size.height-62)),cornerSize:CGSize(width:2,height:2))
+                    for row in 0..<5 {let y=size.height*0.68+CGFloat(row)*30;pattern.move(to:CGPoint(x:20,y:y));pattern.addCurve(to:CGPoint(x:size.width-20,y:y+90),control1:CGPoint(x:size.width*0.35,y:y-80),control2:CGPoint(x:size.width*0.68,y:y+150))}
+                    context.stroke(pattern,with:.color(accent.opacity(0.16)),lineWidth:0.8)
+                case "school":
+                    for y in stride(from:CGFloat(40),through:size.height,by:38){pattern.move(to:CGPoint(x:0,y:y));pattern.addLine(to:CGPoint(x:size.width,y:y))}
+                    context.stroke(pattern,with:.color(accent.opacity(0.13)),lineWidth:0.7)
+                    var margin=Path();margin.move(to:CGPoint(x:34,y:0));margin.addLine(to:CGPoint(x:34,y:size.height));context.stroke(margin,with:.color(Color(red:0.86,green:0.54,blue:0.43).opacity(0.22)),lineWidth:1)
+                case "capture":
+                    for y in stride(from:CGFloat(140),through:size.height,by:180){pattern.move(to:CGPoint(x:24,y:y));pattern.addLine(to:CGPoint(x:size.width-24,y:y))}
+                    context.stroke(pattern,with:.color(accent.opacity(0.07)),lineWidth:1)
+                case "spaces":
+                    for y in stride(from:CGFloat(0),through:size.height,by:120){for x in stride(from:CGFloat(0),through:size.width,by:120){pattern.addRoundedRect(in:CGRect(x:x+14,y:y+14,width:92,height:92),cornerSize:CGSize(width:20,height:20))}}
+                    context.stroke(pattern,with:.color(accent.opacity(0.04)),lineWidth:1)
+                default:
+                    for offset in stride(from:CGFloat(-100),through:500,by:80){pattern.move(to:CGPoint(x:size.width+offset,y:-80));pattern.addCurve(to:CGPoint(x:-120,y:size.height*0.8+offset),control1:CGPoint(x:size.width*0.12+offset,y:size.height*0.18),control2:CGPoint(x:size.width*1.3,y:size.height*0.58+offset))}
+                    context.stroke(pattern,with:.color(accent.opacity(scope == "personal" ? 0.12:0.065)),lineWidth:0.8)
                 }
-                let step:CGFloat=scope == "school" ? 48:scope == "personal" ? 32:48
-                for y in stride(from:CGFloat(0),through:size.height,by:step) {
-                    for x in stride(from:CGFloat(0),through:size.width,by:step) {
-                        switch scope {
-                        case "ejj":
-                            pattern.move(to:CGPoint(x:x-2,y:y));pattern.addLine(to:CGPoint(x:x+2,y:y))
-                            pattern.move(to:CGPoint(x:x,y:y-2));pattern.addLine(to:CGPoint(x:x,y:y+2))
-                        case "band":
-                            pattern.move(to:CGPoint(x:x,y:y+2));pattern.addQuadCurve(to:CGPoint(x:x+10,y:y+2),control:CGPoint(x:x+5,y:y-3))
-                        case "moshia":
-                            pattern.move(to:CGPoint(x:x,y:y-2));pattern.addLine(to:CGPoint(x:x+2,y:y));pattern.addLine(to:CGPoint(x:x,y:y+2));pattern.addLine(to:CGPoint(x:x-2,y:y));pattern.closeSubpath()
-                        case "school":
-                            pattern.move(to:CGPoint(x:x,y:y));pattern.addLine(to:CGPoint(x:x+step,y:y))
-                        case "personal":pattern.addEllipse(in:CGRect(x:x,y:y,width:1.5,height:1.5))
-                        default:break
-                        }
-                    }
-                }
-                context.stroke(pattern,with:.color(accent.opacity(scope == "all" ? 0.065:0.13)),lineWidth:0.8)
             }
         }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }
+}
+struct WorkspacePanel:View {
+    var scope:String
+    var body:some View {LinearGradient(colors:[WorkspaceTheme.accent(scope).opacity(0.15),WorkspaceTheme.base(scope).opacity(0.96)],startPoint:.topLeading,endPoint:.bottomTrailing)}
 }
 struct SpaceMark: View {
     var space:SpaceDefinition

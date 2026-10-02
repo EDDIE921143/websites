@@ -27,11 +27,12 @@ struct NativeCapture:View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...7).font(.body).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
+                    Label("A thought, a plan, something to keep.",systemImage:"square.and.pencil").font(.subheadline).foregroundStyle(Design.muted)
+                    TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(3...7).font(.title3).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
                     HStack{Spacer();Button{if !speech.listening{voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Requesting microphone…":speech.listening ? "Stop listening":"Speak",systemImage:speech.listening ? "stop.circle":"mic")}.disabled(speech.requesting)}
                     if let error=speech.message { Text(error).font(.footnote).foregroundStyle(Design.muted) }
                 }
-                Section {
+                Section("Organize it") {
                     Toggle("Choose the space automatically",isOn:$automatic)
                     if !automatic { Picker("Space",selection:$draft.space){ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Picker("Type",selection:$draft.kind){ForEach(Catalog.space(draft.space).modules){Text($0.label).tag($0.kind)}} }
                     DisclosureGroup("Date") { Toggle("Set a date",isOn:$explicitDate);if explicitDate{DatePicker("When",selection:$date)} }
@@ -39,7 +40,7 @@ struct NativeCapture:View {
                 if !draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
                     Section("Preview") { VStack(alignment:.leading,spacing:8){Text(preview.title).font(.body.weight(.medium));Text("\(Catalog.space(preview.space).name) · \(preview.kind)").font(.subheadline).foregroundStyle(Design.muted);if let due=Time.date(preview.due){Text(due,format:.dateTime.weekday().day().month().hour().minute()).font(.subheadline).foregroundStyle(Design.muted)};if preview.space == "moshia"{Text("POSSIBLE — canon only when you choose it.").font(.footnote).foregroundStyle(Design.muted)}} }
                 }
-            }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
+            }.scrollContentBackground(.hidden).background(AppBackdrop(scope:"capture")).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);if let onFinish{onFinish()}else{dismiss()}}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);store.walkthrough?.event("captured");if let onFinish{onFinish()}else{dismiss()}}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save").walkthroughTarget("capture-save",session:store.walkthrough)}}
                 .onChange(of:draft){_,value in store.draft(value);if !value.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("capture-typed")}}
                 .onChange(of:draft.space){_,value in if !Catalog.space(value).modules.contains(where:{$0.kind == draft.kind}){draft.kind=Catalog.space(value).modules[0].kind}}

@@ -99,6 +99,17 @@ import EdizCore
         guard let json=preferences.assistantChats[scope],let data=json.data(using:.utf8) else{return []}
         return (try? JSONDecoder().decode([ConversationEntry].self,from:data)) ?? []
     }
+    func keepMemo(_ file:AssistantAttachment) throws -> AssistantAttachmentInfo {
+        var info=AssistantAttachmentInfo(name:file.name,mimeType:file.mimeType)
+        guard file.mimeType.hasPrefix("audio/") else{return info}
+        let directory=root.appendingPathComponent("ChatMemos",isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        let name=file.id.uuidString+".wav";try file.bytes.write(to:directory.appendingPathComponent(name),options:[.atomic,.completeFileProtection]);info.localFile=name;return info
+    }
+    func memoURL(_ file:AssistantAttachmentInfo) throws -> URL {
+        guard let name=file.localFile,name.hasSuffix(".wav"),UUID(uuidString:String(name.dropLast(4))) != nil else{throw CoreError.database("Recording unavailable")}
+        let url=root.appendingPathComponent("ChatMemos",isDirectory:true).appendingPathComponent(name)
+        guard FileManager.default.fileExists(atPath:url.path) else{throw CoreError.database("Recording unavailable")};return url
+    }
     func saveConversation(_ entries:[ConversationEntry],scope:String) {
         do {
             let data=try JSONEncoder().encode(Array(entries.suffix(40)))

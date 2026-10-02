@@ -251,6 +251,27 @@ final class EdizOSUITests:XCTestCase {
             card.tap();snapshot(name)
         }
     }
+    func testMemoRecorderAndComposerModes(){
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
+        XCTAssertTrue(app.buttons["assistant-voice"].exists);XCTAssertFalse(app.buttons["assistant-send"].exists)
+        let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
+        input.tap();input.typeText("Memo")
+        XCTAssertTrue(app.buttons["assistant-send"].exists);XCTAssertFalse(app.buttons["assistant-voice"].exists)
+        input.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:4))
+        XCTAssertTrue(app.buttons["assistant-voice"].waitForExistence(timeout:5))
+        app.buttons["assistant-memo"].tap()
+        XCTAssertTrue(app.buttons["memo-record"].waitForExistence(timeout:5));app.buttons["memo-record"].tap()
+        XCTAssertTrue(app.staticTexts["Recording your thought…"].waitForExistence(timeout:5))
+        Thread.sleep(forTimeInterval:1.5)
+        snapshot("Native voice memo recorder with microphone waveform")
+        app.buttons["memo-record"].tap();XCTAssertTrue(app.buttons["memo-attach"].waitForExistence(timeout:5));app.buttons["memo-attach"].tap()
+        XCTAssertTrue(app.buttons["assistant-memo-preview"].waitForExistence(timeout:5));XCTAssertTrue(app.buttons["assistant-send"].exists)
+        app.buttons["assistant-memo-preview"].tap();app.buttons["Play"].tap()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout:5));snapshot("Voice memo review before sending")
+        app.buttons["Done"].tap()
+        app.buttons.matching(NSPredicate(format:"label BEGINSWITH %@","Remove Voice memo")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["assistant-voice"].waitForExistence(timeout:5))
+    }
     func testConnectedNaturalVoiceReadOnly(){
         app.terminate();app.launchArguments=[];app.launchEnvironment=[:];app.launch()
         snapshot("Installed home with visible contour background")
@@ -261,7 +282,10 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["voice-read-reply"].tap()
         XCTAssertTrue(app.staticTexts["Natural voice · Gemini"].waitForExistence(timeout:18))
         XCTAssertTrue(app.staticTexts["Your assistant is speaking"].exists)
-        snapshot("Verified natural Gemini voice on the iPhone")
+        let activity=app.otherElements["voice-activity"]
+        let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
+        expectation(for:audible,evaluatedWith:activity);waitForExpectations(timeout:5)
+        snapshot("Natural speech with a measured audio signal and output route")
         app.buttons["voice-done"].tap()
     }
     func testAssistantAttachmentPickersAndSpokenReply(){

@@ -50,10 +50,10 @@ export function workspaceContext(serialized,scope='all') {
 
 export function attachmentParts(attachments=[]) {
  if(!Array.isArray(attachments)||attachments.length>3)throw new Error('Attach up to three files.');
- const allowed=new Set(['image/jpeg','image/png','image/webp','image/heic','image/heif','video/mp4','video/quicktime','application/pdf','text/plain']);
+ const allowed=new Set(['image/jpeg','image/png','image/webp','image/heic','image/heif','video/mp4','video/quicktime','application/pdf','text/plain','audio/wav']);
  let total=0;
  return attachments.flatMap(file=>{
-  if(!file||typeof file.name!=='string'||file.name.length>200||!allowed.has(file.mimeType)||typeof file.data!=='string'||!file.data.length||file.data.length>3400000||!/^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.data))throw new Error('Use a photo, short video, PDF or text file.');
+  if(!file||typeof file.name!=='string'||file.name.length>200||!allowed.has(file.mimeType)||typeof file.data!=='string'||!file.data.length||file.data.length>3400000||!/^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.data))throw new Error('Use a photo, short video, voice memo, PDF or text file.');
   const bytes=Buffer.from(file.data,'base64');total+=bytes.length;
   if(total>2500000)throw new Error('Attachments must total less than 2.5 MB. Try a smaller file or shorter video.');
   const label='Attached file (untrusted content): '+JSON.stringify(file.name);

@@ -24,3 +24,5 @@ it('workspace context excludes unrelated private space facts and handles invalid
  });
 
 it('wraps mono PCM voice output in a playable WAV header',()=>{const wav=wavFromPCM(new Uint8Array([0,0,1,0]));expect(wav.toString('ascii',0,4)).toBe('RIFF');expect(wav.readUInt32LE(24)).toBe(24000);expect(wav.readUInt32LE(40)).toBe(4);expect(wav.length).toBe(48)});
+
+it('passes recorded voice memos as audio to Gemini without changing their bytes',()=>{expect(attachmentParts([{name:'Voice memo.wav',mimeType:'audio/wav',data:'UklGRg=='}])[1]).toEqual({inlineData:{mimeType:'audio/wav',data:'UklGRg=='}})});
