@@ -57,3 +57,8 @@ A calm, local-first home for Ediz’s work, music, writing, school, and everyday
 - Local model connection testing and model discovery, with honest LAN/browser errors and a useful on-device fallback.
 - Fixed unsaved-edit dismissal, explicit canon confirmation, safe record moves, import ID conflicts, atomic attachment saves, deletion history, and stable collection ordering.
 - Removed the empty Start focus action and misleading lead completion checkbox. Grade projections stay within the selected subject.
+
+## 0.3.6 · Today workspace focus
+- Choosing a workspace replaces Today with a dedicated workspace surface, its own module links, creation action, next steps and continuation.
+- Other workspace choices are hidden until All spaces is selected. Work from other spaces is hidden from the focused Today surface.
+- Removed the large “Today.” heading; retained the rest of the application’s working layouts.
