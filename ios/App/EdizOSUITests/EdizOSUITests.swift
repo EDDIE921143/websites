@@ -177,7 +177,9 @@ final class EdizOSUITests:XCTestCase {
         app.terminate()
         app.launchArguments=[];app.launchEnvironment=[:];app.launch()
         app.buttons["Settings and backup"].tap()
-        app.staticTexts["Review saved context"].tap()
+        let contextLink=app.buttons["Review saved context"]
+        for _ in 0..<4 {if contextLink.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(contextLink.isHittable);contextLink.tap()
         XCTAssertTrue(app.buttons["refresh-assistant-context"].waitForExistence(timeout:5))
         snapshot("Imported assistant context in Settings")
         app.navigationBars.buttons.firstMatch.tap();app.navigationBars.buttons.firstMatch.tap()
@@ -192,13 +194,28 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(ejj.waitForExistence(timeout:5));ejj.tap()
         snapshot("EJJ Digital business workspace chat")
         app.navigationBars.buttons.firstMatch.tap()
-        app.buttons["assistant-workspace-moshia"].tap()
+        if !app.buttons["assistant-workspace-ejj"].waitForExistence(timeout:3) {app.navigationBars.buttons.firstMatch.tap()}
+        let story=app.buttons["assistant-workspace-moshia"]
+        for _ in 0..<3 {if story.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(story.isHittable);story.tap()
         snapshot("Moshia story workspace chat")
         for (scope,name) in [("band","CLEARANCE 19 rehearsal room chat"),("school","School study desk chat"),("personal","Personal notebook chat")] {
             app.navigationBars.buttons.firstMatch.tap()
             let card=app.buttons["assistant-workspace-"+scope]
             if !card.isHittable {app.swipeUp()}
             card.tap();snapshot(name)
+        }
+    }
+    func testDistinctWorkspaceChatLayouts(){
+        app.tabBars.buttons["Assistant"].tap()
+        for (scope,heading) in [("ejj","BUSINESS WORKSPACE"),("band","Your rehearsal room"),("moshia","The story workspace"),("school","Study desk"),("personal","Your notebook"),("all","Your day, together.")] {
+            let card=app.buttons["assistant-workspace-"+scope]
+            for _ in 0..<3 {if card.isHittable{break};app.swipeUp()}
+            if !card.isHittable {app.swipeDown()}
+            XCTAssertTrue(card.isHittable);card.tap()
+            XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout:5))
+            snapshot("Distinct chat design "+scope)
+            app.navigationBars.buttons.firstMatch.tap()
         }
     }
     func testDensityChangesAllAssistantCardsImmediately(){
