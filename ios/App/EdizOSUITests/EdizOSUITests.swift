@@ -149,6 +149,29 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.navigationBars["EJJ Digital"].waitForExistence(timeout:5))
         XCTAssertFalse(app.staticTexts["Hello"].exists)
         snapshot("Dedicated EJJ Digital chat")
+        app.terminate();app.launchArguments.removeAll{$0 == "-reset-test-data"};app.launch()
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
+        XCTAssertTrue(app.staticTexts["Hello"].waitForExistence(timeout:5))
+        snapshot("Conversation restored after app restart")
+    }
+    func testTutorialCoversEveryStepAndReturnsToSettings(){
+        app.buttons["Settings and backup"].tap()
+        let guide=app.buttons["settings-tutorial"]
+        for _ in 0..<5{if guide.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(guide.waitForExistence(timeout:5));guide.tap()
+        XCTAssertTrue(app.staticTexts["Make room for your day"].waitForExistence(timeout:5))
+        snapshot("Tutorial welcome and clear navigation")
+        let next=app.buttons["tutorial-next"]
+        for number in 1...9 {
+            next.tap()
+            XCTAssertTrue(app.staticTexts["Step \(number+1) of 10"].waitForExistence(timeout:3))
+            if number == 5{snapshot("Tutorial assistant guidance")}
+        }
+        XCTAssertTrue(app.staticTexts["Keep your work safe"].exists)
+        snapshot("Tutorial backup and privacy guidance")
+        next.tap();XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout:5))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.tabBars.buttons["Assistant"].exists)
     }
     func testInstalledContextAndWorkspaceBackgroundsReadOnly(){
         app.terminate()
@@ -167,10 +190,16 @@ final class EdizOSUITests:XCTestCase {
         app.tabBars.buttons["Assistant"].tap()
         let ejj=app.buttons["assistant-workspace-ejj"]
         XCTAssertTrue(ejj.waitForExistence(timeout:5));ejj.tap()
-        snapshot("EJJ Digital subtle blue background")
+        snapshot("EJJ Digital business workspace chat")
         app.navigationBars.buttons.firstMatch.tap()
         app.buttons["assistant-workspace-moshia"].tap()
-        snapshot("Moshia subtle warm background")
+        snapshot("Moshia story workspace chat")
+        for (scope,name) in [("band","CLEARANCE 19 rehearsal room chat"),("school","School study desk chat"),("personal","Personal notebook chat")] {
+            app.navigationBars.buttons.firstMatch.tap()
+            let card=app.buttons["assistant-workspace-"+scope]
+            if !card.isHittable {app.swipeUp()}
+            card.tap();snapshot(name)
+        }
     }
     func testDensityChangesAllAssistantCardsImmediately(){
         app.tabBars.buttons["Assistant"].tap()

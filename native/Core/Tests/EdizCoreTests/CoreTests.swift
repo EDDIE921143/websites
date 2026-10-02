@@ -2,6 +2,16 @@ import XCTest
 @testable import EdizCore
 final class CoreTests: XCTestCase {
     let now=Time.date("2026-10-01T10:00:00Z")!
+    func testConversationSettingsSurviveDatabaseAndFullBackup() throws {
+        let db=try database();var preferences=try db.preferences()
+        preferences.assistantChats=["ejj":"A saved conversation","moshia":"A different conversation"]
+        try db.setPreferences(preferences)
+        XCTAssertEqual(try db.preferences().assistantChats,preferences.assistantChats)
+        let backup=try JSONDecoder().decode(Backup.self,from:db.backupData())
+        XCTAssertEqual(backup.settings.assistantChats,preferences.assistantChats)
+        let legacy=try JSONDecoder().decode(Preferences.self,from:Data("{}".utf8))
+        XCTAssertTrue(legacy.assistantChats.isEmpty)
+    }
     func testWorkspaceImportKeepsEditsAndExistingChapterSummaries() {
         var brief=Record(space:"ejj",kind:"note",title:"Workspace brief",now:now)
         brief.id="ediz-context-ejj";brief.body="Previous brief"

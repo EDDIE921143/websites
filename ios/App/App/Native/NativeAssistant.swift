@@ -2,8 +2,8 @@ import SwiftUI
 import WebKit
 import EdizCore
 
-struct ConversationEntry:Identifiable {
-    let id=UUID()
+struct ConversationEntry:Identifiable,Codable {
+    var id=UUID()
     let role:String
     let text:String
     var records:[EdizCore.Record]=[]
@@ -11,6 +11,7 @@ struct ConversationEntry:Identifiable {
     var actions:[GeminiProposal]=[]
     var sources:[AssistantSource]=[]
     var searchSuggestions:String?
+    var provider:String?
 }
 enum LocalAssistant {
     static func baseURL(_ endpoint:String) throws -> URL {
@@ -50,7 +51,10 @@ enum LocalAssistant {
 struct NativeAssistant:View {
     @EnvironmentObject var store:NativeStore
     @Environment(\.edizCompact) private var compact
-    @State private var chats:[String:[ConversationEntry]]=[:]
+    @Environment(\.dynamicTypeSize) private var textSize
+    @ScaledMetric(relativeTo:.body) private var cardHeight:CGFloat=166
+    @ScaledMetric(relativeTo:.body) private var rowHeight:CGFloat=88
+    private var rows:Bool{compact || textSize >= .xxLarge}
     @State private var drafts:[String:String]=[:]
     var body:some View {
         ScrollView {
@@ -60,7 +64,7 @@ struct NativeAssistant:View {
                     Text("Choose a space. Each conversation starts with your saved context.")
                         .font(Design.font(16,weight:"Regular")).foregroundStyle(Design.muted)
                 }.padding(.top,12)
-                LazyVGrid(columns:compact ? [GridItem(.flexible())]:[GridItem(.flexible()),GridItem(.flexible())],spacing:compact ? 10:14) {
+                LazyVGrid(columns:rows ? [GridItem(.flexible())]:[GridItem(.flexible()),GridItem(.flexible())],spacing:compact ? 10:14) {
                     workspace("all","Everyday","bubble.left.and.bubble.right.fill")
                     ForEach(Catalog.spaces) { space in
                         workspace(space.id,space.name,SpaceMark(space:space).symbol)
@@ -71,16 +75,23 @@ struct NativeAssistant:View {
     }
     func workspace(_ id:String,_ title:String,_ symbol:String)->some View {
         NavigationLink {
-            NativeAssistantChat(entries:Binding(get:{chats[id] ?? []},set:{chats[id]=$0}),
+            NativeAssistantChat(entries:Binding(get:{store.conversation(id)},set:{store.saveConversation($0,scope:id)}),
                                 question:Binding(get:{drafts[id] ?? ""},set:{drafts[id]=$0}),scope:id)
         } label: {
-            (compact ? AnyLayout(HStackLayout(spacing:14)):AnyLayout(VStackLayout(spacing:12))) {
-                Image(systemName:symbol).font(.system(size:24,weight:.medium)).foregroundStyle(id == "all" ? Design.ink:Design.color(Catalog.space(id).color)).accessibilityHidden(true)
-                Text(title).font(Design.font(15)).multilineTextAlignment(.center).lineLimit(2)
-            }.padding(.horizontal,10).frame(maxWidth:.infinity).frame(height:compact ? 64:124)
-                .foregroundStyle(Design.ink).background(.regularMaterial,in:RoundedRectangle(cornerRadius:28))
-                .overlay(RoundedRectangle(cornerRadius:28).fill((id == "all" ? Design.ink:Design.color(Catalog.space(id).color)).opacity(0.055)).allowsHitTesting(false))
-                .contentShape(RoundedRectangle(cornerRadius:28))
+            let accent=id == "all" ? Design.ink:Design.color(Catalog.space(id).color)
+            (rows ? AnyLayout(HStackLayout(spacing:14)):AnyLayout(VStackLayout(alignment:.leading,spacing:12))) {
+                Image(systemName:symbol).font(.system(size:22,weight:.medium))
+                    .foregroundStyle(accent).frame(width:44,height:44)
+                    .background(accent.opacity(0.16),in:RoundedRectangle(cornerRadius:14)).accessibilityHidden(true)
+                VStack(alignment:.leading,spacing:5) {
+                    Text(title).font(.headline).foregroundStyle(Design.ink).lineLimit(2)
+                    let count=store.records.filter{id == "all" || $0.space == id}.count
+                    Text(count == 0 ? "Start a conversation":"\(count) saved records")
+                        .font(.caption).foregroundStyle(Design.muted).lineLimit(1)
+                }.frame(maxWidth:.infinity,alignment:.leading)
+            }.padding(16).frame(maxWidth:.infinity,alignment:.leading).frame(minHeight:rows ? rowHeight:cardHeight)
+                .background(Design.surface,in:RoundedRectangle(cornerRadius:compact ? 16:22))
+                .contentShape(RoundedRectangle(cornerRadius:22))
         }.buttonStyle(.plain).accessibilityIdentifier("assistant-workspace-"+id)
     }
 }
@@ -91,48 +102,82 @@ struct NativeAssistantChat:View {
     let scope:String
     @Environment(\.edizCompact) private var compact
     @State private var proposal:GeminiProposal?
-    @State private var cloud=true
+    @State private var mode="cloud"
     var accent:Color {scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)}
+    var corners:CGFloat {scope == "moshia" ? 12:scope == "ejj" || scope == "school" ? 16:24}
+    var contextTitle:String {switch scope{case "ejj":return "Business context";case "band":return "Band notes";case "moshia":return "Story context";case "school":return "Study notes";case "personal":return "Your saved notes";default:return "Across your spaces"}}
+    var opening:String {switch scope{case "ejj":return "What are we building?";case "band":return "What are we rehearsing?";case "moshia":return "Where does the story go next?";case "school":return "What needs your attention?";case "personal":return "What would you like to keep?";default:return "What’s on your mind, Ediz?"}}
     var scopedRecords:[EdizCore.Record]{store.records.filter{scope == "all" || $0.space == scope}}
     @State private var busy=false
-    @State private var model=false
+    @State private var failedQuestion:String?
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @State private var message:String?
     @FocusState private var typing:Bool
     var body:some View {
         ScrollViewReader{reader in
             ScrollView{conversation}
                 .scrollDismissesKeyboard(.interactively)
-                .onChange(of:entries.count){_,_ in if let id=entries.last?.id{reader.scrollTo(id,anchor:.bottom)}}
+                .onChange(of:entries.count){_,_ in scrollToBottom(reader)}
+                .onChange(of:busy){_,_ in scrollToBottom(reader)}
                 .safeAreaInset(edge:.bottom){composer}
         }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
+            .onAppear{if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
             .toolbar { ToolbarItem(placement:.topBarTrailing) { Menu {
-                if store.assistantToken != nil { Toggle("Use Gemini",isOn:$cloud) }
-                if store.preferences.labs { Toggle("Use my local model",isOn:$model) }
+                Picker("Assistant",selection:$mode) {
+                    if store.assistantToken != nil { Text("Gemini").tag("cloud") }
+                    if store.preferences.labs { Text("Local model").tag("local") }
+                    Text("Saved context").tag("saved")
+                }
+                NavigationLink("Review saved context"){NativeAssistantContext()}
                 Text("Context: \(scopedRecords.count) saved records")
             } label: { Image(systemName:"info.circle") }.accessibilityLabel("Chat context") } }
     }
+    func scrollToBottom(_ reader:ScrollViewProxy) {
+        Task{@MainActor in await Task.yield();withAnimation(reducedMotion ? nil:.easeOut(duration:0.18)){reader.scrollTo("conversation-bottom",anchor:.bottom)}}
+    }
     var conversation:some View {
         VStack(alignment:.leading,spacing:compact ? 12:22){
-            HStack(spacing:10){
-                Image(systemName:scope == "all" ? "bubble.left.and.bubble.right.fill":SpaceMark(space:Catalog.space(scope)).symbol).font(.title2)
-                Text(scope == "all" ? "Your whole day":Catalog.space(scope).summary).font(.subheadline)
-            }.foregroundStyle(scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)).padding(.vertical,8)
+            NativeChatHeader(scope:scope)
             if entries.isEmpty {
-                Text(scope == "all" ? "What’s on your mind, Ediz?":"Let’s talk about "+Catalog.space(scope).name+".").font(Design.font(21,relativeTo:.title3)).padding(.top,12)
-                Text(Priority.briefing(scopedRecords,focus:scope)).font(Design.font(16,weight:"Regular")).foregroundStyle(Design.muted)
-                VStack(spacing:9){ForEach(prompts,id:\.self){forPrompt($0)}}
+                Text(opening).font(scope == "moshia" ? .system(.title2,design:.serif):.title3.weight(.medium)).padding(.top,4)
+                Surface {
+                    VStack(alignment:.leading,spacing:9) {
+                        Label(contextTitle,systemImage:scope == "moshia" ? "book.closed":"tray.full.fill").font(.subheadline.weight(.medium)).foregroundStyle(accent)
+                        if let brief=scopedRecords.first(where:{$0.data["contextType"] == "workspace-brief" && (scope != "all" || $0.space == "personal")}) {
+                            Text(brief.body).font(.subheadline).foregroundStyle(Design.muted).lineLimit(3)
+                        } else {Text("Ask a question or capture something you want to keep.").font(.subheadline).foregroundStyle(Design.muted)}
+                        NavigationLink("Review context"){NativeAssistantContext()}.font(.subheadline)
+                    }
+                }
+                if scope == "band" || scope == "school" {
+                    HStack(alignment:.top,spacing:10){ForEach(Array(prompts.prefix(2)),id:\.self){prompt in
+                        Button{question=prompt;send()}label:{VStack(alignment:.leading,spacing:12){Image(systemName:scope == "band" ? "music.note":"pencil").foregroundStyle(accent);Text(prompt).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading).foregroundStyle(Design.ink)}.padding(16).frame(maxWidth:.infinity,minHeight:104,alignment:.topLeading).background(Design.surface,in:RoundedRectangle(cornerRadius:corners))}.buttonStyle(.plain)
+                    }}
+                    if let last=prompts.last{forPrompt(last)}
+                } else {VStack(spacing:8){ForEach(prompts,id:\.self){forPrompt($0)}}}
             }
             ForEach(entries){entry in entryView(entry).id(entry.id)}
             if busy{HStack(spacing:9){ProgressView();Text("Thinking through your context…").font(.subheadline).foregroundStyle(Design.muted)}}
-            if let message{Text(message).font(.footnote).foregroundStyle(Design.muted)}
+            if let message {
+                Surface {VStack(alignment:.leading,spacing:10) {
+                    Label("Couldn’t get a reply",systemImage:"exclamationmark.bubble").font(.subheadline.weight(.medium))
+                    Text(message).font(.footnote).foregroundStyle(Design.muted)
+                    if let failedQuestion {Button("Try again") {
+                        question=failedQuestion
+                        if entries.last?.role == "user",entries.last?.text == failedQuestion{entries.removeLast()}
+                        send()
+                    }.buttonStyle(ActionStyle()).accessibilityIdentifier("assistant-retry")}
+                }}
+            }
+            Color.clear.frame(height:1).id("conversation-bottom")
         }.padding(20)
     }
     @ViewBuilder func entryView(_ entry:ConversationEntry)->some View {
         VStack(alignment:entry.role == "user" ? .trailing:.leading,spacing:10){
             if entry.role == "user" {
-                Text(entry.text).font(Design.font(16,weight:"Regular")).padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:23)).frame(maxWidth:.infinity,alignment:.trailing)
+                Text(entry.text).font(Design.font(16,weight:"Regular")).padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:corners)).frame(maxWidth:.infinity,alignment:.trailing)
             } else {
-                VStack(alignment:.leading,spacing:10){Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
+                VStack(alignment:.leading,spacing:10){if let provider=entry.provider{Text(provider).font(.caption.weight(.medium)).foregroundStyle(accent)};Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
                     ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
                     ForEach(entry.actions){action in Button("Review: "+action.title){proposal=action}.buttonStyle(ActionStyle())}
                     ForEach(entry.sources,id:\.url) { source in
@@ -140,7 +185,7 @@ struct NativeAssistantChat:View {
                     }
                     if let html=entry.searchSuggestions,!html.isEmpty { NativeSearchSuggestions(html:html).frame(height:110) }
                     if let draft=entry.draft{Button("Review reminder"){store.captureRequest=draft}.buttonStyle(ActionStyle())}
-                }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(.regularMaterial,in:RoundedRectangle(cornerRadius:23))
+                }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:corners))
             }
         }
     }
@@ -167,27 +212,76 @@ struct NativeAssistantChat:View {
                     .background(accent,in:Circle())
             }.disabled(busy || question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel("Send question")
-        }.padding(8).background(.regularMaterial,in:RoundedRectangle(cornerRadius:28))
+        }.padding(8).background(Design.raised,in:RoundedRectangle(cornerRadius:corners))
             .padding(.horizontal,16).padding(.bottom,8)
     }
-    func forPrompt(_ prompt:String)->some View{GlassAction{Button{question=prompt;send()}label:{Text(prompt).font(Design.font(14)).frame(maxWidth:.infinity,minHeight:46)}}}
+    func forPrompt(_ prompt:String)->some View {
+        Button{question=prompt;send()}label:{HStack(spacing:12){Text(prompt).font(.subheadline).multilineTextAlignment(.leading);Spacer();Image(systemName:"arrow.up.left").font(.caption).foregroundStyle(accent)}.padding(.horizontal,16).padding(.vertical,12).frame(minHeight:52).foregroundStyle(Design.ink).background(Design.surface,in:RoundedRectangle(cornerRadius:corners))}.buttonStyle(.plain)
+    }
     func send(){
         let q=question.trimmingCharacters(in:.whitespacesAndNewlines);guard !q.isEmpty,!busy else{return}
         let prior=(entries.last(where:{$0.role == "assistant"})?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}
         let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity.filter{scope == "all" || Set(scopedRecords.map(\.id)).contains($0.entityId)},focus:scope,previous:prior)
-        let conversation=entries;entries.append(ConversationEntry(role:"user",text:q));question="";typing=false;message=nil
-        if cloud,let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope);entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions))}catch{message=error.localizedDescription;entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft))}};return}
-        guard model,store.preferences.labs,let endpoint=store.preferences.localEndpoint,!endpoint.isEmpty,reply.draft == nil else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft));return}
+        let conversation=entries;entries.append(ConversationEntry(role:"user",text:q));question="";typing=false;message=nil;failedQuestion=nil
+        if mode == "cloud",let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope);entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:"Gemini"))}catch{message=error.localizedDescription;failedQuestion=q}};return}
+        guard mode == "local" else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft,provider:"Saved context"));return}
+        guard store.preferences.labs,let endpoint=store.preferences.localEndpoint,!endpoint.isEmpty else{message="Add your local model’s network address and test the connection in Settings.";failedQuestion=q;return}
         busy=true
         let context=reply.records.isEmpty ? Array(scopedRecords.prefix(50)):reply.records
         Task{@MainActor in
             defer{busy=false}
-            do{let answer=try await LocalAssistant.answer(endpoint:endpoint,question:q,context:context,conversation:conversation);entries.append(ConversationEntry(role:"assistant",text:answer,records:reply.records))}
-            catch{message="Your local model couldn’t be reached. Here’s what your saved information tells me.";entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records))}
+            do{let answer=try await LocalAssistant.answer(endpoint:endpoint,question:q,context:context,conversation:conversation);entries.append(ConversationEntry(role:"assistant",text:answer,records:reply.records,provider:"Local model"))}
+            catch{message="Your local model couldn’t be reached. Check the connection in Settings, or choose Saved context from the chat menu.";failedQuestion=q}
         }
     }
 }
 
+struct NativeChatHeader:View {
+    @EnvironmentObject var store:NativeStore
+    let scope:String
+    @Environment(\.dynamicTypeSize) private var textSize
+    var accent:Color{scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)}
+    func count(_ kind:String)->Int{store.records.filter{$0.space == scope && $0.kind == kind}.count}
+    func badge(_ title:String,_ value:Int)->some View {
+        Text("\(value) "+title).font(.caption.weight(.medium)).foregroundStyle(accent).padding(.horizontal,11).padding(.vertical,7).background(accent.opacity(0.10),in:Capsule())
+    }
+    @ViewBuilder func badges(_ first:String,_ firstCount:Int,_ second:String,_ secondCount:Int)->some View {
+        if textSize >= .xxLarge {VStack(alignment:.leading,spacing:8){badge(first,firstCount);badge(second,secondCount)}}
+        else {HStack(spacing:8){badge(first,firstCount);badge(second,secondCount)}}
+    }
+    var body:some View {
+        Group {
+            switch scope {
+            case "ejj":
+                VStack(alignment:.leading,spacing:16){
+                    HStack{Text("BUSINESS WORKSPACE").font(.caption).tracking(1.5);Spacer();Image(systemName:"rectangle.3.group.fill").font(.title2)}.foregroundStyle(accent)
+                    Text("EJJ Digital").font(.title.weight(.semibold))
+                    badges("leads",count("lead"),"websites",count("website"))
+                }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:18))
+            case "band":
+                VStack(alignment:.leading,spacing:16){
+                    HStack(alignment:.center){VStack(alignment:.leading,spacing:8){Text("CLEARANCE 19").font(.title2.weight(.bold));Text("Your rehearsal room").font(.subheadline).foregroundStyle(Design.muted)};Spacer();Image(systemName:"waveform").font(.system(size:42,weight:.medium)).foregroundStyle(accent).accessibilityHidden(true)}
+                    badges("songs",count("song"),"rehearsals",count("rehearsal"))
+                }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(accent.opacity(0.10),in:RoundedRectangle(cornerRadius:28))
+            case "moshia":
+                HStack(alignment:.top,spacing:18){
+                    RoundedRectangle(cornerRadius:3).fill(accent).frame(width:5,height:106)
+                    VStack(alignment:.leading,spacing:12){Text("Moshia").font(.system(.largeTitle,design:.serif).weight(.medium));Text("The story workspace").font(.subheadline).foregroundStyle(Design.muted);badges("chapters",count("chapter"),"threads",count("thread"))}
+                }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:12))
+            case "school":
+                VStack(alignment:.leading,spacing:16){
+                    Label("Study desk",systemImage:"graduationcap.fill").font(.system(.title2,design:.rounded).weight(.semibold)).foregroundStyle(accent)
+                    badges("homework",count("assignment"),"tests",count("exam"))
+                    Text("One subject. One next step.").font(.subheadline).foregroundStyle(Design.muted)
+                }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:16))
+            case "personal":
+                HStack(alignment:.top,spacing:16){Image(systemName:"text.book.closed.fill").font(.title).foregroundStyle(accent);VStack(alignment:.leading,spacing:12){Text("Your notebook").font(.system(.title2,design:.rounded).weight(.medium));Text("A place for the everyday things.").font(.subheadline).foregroundStyle(Design.muted);badges("tasks",count("task"),"notes",count("note"))}}.padding(.vertical,14)
+            default:
+                VStack(alignment:.leading,spacing:14){Text("Your day, together.").font(.title2.weight(.medium));HStack(spacing:12){ForEach(Catalog.spaces){space in SpaceMark(space:space)}}.accessibilityHidden(true);Text("A conversation across all your spaces.").font(.subheadline).foregroundStyle(Design.muted)}.padding(.vertical,10)
+            }
+        }.foregroundStyle(Design.ink)
+    }
+}
 struct GeminiProposal:Codable,Identifiable {
     var id:String{title+(entityId ?? "")}
     let type:String
@@ -220,7 +314,7 @@ enum GeminiAssistant {
         let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(records.prefix(500))))
         request.httpBody=try JSONSerialization.data(withJSONObject:["question":question,"scope":scope,"records":encoded,"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.text]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier])
         let (data,response)=try await URLSession.shared.data(for:request)
-        guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode) else{let detail=(try? JSONSerialization.jsonObject(with:data)) as? [String:String];throw NSError(domain:"EdizAssistant",code:1,userInfo:[NSLocalizedDescriptionKey:detail?["error"] ?? "Gemini is unavailable. Your on-device result is below."])}
+        guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode) else{let detail=(try? JSONSerialization.jsonObject(with:data)) as? [String:String];throw NSError(domain:"EdizAssistant",code:1,userInfo:[NSLocalizedDescriptionKey:detail?["error"] ?? "Gemini is unavailable. Please try again."])}
         return try JSONDecoder().decode(GeminiResponse.self,from:data)
     }
 }

@@ -91,6 +91,17 @@ import EdizCore
         do{guard let database else{throw CoreError.database("unavailable")};try database.setPreferences(next);preferences=next}catch{self.error=error.localizedDescription}
     }
     func setFocus(_ space: String) { var next=preferences;next.focus=space;setPreferences(next) }
+    func conversation(_ scope:String)->[ConversationEntry] {
+        guard let json=preferences.assistantChats[scope],let data=json.data(using:.utf8) else{return []}
+        return (try? JSONDecoder().decode([ConversationEntry].self,from:data)) ?? []
+    }
+    func saveConversation(_ entries:[ConversationEntry],scope:String) {
+        do {
+            let data=try JSONEncoder().encode(Array(entries.suffix(40)))
+            var next=preferences;next.assistantChats[scope]=String(decoding:data,as:UTF8.self)
+            setPreferences(next)
+        }catch{self.error="This conversation could not be saved. Your records are unchanged."}
+    }
     func setPreferences(_ next: Preferences) { do{try database?.setPreferences(next);preferences=next}catch{self.error=error.localizedDescription} }
     func export() throws -> URL {
         guard let database else{throw CoreError.database("unavailable")}
@@ -103,7 +114,8 @@ import EdizCore
     }
     func markBackupShared() { var next=preferences;next.lastBackup=Time.string(Date());setPreferences(next) }
     func exportProfile() throws -> URL {
-        let settings=try JSONSerialization.jsonObject(with:JSONEncoder().encode(preferences))
+        var profile=preferences;profile.assistantChats=[:]
+        let settings=try JSONSerialization.jsonObject(with:JSONEncoder().encode(profile))
         let spaces=Catalog.spaces.map{space in ["id":space.id,"name":space.name,"modules":space.modules.map{["kind":$0.kind,"label":$0.label]}] as [String:Any]}
         let data=try JSONSerialization.data(withJSONObject:["format":"ediz-profile","version":1,"spaces":spaces,"settings":settings],options:[.prettyPrinted,.sortedKeys])
         let url=FileManager.default.temporaryDirectory.appendingPathComponent("ediz-profile.json")

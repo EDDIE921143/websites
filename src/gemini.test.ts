@@ -1,7 +1,8 @@
 import {describe,it,expect} from 'vitest';
 // @ts-expect-error server module is plain JavaScript
-import {authorized,validateReply,workspaceContext,groundedSources} from '../server/gemini.js';
+import {authorized,validateReply,workspaceContext,groundedSources,parseModelText} from '../server/gemini.js';
 describe('Gemini boundary',()=>{
+ it('keeps natural replies but refuses broken structured output',()=>{expect(parseModelText('A natural answer.').text).toBe('A natural answer.');expect(parseModelText('[Source](https://example.com)').text).toBe('[Source](https://example.com)');expect(parseModelText('```json\n{"text":"Ready","actions":[]}\n```').text).toBe('Ready');expect(()=>parseModelText('{"text":"An unfinished')).toThrow('Incomplete structured reply');});
  it('includes imported chapter context only in its own workspace',()=>{const profile=JSON.stringify({items:[{space:'moshia',kind:'chapter',body:'Saved summary'},{space:'band',kind:'note',body:'Band context'}]});expect(workspaceContext(profile,'moshia')).toHaveLength(1);expect(workspaceContext(profile,'band').map((e:{kind:string})=>e.kind)).toEqual(['note']);});
  it('shows only distinct secure grounding sources from the provider',()=>{expect(groundedSources({groundingChunks:[{web:{uri:'https://example.com/news',title:'Verified source'}},{web:{uri:'https://example.com/news',title:'Duplicate'}},{web:{uri:'javascript:alert(1)',title:'Unsafe'}}]})).toEqual([{url:'https://example.com/news',title:'Verified source'}])});
  it('requires the exact private device credential',()=>{expect(authorized('a'.repeat(64),'a'.repeat(64))).toBe(true);expect(authorized('b'.repeat(64),'a'.repeat(64))).toBe(false);expect(authorized(undefined,undefined)).toBe(false)});

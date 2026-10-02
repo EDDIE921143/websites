@@ -4,8 +4,8 @@ import UIKit
 
 enum Design {
     static let background=Color(red:0.055,green:0.051,blue:0.043)
-    static let surface=Color(red:0.13,green:0.122,blue:0.11)
-    static let raised=Color(red:0.19,green:0.18,blue:0.16)
+    static let surface=Color(red:0.12,green:0.118,blue:0.11)
+    static let raised=Color(red:0.18,green:0.175,blue:0.16)
     static let ink=Color(red:0.94,green:0.92,blue:0.87)
     static let muted=Color(red:0.68,green:0.66,blue:0.62)
     static let accent=ink
@@ -25,7 +25,7 @@ struct AppBackdrop:View {
             LinearGradient(colors:[accent.opacity(scope == "all" ? 0.035:0.10),.clear,accent.opacity(0.025)],startPoint:.topLeading,endPoint:.bottomTrailing)
             Canvas { context,size in
                 var pattern=Path()
-                let step:CGFloat=32
+                let step:CGFloat=scope == "personal" ? 24:36
                 for y in stride(from:CGFloat(0),through:size.height,by:step) {
                     for x in stride(from:CGFloat(0),through:size.width,by:step) {
                         switch scope {
@@ -37,12 +37,12 @@ struct AppBackdrop:View {
                         case "moshia":
                             pattern.move(to:CGPoint(x:x,y:y-2));pattern.addLine(to:CGPoint(x:x+2,y:y));pattern.addLine(to:CGPoint(x:x,y:y+2));pattern.addLine(to:CGPoint(x:x-2,y:y));pattern.closeSubpath()
                         case "school":
-                            pattern.move(to:CGPoint(x:x,y:y));pattern.addLine(to:CGPoint(x:x+8,y:y))
+                            pattern.move(to:CGPoint(x:x,y:y));pattern.addLine(to:CGPoint(x:x+step,y:y))
                         default: pattern.addEllipse(in:CGRect(x:x,y:y,width:1,height:1))
                         }
                     }
                 }
-                context.stroke(pattern,with:.color(accent.opacity(0.065)),lineWidth:0.7)
+                context.stroke(pattern,with:.color(accent.opacity(scope == "all" ? 0.065:0.11)),lineWidth:0.7)
             }
         }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }

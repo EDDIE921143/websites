@@ -107,8 +107,9 @@ public struct Preferences: Codable, Sendable {
     public var recentId: String?
     public var labs: Bool = false
     public var localEndpoint: String?
+    public var assistantChats: [String:String] = [:]
     public init() {}
-    enum CodingKeys:String,CodingKey { case theme,density,focus,lastVisit,lastBackup,recentId,labs,localEndpoint }
+    enum CodingKeys:String,CodingKey { case theme,density,focus,lastVisit,lastBackup,recentId,labs,localEndpoint,assistantChats }
     public init(from decoder:Decoder) throws {
         let c=try decoder.container(keyedBy:CodingKeys.self)
         theme=try c.decodeIfPresent(String.self,forKey:.theme) ?? "dark"
@@ -119,6 +120,7 @@ public struct Preferences: Codable, Sendable {
         recentId=try c.decodeIfPresent(String.self,forKey:.recentId)
         labs=try c.decodeIfPresent(Bool.self,forKey:.labs) ?? false
         localEndpoint=try c.decodeIfPresent(String.self,forKey:.localEndpoint)
+        assistantChats=try c.decodeIfPresent([String:String].self,forKey:.assistantChats) ?? [:]
     }
 }
 public struct Attachment: Codable, Identifiable, Sendable {
