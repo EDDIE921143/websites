@@ -26,3 +26,5 @@ export async function saveCaptureDraft(draft:CaptureDraft|null){const d=await db
 // Typed creation never overwrites the spontaneous quick-capture draft.
 export async function creationDraft(space:string,kind:string){return await (await db).get('settings',`creation:${space}:${kind}`) as Entity|undefined;}
 export async function saveCreationDraft(space:string,kind:string,draft:Entity|null){const database=await db;const key=`creation:${space}:${kind}`;if(draft)await database.put('settings',draft,key);else await database.delete('settings',key);}
+
+export async function installContext(items:unknown[]) {const valid=items.filter(validateEntity).filter(e=>e.kind==='note'&&e.id.startsWith('ediz-context-')&&e.data.contextType==='workspace-brief');const d=await db,tx=d.transaction('entities','readwrite');let count=0;for(const item of valid){if(!await tx.store.get(item.id)){await tx.store.put(item);count++}}await tx.done;return count;}

@@ -106,7 +106,7 @@ struct NativeAssistant:View {
         let prior=(entries.last(where:{$0.role == "assistant"})?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}
         let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity,focus:scope,previous:prior)
         let conversation=entries;entries.append(ConversationEntry(role:"user",text:q));question="";typing=false;message=nil
-        if cloud,let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token);entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions))}catch{message=error.localizedDescription;entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft))}};return}
+        if cloud,let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope);entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions))}catch{message=error.localizedDescription;entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft))}};return}
         guard model,store.preferences.labs,let endpoint=store.preferences.localEndpoint,!endpoint.isEmpty,reply.draft == nil else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft));return}
         busy=true
         let context=reply.records.isEmpty ? Array(store.priorities.prefix(8).map(\.record)):reply.records
@@ -128,10 +128,10 @@ struct GeminiProposal:Codable,Identifiable {
 struct GeminiFields:Codable {var space:String?;var kind:String?;var title:String?;var body:String?;var status:String?;var due:String?;var duration:Int?;var importance:Int?;var data:[String:String]?}
 struct GeminiResponse:Codable {let text:String;let recordIds:[String];let actions:[GeminiProposal]}
 enum GeminiAssistant {
-    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String) async throws -> GeminiResponse {
+    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String) async throws -> GeminiResponse {
         var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!);request.httpMethod="POST";request.timeoutInterval=55;request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
         let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(records.prefix(500))))
-        request.httpBody=try JSONSerialization.data(withJSONObject:["question":question,"records":encoded,"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.text]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier])
+        request.httpBody=try JSONSerialization.data(withJSONObject:["question":question,"scope":scope,"records":encoded,"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.text]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier])
         let (data,response)=try await URLSession.shared.data(for:request)
         guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode) else{let detail=(try? JSONSerialization.jsonObject(with:data)) as? [String:String];throw NSError(domain:"EdizAssistant",code:1,userInfo:[NSLocalizedDescriptionKey:detail?["error"] ?? "Gemini is unavailable. Your on-device result is below."])}
         return try JSONDecoder().decode(GeminiResponse.self,from:data)
