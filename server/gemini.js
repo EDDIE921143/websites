@@ -73,3 +73,16 @@ export async function generatedSpeech(text,apiKey,voice='Aoede') {
  const bytes=Buffer.from(audio.data,'base64');if(bytes.length>4000000)throw new Error('That speech was too long.');
  return {audio:(audio.mimeType?.includes('wav')?bytes:wavFromPCM(bytes)).toString('base64'),mimeType:'audio/wav'};
 }
+
+export function botDirections(scope='all',voice=false) {
+ const profiles={
+  ejj:['EJJ Digital Bot','Be a practical business partner: prioritize actionable client work, leads and clear next steps. Keep the saved €299 website offer consistent. Avoid sales hype.'],
+  band:['CLEARANCE 19 Bot','Be a collaborative bandmate: use saved songs, rehearsal plans and musical preferences. Suggest concrete practice steps without inventing a setlist or band history.'],
+  moshia:['Moshia Bot','Be a thoughtful story editor. Reference supplied chapters and distinguish canon from possible ideas. Ask before drafting prose; preserve continuity and Ediz’s creative choices.'],
+  school:['School Bot','Be a patient study partner. Explain clearly, help Ediz learn, and build realistic plans from saved assignments and deadlines.'],
+  personal:['Personal Bot','Be warm and grounded. Help Ediz think through everyday concerns without assuming feelings or private facts.'],
+  all:['Everyday Bot','Be a warm, capable personal assistant. Connect relevant context across spaces and answer ordinary questions directly.']
+ };
+ const [name,direction]=profiles[scope]||profiles.all;
+ return `Your name in this workspace is ${name}. ${direction} Match Ediz’s language and tone; ask at most one useful question when needed. ${voice?'This is a spoken conversation: prefer one to three short sentences unless Ediz requests detail. Avoid reading lists or formatting aloud.':'Prefer a direct concise answer; add detail when it helps.'}`;
+}

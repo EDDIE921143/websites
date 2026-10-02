@@ -1,4 +1,4 @@
-import {authorized,validateReply,systemPrompt,workspaceContext,groundedSources,parseModelText,attachmentParts,generatedSpeech} from '../server/gemini.js';
+import {authorized,validateReply,systemPrompt,workspaceContext,groundedSources,parseModelText,attachmentParts,generatedSpeech,botDirections} from '../server/gemini.js';
 const requests=new Map();
 export default async function handler(req,res) {
  const apiKey=process.env.GEMINI_API_KEY||process.env.geminiapi;
@@ -22,7 +22,7 @@ export default async function handler(req,res) {
   const models=[...new Set(['gemini-3.1-flash-lite',model])];
   let response;
   for(const candidate of models){
-   response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidate)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},signal:AbortSignal.timeout(20000),body:JSON.stringify({systemInstruction:{parts:[{text:systemPrompt}]},contents:[{role:'user',parts:[{text:JSON.stringify({question:body.question,workspace:body.scope||'all',workspaceBriefs:workspaceContext(process.env.EDIZ_CONTEXT_JSON,body.scope||'all').filter(item=>!body.records.some(record=>record.id===item.id)),records:body.records,conversation:(body.conversation||[]).slice(-8),localDate:body.localDate,timeZone:body.timeZone})},...media]}],...(search?{tools:[{google_search:{}}]}:{}),generationConfig:{...(search?{}:{responseMimeType:"application/json"}),temperature:.25,maxOutputTokens:4096}})});
+   response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidate)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},signal:AbortSignal.timeout(20000),body:JSON.stringify({systemInstruction:{parts:[{text:systemPrompt+"\n"+botDirections(body.scope,body.voiceMode===true)}]},contents:[{role:'user',parts:[{text:JSON.stringify({question:body.question,workspace:body.scope||'all',workspaceBriefs:workspaceContext(process.env.EDIZ_CONTEXT_JSON,body.scope||'all').filter(item=>!body.records.some(record=>record.id===item.id)),records:body.records,conversation:(body.conversation||[]).slice(-8),localDate:body.localDate,timeZone:body.timeZone})},...media]}],...(search?{tools:[{google_search:{}}]}:{}),generationConfig:{...(search?{}:{responseMimeType:"application/json"}),temperature:.25,maxOutputTokens:4096}})});
    if(![429,503,404].includes(response.status))break;
   }
   if(!response.ok){const status=response.status;return res.status(status===429?429:502).json({error:status===429?'Google’s quota is temporarily unavailable. Please try again shortly.':status===401||status===403?'The cloud connection was rejected. Check the assistant connection in Settings.':'The assistant provider couldn’t answer. Please try again.'});}

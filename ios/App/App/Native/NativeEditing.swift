@@ -25,22 +25,34 @@ struct NativeCapture:View {
     }
     var body:some View {
         NavigationStack {
-            Form {
-                Section {
-                    Label("A thought, a plan, something to keep.",systemImage:"square.and.pencil").font(.subheadline).foregroundStyle(Design.muted)
-                    TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(3...7).font(.title3).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
-                    HStack{Spacer();Button{if !speech.listening{voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Requesting microphone…":speech.listening ? "Stop listening":"Speak",systemImage:speech.listening ? "stop.circle":"mic")}.disabled(speech.requesting)}
-                    if let error=speech.message { Text(error).font(.footnote).foregroundStyle(Design.muted) }
-                }
-                Section("Organize it") {
-                    Toggle("Choose the space automatically",isOn:$automatic)
-                    if !automatic { Picker("Space",selection:$draft.space){ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Picker("Type",selection:$draft.kind){ForEach(Catalog.space(draft.space).modules){Text($0.label).tag($0.kind)}} }
-                    DisclosureGroup("Date") { Toggle("Set a date",isOn:$explicitDate);if explicitDate{DatePicker("When",selection:$date)} }
-                }
-                if !draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
-                    Section("Preview") { VStack(alignment:.leading,spacing:8){Text(preview.title).font(.body.weight(.medium));Text("\(Catalog.space(preview.space).name) · \(preview.kind)").font(.subheadline).foregroundStyle(Design.muted);if let due=Time.date(preview.due){Text(due,format:.dateTime.weekday().day().month().hour().minute()).font(.subheadline).foregroundStyle(Design.muted)};if preview.space == "moshia"{Text("POSSIBLE — canon only when you choose it.").font(.footnote).foregroundStyle(Design.muted)}} }
-                }
-            }.scrollContentBackground(.hidden).background(AppBackdrop(scope:"capture")).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
+            ScrollView {
+                VStack(alignment:.leading,spacing:20){
+                    VStack(alignment:.leading,spacing:6){Text("Make room for a thought.").font(.system(size:27,weight:.medium,design:.rounded));Text("Say it or write it. We’ll help put it in its place.").font(.subheadline).foregroundStyle(Design.muted)}.padding(.top,8)
+                    Surface {
+                        VStack(alignment:.leading,spacing:14){
+                            TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...8).font(.title3).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
+                            Divider().overlay(Design.muted.opacity(0.15))
+                            HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{if !speech.listening{voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
+                            if speech.listening{AudioWaveform(levels:(0..<48).map{max(0.03,speech.level*(0.4+0.6*abs(sin(CGFloat($0)*0.42))))},color:Design.accent)}
+                            if let error=speech.message{Text(error).font(.footnote).foregroundStyle(Design.muted)}
+                        }
+                    }
+                    Surface {
+                        VStack(alignment:.leading,spacing:14){
+                            Label("Where it belongs",systemImage:"tray").font(.headline)
+                            Toggle("Choose the space automatically",isOn:$automatic).font(.subheadline)
+                            if !automatic{Picker("Space",selection:$draft.space){ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Picker("Type",selection:$draft.kind){ForEach(Catalog.space(draft.space).modules){Text($0.label).tag($0.kind)}}}
+                            Divider()
+                            DisclosureGroup("Add a date"){Toggle("Set a date",isOn:$explicitDate);if explicitDate{DatePicker("When",selection:$date)}}.font(.subheadline)
+                        }
+                    }
+                    if !draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+                        VStack(alignment:.leading,spacing:10){Text("READY TO SAVE").font(.caption2.weight(.semibold)).tracking(1.5).foregroundStyle(Design.muted)
+                            HStack(alignment:.top,spacing:12){SpaceMark(space:Catalog.space(preview.space));VStack(alignment:.leading,spacing:5){Text(preview.title).font(.body.weight(.medium));Text("\(Catalog.space(preview.space).name) · \(preview.kind)").font(.caption).foregroundStyle(Design.muted);if let due=Time.date(preview.due){Text(due,format:.dateTime.weekday().day().month().hour().minute()).font(.caption).foregroundStyle(Design.muted)};if preview.space == "moshia"{Text("POSSIBLE — canon only when you choose it.").font(.caption).foregroundStyle(Design.muted)}}}
+                        }.padding(18).frame(maxWidth:.infinity,alignment:.leading).background(Design.accent.opacity(0.06),in:RoundedRectangle(cornerRadius:18))
+                    }
+                }.padding(20)
+            }.scrollDismissesKeyboard(.interactively).background(AppBackdrop(scope:"capture")).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);if let onFinish{onFinish()}else{dismiss()}}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);store.walkthrough?.event("captured");if let onFinish{onFinish()}else{dismiss()}}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save").walkthroughTarget("capture-save",session:store.walkthrough)}}
                 .onChange(of:draft){_,value in store.draft(value);if !value.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("capture-typed")}}
                 .onChange(of:draft.space){_,value in if !Catalog.space(value).modules.contains(where:{$0.kind == draft.kind}){draft.kind=Catalog.space(value).modules[0].kind}}

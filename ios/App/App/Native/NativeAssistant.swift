@@ -97,6 +97,9 @@ struct NativeAssistant:View {
         }.buttonStyle(.plain).accessibilityIdentifier("assistant-workspace-"+id).walkthroughTarget(id == "moshia" ? "assistant-moshia":"",session:store.walkthrough)
     }
 }
+enum WorkspaceBot {
+    static func name(_ scope:String)->String {switch scope{case "ejj":return "EJJ Digital Bot";case "band":return "CLEARANCE 19 Bot";case "moshia":return "Moshia Bot";case "school":return "School Bot";case "personal":return "Personal Bot";default:return "Everyday Bot"}}
+}
 struct NativeAssistantChat:View {
     @EnvironmentObject var store:NativeStore
     @Binding var entries:[ConversationEntry]
@@ -109,7 +112,11 @@ struct NativeAssistantChat:View {
     @State private var choosingMedia=false
     @State private var preparing=0
     @State private var mediaError:String?
-    @State private var memoOpen=false
+    @StateObject private var dictation=NativeSpeech()
+    @State private var dictating=false
+    @State private var transcribing=false
+    @State private var recordStarted=Date()
+    @State private var dictationJob:Task<Void,Never>?
     @State private var memoPreview:FilePreview?
     @State private var voiceOpen=false
     @State private var voiceWanted=false
@@ -138,18 +145,17 @@ struct NativeAssistantChat:View {
                 .safeAreaInset(edge:.bottom){composer}
         }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}
             .sheet(isPresented:$choosingMedia){NativeAssistantMediaPicker(receive:{url in prepareAttachment(url,temporary:true)},close:{choosingMedia=false},failed:{mediaError=$0})}
-            .sheet(isPresented:$memoOpen){NativeMemoSheet(scope:scope,attach:{file in stage(file)}).presentationDetents([.large]).presentationDragIndicator(.visible)}
             .sheet(item:$memoPreview,onDismiss:{memoPreview=nil}){clip in NativeAudioPractice(url:clip.url).presentationDragIndicator(.visible)}
             .fileImporter(isPresented:$importingFiles,allowedContentTypes:[.image,.movie,.audio,.pdf,.plainText,.text,.json,.commaSeparatedText],allowsMultipleSelection:true){result in switch result{case .success(let urls):for url in urls{prepareAttachment(url)};case .failure:mediaError="That file couldn’t be opened. Try choosing it again."}}
-            .fullScreenCover(isPresented:$voiceOpen,onDismiss:{endVoice()}){NativeAssistantVoicePanel(speech:speech,speaker:speaker,busy:busy,reply:entries.last(where:{$0.role == "assistant"})?.text ?? "",error:message,scope:scope,listen:{beginListening()},pause:{voiceAuto=false;voiceTurn?.cancel();speech.stop();speaker.stop()},send:{sendVoice()},read:{voiceAuto=false;speech.stop();speaker.say(entries.last(where:{$0.role == "assistant"})?.text ?? "Hi Ediz. I’m here to help with your day, your projects, and your ideas.",token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true)},end:{endVoice()})}
+            .fullScreenCover(isPresented:$voiceOpen,onDismiss:{endVoice()}){NativeAssistantVoicePanel(speech:speech,speaker:speaker,busy:busy,reply:entries.last(where:{$0.role == "assistant"})?.text ?? "",error:message,scope:scope,listen:{beginListening()},pause:{voiceAuto=false;voiceTurn?.cancel();speech.stop();speaker.stop()},send:{sendVoice()},read:{voiceAuto=false;speech.stop();speaker.say(entries.last(where:{$0.role == "assistant"})?.text ?? "Hi Ediz. I’m here to help with your day, your projects, and your ideas.",token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true,voice:UserDefaults.standard.string(forKey:"assistant-natural-voice-name") ?? "Aoede")},end:{endVoice()})}
             .onChange(of:speech.transcript){_,value in scheduleVoice(value)}
-            .onChange(of:entries.count){_,_ in if voiceWanted,let last=entries.last,last.role == "assistant"{speech.stop();speaker.say(last.text,token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true)}}
-            .onDisappear{if !voiceOpen{voiceAuto=false;voiceWanted=false;voiceTurn?.cancel();speech.stop();speaker.stop()}}
-            .onChange(of:scenePhase){_,phase in if phase == .background{endVoice()}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
+            .onChange(of:entries.count){_,_ in if voiceWanted,let last=entries.last,last.role == "assistant"{speech.stop();speaker.say(last.text,token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true,voice:UserDefaults.standard.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}}
+            .onDisappear{dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false;if !voiceOpen{voiceAuto=false;voiceWanted=false;voiceTurn?.cancel();speech.stop();speaker.stop()}}
+            .onChange(of:scenePhase){_,phase in if phase == .background{endVoice();dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
             .onAppear{if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
             .toolbar { ToolbarItem(placement:.topBarTrailing) { Menu {
                 Picker("Assistant",selection:$mode) {
-                    if store.assistantToken != nil { Text("Gemini").tag("cloud") }
+                    if store.assistantToken != nil { Text(WorkspaceBot.name(scope)).tag("cloud") }
                     if store.preferences.labs { Text("Local model").tag("local") }
                     Text("Saved context").tag("saved")
                 }
@@ -208,7 +214,7 @@ struct NativeAssistantChat:View {
                     Text(entry.text).font(Design.font(16,weight:"Regular"))
                 }.padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:corners)).frame(maxWidth:.infinity,alignment:.trailing)
             } else {
-                VStack(alignment:.leading,spacing:10){if let provider=entry.provider{Text(provider).font(.caption.weight(.medium)).foregroundStyle(accent)};Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
+                VStack(alignment:.leading,spacing:10){if let provider=entry.provider{Text(provider == "Gemini" ? WorkspaceBot.name(scope):provider).font(.caption.weight(.medium)).foregroundStyle(accent)};Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
                     ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
                     ForEach(entry.actions){action in Button("Review: "+action.title){proposal=action}.buttonStyle(ActionStyle())}
                     ForEach(entry.sources,id:\.url) { source in
@@ -243,6 +249,7 @@ struct NativeAssistantChat:View {
                 Text("Shared with Gemini when you send · 2.5 MB total").font(.caption2).foregroundStyle(Design.muted)
             }
             if let mediaError{Text(mediaError).font(.caption).foregroundStyle(Design.muted)}
+            if dictating || transcribing { recordingBar } else {
             HStack(alignment:.bottom,spacing:6) {
                 Menu {
                     Button("Photo or video",systemImage:"photo.on.rectangle"){mediaError=nil;choosingMedia=true}
@@ -254,7 +261,7 @@ struct NativeAssistantChat:View {
                     .focused($typing).accessibilityIdentifier("assistant-question").walkthroughTarget("assistant-message",session:store.walkthrough)
                     .padding(.vertical,11).frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
                     .contentShape(Rectangle()).onTapGesture { typing=true }
-                Button{typing=false;endVoice();memoOpen=true}label:{Image(systemName:"mic").font(.body).frame(width:40,height:44)}.accessibilityLabel("Record voice memo").accessibilityIdentifier("assistant-memo").disabled(busy || preparing>0)
+                Button{typing=false;endVoice();mediaError=nil;recordStarted=Date();dictating=true;dictation.toggle()}label:{Image(systemName:"mic").font(.body).frame(width:40,height:44)}.accessibilityLabel("Record voice memo").accessibilityIdentifier("assistant-memo").disabled(busy || preparing>0)
                 let hasMessage = !question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !attachments.isEmpty
                 Button {
                     if hasMessage{send()}else{typing=false;voiceWanted=true;voiceOpen=true;speaker.finished={if voiceWanted && voiceAuto{beginListening()}}}
@@ -263,9 +270,33 @@ struct NativeAssistantChat:View {
                 }.disabled(busy || preparing>0).accessibilityLabel(hasMessage ? "Send question":"Talk to your assistant").accessibilityIdentifier(hasMessage ? "assistant-send":"assistant-voice").walkthroughTarget("assistant-send",session:store.walkthrough)
 
             }
-        }.onChange(of:question){_,value in if !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("assistant-typed")}}
+            }
+        }.animation(reducedMotion ? nil:.easeInOut(duration:0.2),value:dictating)
+        .onChange(of:dictation.requesting){_,requesting in if !requesting && !dictation.listening && dictating{dictating=false;mediaError=dictation.message}}
+        .onChange(of:dictation.message){_,error in if let error{mediaError=error}}
+        .onChange(of:question){_,value in if !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("assistant-typed")}}
             .padding(8).background(Design.raised,in:RoundedRectangle(cornerRadius:corners))
             .padding(.horizontal,16).padding(.bottom,8)
+    }
+    var recordingBar:some View {
+        HStack(spacing:10){
+            Button{dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}label:{Image(systemName:"xmark").frame(width:40,height:44)}.accessibilityLabel("Cancel recording").accessibilityIdentifier("dictation-cancel")
+            if transcribing || dictation.requesting{ProgressView();Text(transcribing ? "Transcribing…":"Starting microphone…").font(.subheadline).frame(maxWidth:.infinity,alignment:.leading)}else{
+                VStack(alignment:.leading,spacing:2){TimelineView(.periodic(from:recordStarted,by:1)){time in Text("Recording · "+String(Int(max(0,time.date.timeIntervalSince(recordStarted))))+"s").font(.caption).monospacedDigit()};AudioWaveform(levels:(0..<48).map{max(0.025,dictation.level*(0.4+0.6*abs(sin(CGFloat($0)*0.42))))},color:accent).frame(height:24).clipped()}.frame(maxWidth:.infinity).accessibilityIdentifier("dictation-recording")
+            }
+            Button{finishDictation(sendAfter:false)}label:{Image(systemName:"stop.fill").frame(width:40,height:44)}.disabled(transcribing || dictation.requesting).accessibilityLabel("Stop and transcribe").accessibilityIdentifier("dictation-stop")
+            Button{finishDictation(sendAfter:true)}label:{Image(systemName:"arrow.up").frame(width:44,height:44).foregroundStyle(Design.background).background(accent,in:Circle())}.disabled(transcribing || dictation.requesting).accessibilityLabel("Transcribe and send").accessibilityIdentifier("dictation-send")
+        }.frame(minHeight:48)
+    }
+    func finishDictation(sendAfter:Bool){
+        guard dictating,!transcribing else{return};transcribing=true
+        dictationJob=Task{@MainActor in
+            let text=await dictation.finish().trimmingCharacters(in:.whitespacesAndNewlines)
+            guard !Task.isCancelled else{return};dictating=false;transcribing=false
+            guard !text.isEmpty else{mediaError="No speech was detected. Try again, or type your message.";return}
+            question += (question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? "":" ")+text
+            if sendAfter{send()}else{typing=true}
+        }
     }
     func stage(_ file:AssistantAttachment){
         guard attachments.count<3,attachments.reduce(0,{$0+$1.bytes.count})+file.bytes.count<=AssistantMedia.limit else{mediaError="Attach up to three files and 2.5 MB total.";return}
@@ -300,14 +331,14 @@ struct NativeAssistantChat:View {
         var q=question.trimmingCharacters(in:.whitespacesAndNewlines);guard !busy,preparing==0 else{return}
         if q.isEmpty,!attachments.isEmpty{q=attachments.allSatisfy{$0.mimeType.hasPrefix("audio/")} ? "Please transcribe this voice memo and respond to it.":"What can you tell me about these attachments?"}
         guard !q.isEmpty else{return}
-        if !attachments.isEmpty,(mode != "cloud" || store.assistantToken == nil){mediaError="Choose Gemini from Chat context to ask about attached media. Saved context and local text models can’t read these files.";return}
+        if !attachments.isEmpty,(mode != "cloud" || store.assistantToken == nil){mediaError="Choose your connected bot from Chat context to ask about attached media. Saved context and local text models can’t read these files.";return}
         let outgoing=attachments
         let outgoingInfo:[AssistantAttachmentInfo]
         do{outgoingInfo=try outgoing.map{try store.keepMemo($0)}}catch{mediaError="Your voice memo couldn’t be saved. Try again before sending.";return}
         let prior=(entries.last(where:{$0.role == "assistant"})?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}
         let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity.filter{scope == "all" || Set(scopedRecords.map(\.id)).contains($0.entityId)},focus:scope,previous:prior)
         let conversation=entries;entries.append(ConversationEntry(role:"user",text:q,attachments:outgoing.isEmpty ? nil:outgoingInfo));question="";typing=false;message=nil;failedQuestion=nil
-        if mode == "cloud",let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing);attachments.removeAll{file in outgoing.contains{$0.id == file.id}};entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:"Gemini"))}catch{message=error.localizedDescription;failedQuestion=q}};return}
+        if mode == "cloud",let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing,voiceMode:voiceWanted);attachments.removeAll{file in outgoing.contains{$0.id == file.id}};entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:WorkspaceBot.name(scope)))}catch{message=error.localizedDescription;failedQuestion=q}};return}
         guard mode == "local" else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft,provider:"Saved context"));store.walkthrough?.event("assistant-replied");return}
         guard store.preferences.labs,let endpoint=store.preferences.localEndpoint,!endpoint.isEmpty else{message="Add your local model’s network address and test the connection in Settings.";failedQuestion=q;return}
         busy=true
@@ -393,10 +424,10 @@ struct NativeSearchSuggestions:UIViewRepresentable {
     }
 }
 enum GeminiAssistant {
-    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String,attachments:[AssistantAttachment]=[]) async throws -> GeminiResponse {
+    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String,attachments:[AssistantAttachment]=[],voiceMode:Bool=false) async throws -> GeminiResponse {
         var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!);request.httpMethod="POST";request.timeoutInterval=55;request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
         let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(records.prefix(500))))
-        request.httpBody=try JSONSerialization.data(withJSONObject:["question":question,"scope":scope,"records":encoded,"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.text]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
+        request.httpBody=try JSONSerialization.data(withJSONObject:["voiceMode":voiceMode,"question":question,"scope":scope,"records":encoded,"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.text]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
         let (data,response)=try await URLSession.shared.data(for:request)
         guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode) else{let detail=(try? JSONSerialization.jsonObject(with:data)) as? [String:String];throw NSError(domain:"EdizAssistant",code:1,userInfo:[NSLocalizedDescriptionKey:detail?["error"] ?? "Gemini is unavailable. Please try again."])}
         return try JSONDecoder().decode(GeminiResponse.self,from:data)

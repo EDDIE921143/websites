@@ -19,7 +19,7 @@ enum Design {
 enum WorkspaceTheme {
     static func base(_ scope:String)->Color {
         switch scope {
-        case "ejj":return Color(red:0.035,green:0.075,blue:0.15)
+        case "ejj":return Color(red:0.055,green:0.070,blue:0.085)
         case "band":return Color(red:0.13,green:0.035,blue:0.075)
         case "moshia":return Color(red:0.14,green:0.105,blue:0.065)
         case "school":return Color(red:0.025,green:0.105,blue:0.09)
@@ -31,7 +31,7 @@ enum WorkspaceTheme {
     }
     static func accent(_ scope:String)->Color {
         switch scope {
-        case "ejj":return Color(red:0.39,green:0.69,blue:1)
+        case "ejj":return Color(red:0.64,green:0.72,blue:0.77)
         case "band":return Color(red:1,green:0.43,blue:0.51)
         case "moshia":return Color(red:0.89,green:0.72,blue:0.43)
         case "school":return Color(red:0.40,green:0.85,blue:0.67)
