@@ -2,9 +2,11 @@ import SwiftUI
 import EdizCore
 
 struct NativeRoot:View {
-    @StateObject private var store=NativeStore()
+    @StateObject private var store: NativeStore
+    init(store: NativeStore) { _store = StateObject(wrappedValue: store) }
     @State private var selected=0
     @State private var previous=0
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     var body:some View {
         Group {
             if store.ready {
@@ -24,6 +26,12 @@ struct NativeRoot:View {
                 VStack(spacing:20){Text("Ediz OS").font(.title2.weight(.medium));Text("Your local data couldn’t be opened.").foregroundStyle(Design.muted);Button("Try again"){store.open()}.buttonStyle(ActionStyle())}.padding(24)
             }
         }.onOpenURL{url in store.connectAssistant(url);if url.host == "assistant"{selected=4}}.environmentObject(store).preferredColorScheme(.dark).background(Design.background)
+            .environment(\.edizCompact,store.preferences.density == "compact")
+            .environment(\.defaultMinListRowHeight,store.preferences.density == "compact" ? 44:60)
+            .listSectionSpacing(.custom(store.preferences.density == "compact" ? 12:28))
+            .font(store.preferences.density == "compact" ? .callout:.body)
+            .animation(reducedMotion ? nil:.easeInOut(duration:0.18),value:store.preferences.density)
+            .onChange(of:store.assistantConnected){_,connected in if connected { selected=4 } }
             .alert("Ediz OS",isPresented:Binding(get:{store.error != nil},set:{if !$0{store.error=nil}})){Button("OK"){store.error=nil}}message:{Text(store.error ?? "")}
     }
 }
@@ -51,12 +59,13 @@ struct NativeToday:View {
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 13:20) {
-                HStack(alignment:.center,spacing:18){VStack(alignment:.leading,spacing:6){Text(greeting+", Ediz.").font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted);HStack(spacing:12){Image(systemName:"e.square.fill").font(.system(size:36)).foregroundStyle(Design.glassLettering);Text("Your day").font(Design.font(30,weight:"Medium",relativeTo:.largeTitle)).foregroundStyle(Design.glassLettering)};if store.preferences.focus != "all"{Button("Focused on "+Catalog.space(store.preferences.focus).name){choosingFocus=true}.font(.caption).foregroundStyle(Design.muted)}};Spacer();VStack(spacing:3){Text(Date.now,format:.dateTime.weekday(.abbreviated)).font(.caption2);Text(Date.now,format:.dateTime.day()).font(Design.font(29,weight:"Regular"));Text(Date.now,format:.dateTime.month(.abbreviated)).font(.caption2)}.foregroundStyle(Design.muted).frame(width:64,height:80).background(Design.surface,in:RoundedRectangle(cornerRadius:22))}
+                HStack(alignment:.center,spacing:18){VStack(alignment:.leading,spacing:6){Text(greeting+", Ediz.").font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted);HStack(spacing:12){Image("EdizLogo").resizable().scaledToFit().frame(width:44,height:44).clipShape(RoundedRectangle(cornerRadius:12));Text("Your day").font(Design.font(30,weight:"Medium",relativeTo:.largeTitle)).foregroundStyle(Design.glassLettering)};if store.preferences.focus != "all"{Button("Focused on "+Catalog.space(store.preferences.focus).name){choosingFocus=true}.font(.caption).foregroundStyle(Design.muted)}};Spacer();VStack(spacing:3){Text(Date.now,format:.dateTime.weekday(.abbreviated)).font(.caption2);Text(Date.now,format:.dateTime.day()).font(Design.font(29,weight:"Regular"));Text(Date.now,format:.dateTime.month(.abbreviated)).font(.caption2)}.foregroundStyle(Design.muted).frame(width:64,height:80).background(Design.surface,in:RoundedRectangle(cornerRadius:22))}
 
+                if store.preferences.focus != "all" { focusedWorkspace }
                 VStack(alignment:.leading,spacing:12) {
                     HStack{Text("What matters").font(Design.font(19,weight:"Medium",relativeTo:.headline));Spacer();GlassAction{Button{choosingFocus=true}label:{Image(systemName:"slider.horizontal.3").frame(width:44,height:44)}.accessibilityLabel("Change focus")}}
                     if focusedPriorities.isEmpty {
-                        VStack(alignment:.leading,spacing:8){Text("Nothing pressing.").font(Design.font(23,relativeTo:.title2));Text("Capture a thought or bring in your existing work.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted)}.padding(.vertical,3)
+                        Surface{VStack(alignment:.leading,spacing:10){Text("Nothing pressing.").font(Design.font(23,weight:"DemiBold",relativeTo:.title2));Text("Capture a thought or bring in your existing work.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted)}}
                     } else {
                         Surface{VStack(alignment:.leading,spacing:8){ForEach(Array(focusedPriorities.prefix(4))){recommendation in RecordRow(record:recommendation.record)};Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted)}}
                     }
@@ -68,11 +77,33 @@ struct NativeToday:View {
 
                 HStack(spacing:12){GlassAction{Button{weekly=false;review=true}label:{Label("Review today",systemImage:"checkmark.circle").frame(maxWidth:.infinity,minHeight:48)}};GlassAction{Button{weekly=true;review=true}label:{Image(systemName:"calendar").frame(minWidth:44,minHeight:48)}.accessibilityLabel("Review this week")}}.font(Design.font(15))
             }.padding(.horizontal,20).padding(.top,8).padding(.bottom,26)
-        }.background(Design.background).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
+        }.refreshable{await store.refresh()}.background(Design.background).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented:$choosingFocus){NativeFocusChoice().presentationDragIndicator(.visible)}
             .sheet(isPresented:$review){NativeReview(weekly:weekly).presentationDragIndicator(.visible)}
     }
+    var focusedWorkspace:some View {
+        let space=Catalog.space(store.preferences.focus)
+        let count=store.records.filter{$0.space == space.id}.count
+        return VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 16:24) {
+            HStack { Label("YOUR FOCUS",systemImage:"scope").font(.caption.weight(.semibold));Spacer();Button("Change"){choosingFocus=true}.font(.subheadline) }
+                .foregroundStyle(Design.color(space.color))
+            Text(space.name).font(.largeTitle.weight(.semibold)).foregroundStyle(Design.ink)
+            Text(space.summary+" · \(count) saved items").font(.subheadline).foregroundStyle(Design.muted)
+            LazyVGrid(columns:[GridItem(.flexible()),GridItem(.flexible())],spacing:12) {
+                ForEach(Array(space.modules.prefix(4))) { module in
+                    NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)) {
+                        Text(module.label).font(.body.weight(.medium)).frame(maxWidth:.infinity,minHeight:50)
+                            .background(Design.color(space.color).opacity(0.15),in:RoundedRectangle(cornerRadius:16))
+                    }.buttonStyle(.plain)
+                }
+            }
+        }.padding(store.preferences.density == "compact" ? 18:26)
+            .frame(maxWidth:.infinity,minHeight:store.preferences.density == "compact" ? 240:300,alignment:.topLeading)
+            .background(Design.surface,in:RoundedRectangle(cornerRadius:26))
+            .accessibilityElement(children:.contain).accessibilityIdentifier("focused-workspace")
+    }
 }
+
 struct NativeSpaceShortcut:View {
     @EnvironmentObject var store:NativeStore
     let space:SpaceDefinition
@@ -84,15 +115,16 @@ struct NativeSpaceShortcut:View {
     }
 }
 struct NativeSpaces:View {
+    @EnvironmentObject var store:NativeStore
     var body:some View {
-        ScrollView { VStack(alignment:.leading,spacing:14) {
+        ScrollView { VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:24) {
             Text("Five spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
             ForEach(Catalog.spaces){space in
-                VStack(alignment:.leading,spacing:16){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)};Spacer()}}.buttonStyle(.plain)
+                VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain)
                     HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44)}}}}
-                }.padding(17).background(Design.surface,in:RoundedRectangle(cornerRadius:24))
+                }.padding(store.preferences.density == "compact" ? 12:24).background(Design.surface,in:RoundedRectangle(cornerRadius:24))
             }
-        }.padding(20) }.background(Design.background).navigationTitle("Spaces")
+        }.padding(20) }.refreshable{await store.refresh()}.background(Design.background).navigationTitle("Spaces")
     }
 }
 struct NativeSearch:View {
@@ -107,6 +139,6 @@ struct NativeSearch:View {
                 if results.isEmpty{QuietEmpty(title:query.isEmpty ? "Your work will appear here.":"No matches yet.",message:query.isEmpty ? "Capture or import something to make it searchable.":"Try a shorter name or a different space.")}
                 ForEach(Array(results.prefix(100))){RecordRow(record:$0)}
             }
-        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Design.background).navigationTitle("Search").searchable(text:$query,prompt:"A person, a project, Friday…")
+        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Design.background).listRowSpacing(store.preferences.density == "compact" ? 4:12).refreshable{await store.refresh()}.navigationTitle("Search").searchable(text:$query,prompt:"A person, a project, Friday…")
     }
 }

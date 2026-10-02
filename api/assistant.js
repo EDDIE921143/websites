@@ -1,4 +1,4 @@
-import {authorized,validateReply,systemPrompt,workspaceContext} from '../server/gemini.js';
+import {authorized,validateReply,systemPrompt,workspaceContext,groundedSources} from '../server/gemini.js';
 const requests=new Map();
 export default async function handler(req,res) {
  const apiKey=process.env.GEMINI_API_KEY||process.env.geminiapi;
@@ -16,10 +16,22 @@ export default async function handler(req,res) {
  if(!body||typeof body.question!=='string'||!body.question.trim()||body.question.length>8000||!Array.isArray(body.records)||body.records.length>500||JSON.stringify(body).length>700000)return res.status(400).json({error:'Share up to 500 records and a shorter question.'});
  const model=process.env.GEMINI_MODEL||'gemini-3.8-flash';
  try{
-  const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},signal:AbortSignal.timeout(45000),body:JSON.stringify({systemInstruction:{parts:[{text:systemPrompt}]},contents:[{role:'user',parts:[{text:JSON.stringify({question:body.question,workspace:body.scope||'all',workspaceBriefs:workspaceContext(process.env.EDIZ_CONTEXT_JSON,body.scope||'all'),records:body.records,conversation:(body.conversation||[]).slice(-8),localDate:body.localDate,timeZone:body.timeZone})}]}],generationConfig:{responseMimeType:'application/json',temperature:.25,maxOutputTokens:4096}})});
+  const search=/\b(search|look up|browse|internet|latest|current news|recherchier|suche im|im internet)\b/i.test(body.question);
+  const models=[...new Set([model,'gemini-3.1-flash-lite'])];
+  let response;
+  for(const candidate of models){
+   response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidate)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},signal:AbortSignal.timeout(15000),body:JSON.stringify({systemInstruction:{parts:[{text:systemPrompt}]},contents:[{role:'user',parts:[{text:JSON.stringify({question:body.question,workspace:body.scope||'all',workspaceBriefs:workspaceContext(process.env.EDIZ_CONTEXT_JSON,body.scope||'all'),records:body.records,conversation:(body.conversation||[]).slice(-8),localDate:body.localDate,timeZone:body.timeZone})}]}],...(search?{tools:[{google_search:{}}]}:{}),generationConfig:{...(search?{}:{responseMimeType:"application/json"}),temperature:.25,maxOutputTokens:4096}})});
+   if(![429,503,404].includes(response.status))break;
+  }
   if(!response.ok){const status=response.status;const failure=await response.json().catch(()=>({}));const detail=typeof failure.error?.message==='string'?failure.error.message.replaceAll(apiKey,'[redacted]').slice(0,500):'';return res.status(status===429?429:502).json({error:status===429?'Google’s free quota is temporarily unavailable. Your on-device assistant still works.':status===401||status===403?'Google rejected the configured API key. Check its API restrictions and account access.':'Google couldn’t answer this request. '+detail});}
   const result=await response.json();const text=result.candidates?.[0]?.content?.parts?.filter(p=>!p.thought).map(p=>p.text||'').join('');
   if(!text)return res.status(502).json({error:'Google returned no usable answer. Your saved data is unchanged.'});
-  return res.status(200).json(validateReply(JSON.parse(text),body.records));
+  const metadata=result.candidates?.[0]?.groundingMetadata;
+  return res.status(200).json({...validateReply(parseModelText(text),body.records),sources:groundedSources(metadata),searchSuggestions:metadata?.searchEntryPoint?.renderedContent||null});
  }catch{return res.status(502).json({error:'Gemini couldn’t finish that reply. Your saved data is unchanged.'});}
+}
+
+function parseModelText(text){
+ const clean=text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'');
+ try{return JSON.parse(clean)}catch{return {text:clean,actions:[],recordIds:[]}}
 }

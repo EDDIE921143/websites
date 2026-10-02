@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 import EdizCore
 
 struct ConversationEntry:Identifiable {
@@ -8,6 +9,8 @@ struct ConversationEntry:Identifiable {
     var records:[EdizCore.Record]=[]
     var draft:EdizCore.Record?
     var actions:[GeminiProposal]=[]
+    var sources:[AssistantSource]=[]
+    var searchSuggestions:String?
 }
 enum LocalAssistant {
     static func baseURL(_ endpoint:String) throws -> URL {
@@ -46,12 +49,49 @@ enum LocalAssistant {
 }
 struct NativeAssistant:View {
     @EnvironmentObject var store:NativeStore
-    @State private var entries:[ConversationEntry]=[]
+    @Environment(\.edizCompact) private var compact
+    @State private var chats:[String:[ConversationEntry]]=[:]
+    @State private var drafts:[String:String]=[:]
+    var body:some View {
+        ScrollView {
+            VStack(alignment:.leading,spacing:24) {
+                VStack(alignment:.leading,spacing:10) {
+                    Text("Here with you, Ediz.").font(Design.font(28,relativeTo:.title))
+                    Text("Choose a space. Each conversation starts with your saved context.")
+                        .font(Design.font(16,weight:"Regular")).foregroundStyle(Design.muted)
+                }.padding(.top,12)
+                LazyVGrid(columns:compact ? [GridItem(.flexible())]:[GridItem(.flexible()),GridItem(.flexible())],spacing:compact ? 10:14) {
+                    workspace("all","Everyday","bubble.left.and.bubble.right.fill")
+                    ForEach(Catalog.spaces) { space in
+                        workspace(space.id,space.name,SpaceMark(space:space).symbol)
+                    }
+                }
+            }.padding(20)
+        }.refreshable{await store.refresh()}.background(Design.background).navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+    }
+    func workspace(_ id:String,_ title:String,_ symbol:String)->some View {
+        NavigationLink {
+            NativeAssistantChat(entries:Binding(get:{chats[id] ?? []},set:{chats[id]=$0}),
+                                question:Binding(get:{drafts[id] ?? ""},set:{drafts[id]=$0}),scope:id)
+        } label: {
+            (compact ? AnyLayout(HStackLayout(spacing:14)):AnyLayout(VStackLayout(spacing:12))) {
+                Image(systemName:symbol).font(.system(size:24,weight:.medium)).accessibilityHidden(true)
+                Text(title).font(Design.font(15)).multilineTextAlignment(.center).lineLimit(2)
+            }.padding(.horizontal,10).frame(maxWidth:.infinity).frame(height:compact ? 64:124)
+                .foregroundStyle(Design.ink).background(.regularMaterial,in:RoundedRectangle(cornerRadius:28))
+                .contentShape(RoundedRectangle(cornerRadius:28))
+        }.buttonStyle(.plain).accessibilityIdentifier("assistant-workspace-"+id)
+    }
+}
+struct NativeAssistantChat:View {
+    @EnvironmentObject var store:NativeStore
+    @Binding var entries:[ConversationEntry]
+    @Binding var question:String
+    let scope:String
+    @Environment(\.edizCompact) private var compact
     @State private var proposal:GeminiProposal?
     @State private var cloud=true
-    @State private var scope="all"
     var scopedRecords:[EdizCore.Record]{store.records.filter{scope == "all" || $0.space == scope}}
-    @State private var question=""
     @State private var busy=false
     @State private var model=false
     @State private var message:String?
@@ -62,15 +102,23 @@ struct NativeAssistant:View {
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of:entries.count){_,_ in if let id=entries.last?.id{reader.scrollTo(id,anchor:.bottom)}}
                 .safeAreaInset(edge:.bottom){composer}
-        }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}.background(Design.background).navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+        }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}.background(Design.background).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement:.topBarTrailing) { Menu {
+                if store.assistantToken != nil { Toggle("Use Gemini",isOn:$cloud) }
+                if store.preferences.labs { Toggle("Use my local model",isOn:$model) }
+                Text("Context: \(scopedRecords.count) saved records")
+            } label: { Image(systemName:"info.circle") }.accessibilityLabel("Chat context") } }
     }
     var conversation:some View {
-        VStack(alignment:.leading,spacing:14){
-            Surface{VStack(alignment:.leading,spacing:14){Label("Here with you, Ediz.",systemImage:"bubble.left.and.bubble.right.fill").font(Design.font(22));Text("Choose a perspective for your work.").font(.subheadline).foregroundStyle(Design.muted);LazyVGrid(columns:[GridItem(.flexible()),GridItem(.flexible())],spacing:10){GlassAction{Button("Everyday"){scope="all";entries=[]}.frame(maxWidth:.infinity,minHeight:48)};ForEach(Catalog.spaces){space in GlassAction{Button{scope=space.id;entries=[]}label:{HStack{SpaceMark(space:space);Text(space.name).font(Design.font(12))}.frame(maxWidth:.infinity,minHeight:48)}}}};Text(scope == "all" ? "All spaces":Catalog.space(scope).name).font(.caption).foregroundStyle(Design.muted)}}
+        VStack(alignment:.leading,spacing:compact ? 12:22){
+            HStack(spacing:10){
+                Image(systemName:scope == "all" ? "bubble.left.and.bubble.right.fill":SpaceMark(space:Catalog.space(scope)).symbol).font(.title2)
+                Text(scope == "all" ? "Your whole day":Catalog.space(scope).summary).font(.subheadline)
+            }.foregroundStyle(scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)).padding(.vertical,8)
             if entries.isEmpty {
-                Text("Let’s make room for what matters, Ediz.").font(Design.font(21,relativeTo:.title3)).padding(.top,12)
-                Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(Design.font(16,weight:"Regular")).foregroundStyle(Design.muted)
-                VStack(spacing:9){forPrompt("What should I focus on?");forPrompt("Plan tomorrow");forPrompt("Any loose ends?")}
+                Text(scope == "all" ? "What’s on your mind, Ediz?":"Let’s talk about "+Catalog.space(scope).name+".").font(Design.font(21,relativeTo:.title3)).padding(.top,12)
+                Text(Priority.briefing(scopedRecords,focus:scope)).font(Design.font(16,weight:"Regular")).foregroundStyle(Design.muted)
+                VStack(spacing:9){ForEach(prompts,id:\.self){forPrompt($0)}}
             }
             ForEach(entries){entry in entryView(entry).id(entry.id)}
             if busy{HStack(spacing:9){ProgressView();Text("Thinking through your context…").font(.subheadline).foregroundStyle(Design.muted)}}
@@ -85,31 +133,51 @@ struct NativeAssistant:View {
                 VStack(alignment:.leading,spacing:10){Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
                     ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
                     ForEach(entry.actions){action in Button("Review: "+action.title){proposal=action}.buttonStyle(ActionStyle())}
+                    ForEach(entry.sources,id:\.url) { source in
+                        if let url=URL(string:source.url),url.scheme == "https" { Link(source.title,destination:url).font(.footnote) }
+                    }
+                    if let html=entry.searchSuggestions,!html.isEmpty { NativeSearchSuggestions(html:html).frame(height:110) }
                     if let draft=entry.draft{Button("Review reminder"){store.captureRequest=draft}.buttonStyle(ActionStyle())}
                 }.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(.regularMaterial,in:RoundedRectangle(cornerRadius:23))
             }
         }
     }
+    var prompts:[String] {
+        switch scope {
+        case "ejj": return ["Which leads need attention?", "Help me plan my next website", "What should I focus on?"]
+        case "band": return ["Plan my next practice session", "Help me build a setlist", "Any loose ends?"]
+        case "moshia": return ["Help me outline a chapter", "What have I saved about Moshia?", "Any loose ends?"]
+        case "school": return ["What homework should I start?", "Plan tomorrow", "What should I focus on?"]
+        default: return ["What should I focus on?", "Plan tomorrow", "Any loose ends?"]
+        }
+    }
     var composer:some View {
-        VStack(spacing:8){
-            if store.assistantToken != nil{Toggle("Gemini · share this space’s records",isOn:$cloud).font(.caption)}
-            if store.preferences.labs && !(store.preferences.localEndpoint ?? "").isEmpty{Toggle("Use my local model",isOn:$model).font(.subheadline)}
-            HStack(alignment:.bottom,spacing:10){
-                TextField("Ask about your work…",text:$question,axis:.vertical).lineLimit(1...5).font(Design.font(16,weight:"Regular")).focused($typing).accessibilityIdentifier("assistant-question")
-                Button{send()}label:{Image(systemName:"arrow.up").font(.body.weight(.medium)).frame(width:44,height:44).foregroundStyle(Design.background).background(Design.ink,in:Circle())}.disabled(busy || question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityLabel("Send question")
-            }
-        }.padding(14).background(.regularMaterial,in:RoundedRectangle(cornerRadius:27)).padding(.horizontal,16).padding(.bottom,8)
+        HStack(alignment:.bottom,spacing:10) {
+            TextField("Message…",text:$question,axis:.vertical)
+                .lineLimit(1...4).font(Design.font(16,weight:"Regular"))
+                .focused($typing).accessibilityIdentifier("assistant-question")
+                .padding(.vertical,11).padding(.leading,6)
+                .frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
+                .contentShape(Rectangle()).onTapGesture { typing=true }
+            Button { send() } label: {
+                Image(systemName:"arrow.up").font(.body.weight(.medium))
+                    .frame(width:44,height:44).foregroundStyle(Design.background)
+                    .background(Design.ink,in:Circle())
+            }.disabled(busy || question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("Send question")
+        }.padding(8).background(.regularMaterial,in:RoundedRectangle(cornerRadius:28))
+            .padding(.horizontal,16).padding(.bottom,8)
     }
     func forPrompt(_ prompt:String)->some View{GlassAction{Button{question=prompt;send()}label:{Text(prompt).font(Design.font(14)).frame(maxWidth:.infinity,minHeight:46)}}}
     func send(){
         let q=question.trimmingCharacters(in:.whitespacesAndNewlines);guard !q.isEmpty,!busy else{return}
         let prior=(entries.last(where:{$0.role == "assistant"})?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}
-        let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity,focus:scope,previous:prior)
+        let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity.filter{scope == "all" || Set(scopedRecords.map(\.id)).contains($0.entityId)},focus:scope,previous:prior)
         let conversation=entries;entries.append(ConversationEntry(role:"user",text:q));question="";typing=false;message=nil
-        if cloud,let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope);entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions))}catch{message=error.localizedDescription;entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft))}};return}
+        if cloud,let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope);entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions))}catch{message=error.localizedDescription;entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft))}};return}
         guard model,store.preferences.labs,let endpoint=store.preferences.localEndpoint,!endpoint.isEmpty,reply.draft == nil else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft));return}
         busy=true
-        let context=reply.records.isEmpty ? Array(store.priorities.prefix(8).map(\.record)):reply.records
+        let context=reply.records.isEmpty ? Array(scopedRecords.prefix(50)):reply.records
         Task{@MainActor in
             defer{busy=false}
             do{let answer=try await LocalAssistant.answer(endpoint:endpoint,question:q,context:context,conversation:conversation);entries.append(ConversationEntry(role:"assistant",text:answer,records:reply.records))}
@@ -126,7 +194,24 @@ struct GeminiProposal:Codable,Identifiable {
     var fields:GeminiFields?
 }
 struct GeminiFields:Codable {var space:String?;var kind:String?;var title:String?;var body:String?;var status:String?;var due:String?;var duration:Int?;var importance:Int?;var data:[String:String]?}
-struct GeminiResponse:Codable {let text:String;let recordIds:[String];let actions:[GeminiProposal]}
+struct AssistantSource:Codable {let url:String;let title:String}
+struct GeminiResponse:Codable {let text:String;let recordIds:[String];let actions:[GeminiProposal];var sources:[AssistantSource]?;var searchSuggestions:String?}
+struct NativeSearchSuggestions:UIViewRepresentable {
+    let html:String
+    func makeUIView(context:Context)->WKWebView {
+        let config=WKWebViewConfiguration();config.defaultWebpagePreferences.allowsContentJavaScript=false
+        let view=WKWebView(frame:.zero,configuration:config);view.isOpaque=false;view.backgroundColor = .clear
+        view.scrollView.isScrollEnabled=false;view.navigationDelegate=context.coordinator
+        view.loadHTMLString(html,baseURL:URL(string:"https://www.google.com"));return view
+    }
+    func updateUIView(_ view:WKWebView,context:Context){}
+    func makeCoordinator()->Coordinator{Coordinator()}
+    final class Coordinator:NSObject,WKNavigationDelegate {
+        func webView(_ view:WKWebView,decidePolicyFor action:WKNavigationAction,decisionHandler:@escaping (WKNavigationActionPolicy)->Void) {
+            if action.navigationType == .linkActivated,let url=action.request.url,url.scheme == "https" {UIApplication.shared.open(url);decisionHandler(.cancel)}else{decisionHandler(.allow)}
+        }
+    }
+}
 enum GeminiAssistant {
     static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String) async throws -> GeminiResponse {
         var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!);request.httpMethod="POST";request.timeoutInterval=55;request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")

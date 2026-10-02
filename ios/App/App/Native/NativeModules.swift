@@ -9,7 +9,8 @@ struct NativeSpace:View {
     @State private var rehearsal=false
     var space:SpaceDefinition{Catalog.space(route.id)}
     var creationNoun:String {kind == "thread" ? "plot thread":kind == "assignment" ? "homework":kind == "note" && route.id == "moshia" ? "research":kind}
-    var records:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind && (filter == "all" || $0.status == filter)}.sorted{kind == "chapter" ? ($0.created == $1.created ? $0.id<$1.id:$0.created<$1.created):$0.updated>$1.updated}}
+    var orderedRecords:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind}.sorted{kind == "chapter" ? ($0.created == $1.created ? $0.id<$1.id:$0.created<$1.created):$0.updated>$1.updated}}
+    var records:[EdizCore.Record]{orderedRecords.filter{filter == "all" || $0.status == filter}}
     var songs:[EdizCore.Record]{store.records.filter{$0.space == "band" && $0.kind == "song" && $0.status != "archived"}.sorted{$0.created<$1.created}}
     var body:some View {
         List {
@@ -27,6 +28,29 @@ struct NativeSpace:View {
             if route.id == "band" && kind == "song"{Section{Button("Rehearsal mode"){rehearsal=true};if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
             if route.id == "school" && kind == "grade"{NativeGradeProjection()}
             if route.id == "school" && ["assignment","exam"].contains(kind){NativeWorkload()}
+            if kind == "chapter" && !records.isEmpty {
+                ForEach(records) { record in
+                    Section("Chapter \((orderedRecords.firstIndex(where: {$0.id == record.id}) ?? 0) + 1)") {
+                        NavigationLink(value: record) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(record.title).font(Design.font(21)).foregroundStyle(Design.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if !record.body.isEmpty {
+                                    Text(record.body).font(Design.font(15, weight: "Regular"))
+                                        .foregroundStyle(Design.muted).lineLimit(2)
+                                }
+                                let details = [record.data["POV"], record.data["location"], record.data["wordCount"].map { "\($0) words" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                                if !details.isEmpty { Text(details).font(.subheadline).foregroundStyle(Design.muted) }
+                                Text(record.status).font(.caption.weight(.medium))
+                                    .foregroundStyle(Design.color(space.color))
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Design.raised, in: Capsule())
+                            }.padding(.vertical, store.preferences.density == "compact" ? 8 : 14)
+                        }.accessibilityIdentifier("chapter-card-" + record.id)
+                            .listRowBackground(Design.surface).listRowSeparator(.hidden)
+                    }
+                }
+            } else {
             Section(space.modules.first{$0.kind == kind}?.label ?? "Records") {
                 if records.isEmpty{QuietEmpty(title:"Ready for your \(kind == "assignment" ? "homework":kind == "lead" ? "leads":kind == "chapter" ? "chapters":"work").",message:"Add your own material or bring in an existing file.");Button("Add \(creationNoun)"){store.capture(space:route.id,kind:kind)}}
                 ForEach(records){record in
@@ -36,6 +60,7 @@ struct NativeSpace:View {
                         if record.kind == "chapter"{Text([record.data["POV"],record.data["wordCount"].map{"\($0) words"},record.data["location"]].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}
                     }.listRowSeparator(.hidden).swipeActions(edge:.trailing,allowsFullSwipe:true){if record.actionable{Button{store.complete(record)}label:{Label("Done",systemImage:"checkmark")}.tint(.green)}}
                 }
+            }
             }
             if route.id == "moshia" && kind == "event"{NativeTimeline()}
         }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Design.background).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)

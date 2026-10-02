@@ -10,7 +10,10 @@ enum Design {
     static let muted=Color(red:0.68,green:0.66,blue:0.62)
     static let accent=ink
     static let glassLettering=LinearGradient(colors:[Color.white,ink,Color(red:0.80,green:0.79,blue:0.74),ink],startPoint:.topLeading,endPoint:.bottomTrailing)
-    static func font(_ size:CGFloat,weight:String="Medium",relativeTo:Font.TextStyle = .body)->Font { .custom("AvenirNext-"+weight,size:size,relativeTo:relativeTo) }
+    static func font(_ size:CGFloat,weight:String="Medium",relativeTo:Font.TextStyle = .body)->Font {
+        let style:Font.TextStyle = relativeTo != .body ? relativeTo : size <= 12 ? .caption : size <= 14 ? .footnote : size <= 16 ? .subheadline : size <= 18 ? .body : size <= 20 ? .headline : size <= 24 ? .title3 : size <= 28 ? .title2 : size <= 34 ? .title : .largeTitle
+        return .system(style,design:.default).weight(weight == "Regular" ? .regular:weight == "DemiBold" ? .semibold:.medium)
+    }
     static func color(_ hex:UInt32)->Color { Color(red:Double((hex >> 16)&255)/255,green:Double((hex >> 8)&255)/255,blue:Double(hex&255)/255) }
 }
 struct SpaceMark: View {
@@ -25,9 +28,14 @@ struct GlassAction<Content:View>:View {
         else { content.buttonStyle(ActionStyle()) }
     }
 }
+private struct EdizCompactKey:EnvironmentKey { static let defaultValue=false }
+extension EnvironmentValues {
+    var edizCompact:Bool { get { self[EdizCompactKey.self] } set { self[EdizCompactKey.self]=newValue } }
+}
 struct Surface<Content:View>:View {
+    @Environment(\.edizCompact) private var compact
     @ViewBuilder var content:Content
-    var body:some View { content.padding(18).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:14)) }
+    var body:some View { content.padding(compact ? 12:22).frame(maxWidth:.infinity,alignment:.leading).background(compact ? Design.raised:Design.surface,in:RoundedRectangle(cornerRadius:compact ? 10:22)) }
 }
 struct ControlMaterial:ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reducedTransparency

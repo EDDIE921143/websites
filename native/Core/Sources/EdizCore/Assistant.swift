@@ -10,6 +10,9 @@ public enum AssistantRules {
     public static func reply(to question:String,records:[Record],history:[Activity],focus:String="all",previous:[Record]=[],now:Date=Date(),calendar:Calendar = .current)->AssistantReply {
         let q=question.trimmingCharacters(in:.whitespacesAndNewlines)
         let lower=q.lowercased()
+        if ["hello", "hi", "hey", "hallo", "hey ediz", "hello ediz"].contains(lower.trimmingCharacters(in: .punctuationCharacters)) {
+            return AssistantReply("Hey Ediz. What’s on your mind? We can work through a plan, your projects, or something you want to change.")
+        }
         if lower.hasPrefix("capture ") || lower.hasPrefix("remind me ") || lower.hasPrefix("add task ") {
             let prefix=lower.hasPrefix("capture ") ? 8:lower.hasPrefix("add task ") ? 9:10
             let draft=CaptureParser.parse(String(q.dropFirst(prefix)),now:now,calendar:calendar)

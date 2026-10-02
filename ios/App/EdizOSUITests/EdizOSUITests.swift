@@ -103,6 +103,9 @@ final class EdizOSUITests:XCTestCase {
     func testNativeWorkspaceFocusActuallyChangesToday(){
         app.buttons["Change focus"].tap();app.buttons["Moshia"].tap()
         XCTAssertTrue(app.buttons["Focused on Moshia"].waitForExistence(timeout:5))
+        let hero=app.descendants(matching:.any).matching(identifier:"focused-workspace").firstMatch
+        XCTAssertTrue(hero.exists);XCTAssertGreaterThan(hero.frame.height,250)
+        snapshot("Moshia is the dominant Today workspace")
         app.terminate();app.launchArguments=["-ui-testing"];app.launch()
         XCTAssertTrue(app.buttons["Focused on Moshia"].waitForExistence(timeout:5))
     }
@@ -114,6 +117,7 @@ final class EdizOSUITests:XCTestCase {
     func testAssistantKeepsContextAndPreviewsReminders(){
         capture("French homework tomorrow")
         app.tabBars.buttons["Assistant"].tap()
+        app.buttons["assistant-workspace-all"].tap()
         ask("What should I focus on?")
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","Start with French homework")).firstMatch.waitForExistence(timeout:5))
         ask("Why that?")
@@ -123,6 +127,59 @@ final class EdizOSUITests:XCTestCase {
         let review=app.buttons["Review reminder"];XCTAssertTrue(review.waitForExistence(timeout:5));review.tap()
         XCTAssertTrue(app.buttons["capture-save"].waitForExistence(timeout:5))
         app.buttons["Close"].tap()
+    }
+    func testAssistantChooserHasEqualCardsAndSeparateChatsWithOneTapTyping(){
+        app.tabBars.buttons["Assistant"].tap()
+        XCTAssertFalse(app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch.exists)
+        let everyday=app.buttons["assistant-workspace-all"]
+        let ejj=app.buttons["assistant-workspace-ejj"]
+        XCTAssertTrue(everyday.waitForExistence(timeout:5))
+        XCTAssertEqual(everyday.frame.height,ejj.frame.height,accuracy:1)
+        XCTAssertEqual(everyday.frame.width,ejj.frame.width,accuracy:1)
+        snapshot("Assistant workspace chooser")
+        everyday.tap()
+        let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout:5));input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:3))
+        input.typeText("Hello");app.buttons["Send question"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","What’s on your mind?")).firstMatch.waitForExistence(timeout:5))
+        snapshot("Everyday conversation and compact composer")
+        app.navigationBars.buttons.firstMatch.tap()
+        ejj.tap()
+        XCTAssertTrue(app.navigationBars["EJJ Digital"].waitForExistence(timeout:5))
+        XCTAssertFalse(app.staticTexts["Hello"].exists)
+        snapshot("Dedicated EJJ Digital chat")
+    }
+    func testDensityChangesAllAssistantCardsImmediately(){
+        app.tabBars.buttons["Assistant"].tap()
+        let card=app.buttons["assistant-workspace-all"]
+        XCTAssertTrue(card.waitForExistence(timeout:5));let comfortable=card.frame.height
+        app.buttons["Settings and backup"].tap();app.buttons["Compact"].tap()
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(card.waitForExistence(timeout:5));XCTAssertLessThan(card.frame.height,comfortable-20)
+        snapshot("Compact spaces and assistant layout")
+        app.buttons["Settings and backup"].tap();app.buttons["Comfortable"].tap()
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(card.waitForExistence(timeout:5));XCTAssertEqual(card.frame.height,comfortable,accuracy:1)
+        snapshot("Comfortable spaces and assistant layout")
+    }
+    func testChaptersUseSeparateCardsAndWritingSections(){
+        app.tabBars.buttons["Spaces"].tap();app.buttons["Chapters"].tap()
+        for title in ["First test chapter","Second test chapter","Third test chapter"] {
+            app.buttons["module-add"].tap()
+            let input=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch
+            let context=app.descendants(matching:.any).matching(identifier:"creation-context").firstMatch
+            XCTAssertTrue(input.waitForExistence(timeout:5));XCTAssertGreaterThan(context.frame.minY-input.frame.maxY,20)
+            input.tap();XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:3));input.typeText(title)
+            if title == "First test chapter" { snapshot("Separate chapter title and context fields") }
+            app.buttons["creation-save"].tap()
+            XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout:5))
+        }
+        app.swipeDown()
+        let cards=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","chapter-card-"))
+        XCTAssertEqual(cards.count,3)
+        XCTAssertGreaterThan(cards.element(boundBy:1).frame.minY-cards.element(boundBy:0).frame.maxY,12)
+        snapshot("Three individually separated chapter cards")
     }
     func testFocusCanPauseResumeAndFinish(){
         capture("A comfortable focus session")

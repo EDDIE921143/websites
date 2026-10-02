@@ -2,6 +2,7 @@ import XCTest
 @testable import EdizCore
 final class AssistantTests:XCTestCase {
     let now=Time.date("2026-10-01T10:00:00Z")!
+    func testGreetingStartsAConversationInsteadOfSearchingRecords(){let r=Record(title:"Hello draft",now:now);let reply=AssistantRules.reply(to:"Hello",records:[r],history:[]);XCTAssertTrue(reply.text.contains("What’s on your mind?"));XCTAssertTrue(reply.records.isEmpty)}
     func testAssistantReasonsUseThePreviousRecommendation(){let r=Record(title:"Real task",due:now.addingTimeInterval(3600),now:now);let reply=AssistantRules.reply(to:"Why that?",records:[r],history:[],previous:[r],now:now);XCTAssertTrue(reply.text.contains("24 hours"));XCTAssertEqual(reply.records.first?.id,r.id)}
     func testReminderIsOnlyADraft(){let reply=AssistantRules.reply(to:"Remind me French homework tomorrow",records:[],history:[],now:now);XCTAssertEqual(reply.draft?.space,"school");XCTAssertNotNil(reply.draft?.due);XCTAssertTrue(reply.records.isEmpty)}
     func testCreativeQuestionsNeverPresentPossibilitiesAsCanon(){let r=Record(space:"moshia",kind:"character",title:"Nathaniel",body:"A possible secret",now:now);let reply=AssistantRules.reply(to:"Tell me about Nathaniel",records:[r],history:[],now:now);XCTAssertTrue(reply.text.contains("POSSIBLE"));XCTAssertTrue(reply.text.contains("A possible secret"))}

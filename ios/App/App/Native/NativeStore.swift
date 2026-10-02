@@ -25,9 +25,32 @@ import EdizCore
         open()
     }
     @Published var assistantConnected=false
-    var assistantToken:String? {let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
+    var assistantToken:String? {if ProcessInfo.processInfo.arguments.contains("-ui-testing"){return nil};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
     func connectAssistant(_ url:URL){guard url.scheme == "edizos",url.host == "assistant",let token=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "token"})?.value,token.count == 64,token.allSatisfy({$0.isHexDigit}) else{return};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device"];SecItemDelete(query as CFDictionary);var item=query;item[kSecValueData as String]=Data(token.utf8);item[kSecAttrAccessible as String]=kSecAttrAccessibleWhenUnlockedThisDeviceOnly;if SecItemAdd(item as CFDictionary,nil)==errSecSuccess{assistantConnected=true;loadContext()}else{error="This device could not connect to the assistant."}}
-    func loadContext(){guard let token=assistantToken else{return};Task{@MainActor in do{var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant?context=1")!);request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization");let (data,response)=try await URLSession.shared.data(for:request);guard (response as? HTTPURLResponse)?.statusCode == 200 else{return};let context=try JSONDecoder().decode(WorkspaceContextBundle.self,from:data);let additions=context.items.filter{item in item.valid && item.kind == "note" && item.id.hasPrefix("ediz-context-") && !records.contains(where:{$0.id == item.id})};if !additions.isEmpty{_ = merge(additions)}}catch{error="Your workspace context could not be downloaded. Try connecting again when online."}}}
+    func loadContext() {
+        guard let token = assistantToken else { return }
+        Task { @MainActor in await fetchContext(token) }
+    }
+    func refresh() async {
+        do { try reload() } catch { self.error=error.localizedDescription }
+        if let token=assistantToken { await fetchContext(token) }
+    }
+    private func fetchContext(_ token:String) async {
+            do {
+                var request = URLRequest(url: URL(string: "https://ediz-os.vercel.app/api/assistant?context=1")!)
+                request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+                let context = try JSONDecoder().decode(WorkspaceContextBundle.self, from: data)
+                let additions = context.items.filter { item in
+                    item.valid && item.kind == "note" && item.id.hasPrefix("ediz-context-")
+                        && !self.records.contains(where: { $0.id == item.id })
+                }
+                if !additions.isEmpty { _ = self.merge(additions) }
+            } catch {
+                self.error = "Your workspace context could not be downloaded. Try connecting again when online."
+            }
+    }
     func open() {
         do {
             let database = try Database(url:root.appendingPathComponent("ediz.sqlite"))
@@ -36,6 +59,7 @@ import EdizCore
             try database.snapshot(directory:root.appendingPathComponent("Snapshots"))
             try? FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],ofItemAtPath:root.path)
             ready = true
+            assistantConnected = assistantToken != nil
             loadContext()
         } catch { self.error = error.localizedDescription }
     }

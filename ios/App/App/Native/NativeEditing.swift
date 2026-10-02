@@ -64,8 +64,10 @@ struct NativeEditor:View {
     @State private var date=Date()
     var body:some View {
         Form {
-            Section {
+            Section(record.kind == "chapter" ? "Chapter title":"Title") {
                 TextField("Title",text:$record.title,axis:.vertical).font(.body.weight(.medium)).accessibilityIdentifier("record-title")
+            }
+            Section("State & schedule") {
                 Picker("State",selection:$record.status){ForEach(Array(Set([record.status]+Catalog.states(kind:record.kind,space:record.space))).sorted(),id:\.self){Text($0).tag($0)}}
                 Toggle("Scheduled",isOn:$hasDate)
                 if hasDate{DatePicker("Date",selection:$date)}
@@ -78,7 +80,7 @@ struct NativeEditor:View {
                     Button("Start focus"){store.focusRequest=record}
                 }
             }
-            Section("Notes"){TextField("Context worth keeping",text:$record.body,axis:.vertical).lineLimit(4...15)}
+            Section(record.kind == "chapter" ? "Context worth keeping":"Notes"){TextField("Add context or notes",text:$record.body,axis:.vertical).lineLimit(4...15).accessibilityIdentifier("record-context")}
             if !Catalog.fields(record.kind).isEmpty { Section("Details"){ForEach(Catalog.fields(record.kind),id:\.self){key in TextField(friendly(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...7)}} }
             if let p=Priority.rank([record]).first { Section("Why Today may show this"){ForEach(p.reasons,id:\.self){Text($0).font(.subheadline).foregroundStyle(Design.muted)}} }
             Section("Files & recordings") {
@@ -145,10 +147,12 @@ struct NativeCreation:View {
     var body:some View {
         NavigationStack {
             Form {
-                Section("Title & context") {
-                    Text(Catalog.space(record.space).name).font(.subheadline).foregroundStyle(Design.muted).listRowSeparator(.hidden)
-                    TextField(record.kind == "chapter" ? "Chapter title":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title").padding(12).background(Design.raised,in:RoundedRectangle(cornerRadius:12)).listRowSeparator(.hidden)
+                Section(record.kind == "chapter" ? "Chapter title":"Title") {
+                    TextField(record.kind == "chapter" ? "Name this chapter":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title").padding(.vertical,8).listRowSeparator(.hidden)
+                }
+                Section("Context worth keeping") {
                     TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"Context worth keeping",text:$record.body,axis:.vertical).lineLimit(2...7).listRowSeparator(.hidden)
+                        .accessibilityIdentifier("creation-context").padding(.vertical,8)
                 }
                 if !detailKeys.isEmpty {
                     Section(record.kind == "chapter" ? "In this chapter":record.kind == "thread" ? "The thread":record.kind == "location" ? "The place":record.kind == "note" ? "Sources & connections":"Details") {
