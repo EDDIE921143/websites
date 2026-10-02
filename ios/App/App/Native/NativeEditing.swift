@@ -27,7 +27,7 @@ struct NativeCapture:View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...7).font(.body).focused($typing).accessibilityIdentifier("capture-text")
+                    TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...7).font(.body).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
                     HStack{Spacer();Button{if !speech.listening{voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Requesting microphone…":speech.listening ? "Stop listening":"Speak",systemImage:speech.listening ? "stop.circle":"mic")}.disabled(speech.requesting)}
                     if let error=speech.message { Text(error).font(.footnote).foregroundStyle(Design.muted) }
                 }
@@ -40,8 +40,8 @@ struct NativeCapture:View {
                     Section("Preview") { VStack(alignment:.leading,spacing:8){Text(preview.title).font(.body.weight(.medium));Text("\(Catalog.space(preview.space).name) · \(preview.kind)").font(.subheadline).foregroundStyle(Design.muted);if let due=Time.date(preview.due){Text(due,format:.dateTime.weekday().day().month().hour().minute()).font(.subheadline).foregroundStyle(Design.muted)};if preview.space == "moshia"{Text("POSSIBLE — canon only when you choose it.").font(.footnote).foregroundStyle(Design.muted)}} }
                 }
             }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
-                .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);onFinish?();dismiss()}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);onFinish?();dismiss()}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save")}}
-                .onChange(of:draft){_,value in store.draft(value)}
+                .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);if let onFinish{onFinish()}else{dismiss()}}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);store.walkthrough?.event("captured");if let onFinish{onFinish()}else{dismiss()}}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save").walkthroughTarget("capture-save",session:store.walkthrough)}}
+                .onChange(of:draft){_,value in store.draft(value);if !value.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("capture-typed")}}
                 .onChange(of:draft.space){_,value in if !Catalog.space(value).modules.contains(where:{$0.kind == draft.kind}){draft.kind=Catalog.space(value).modules[0].kind}}
                 .onChange(of:automatic){_,value in draft.data["_captureAuto"]=value ? "1":nil}
                 .onChange(of:date){_,value in draft.due=explicitDate ? Time.string(value):nil}
@@ -88,7 +88,7 @@ struct NativeEditor:View {
                 Button("Attach a file"){addingFile=true}
             }
             Section { Button("Delete item",role:.destructive){deletion=true} }
-        }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle(Catalog.space(record.space).name).navigationBarTitleDisplayMode(.inline)
+        }.scrollContentBackground(.hidden).background(AppBackdrop()).onAppear{store.walkthrough?.event("result-open")}.navigationTitle(Catalog.space(record.space).name).navigationBarTitleDisplayMode(.inline)
             .toolbar{ToolbarItem(placement:.confirmationAction){Button("Save"){record.due=hasDate ? Time.string(date):nil;if store.save(record){dismiss()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-save")}}
             .task{store.remember(record);do{if let draft=try store.database?.editDraft(recordID:record.id){record=draft};files=try store.database?.attachments(recordID:record.id) ?? []}catch{store.error=error.localizedDescription};hasDate=record.due != nil;date=Time.date(record.due) ?? Date()}
             .onChange(of:record){_,value in store.editDraft(value)}
@@ -145,14 +145,16 @@ struct NativeCreation:View {
     func keepDraft(){ do {try store.database?.setCreationDraft(record)}catch{store.error="Your draft could not be kept. Leave this screen open until you save."} }
     func save(){var final=record;final.data.removeValue(forKey:"_creation");final.due=scheduled ? Time.string(date):nil;if store.save(final,action:"Created"){do{try store.database?.clearCreationDraft(space:record.space,kind:record.kind)}catch{store.error="Saved, but the old draft could not be cleared."};dismiss()} }
     var body:some View {
+        VStack(spacing:0){
+            if let session=store.walkthrough{WalkthroughCoach(session:session)}
         NavigationStack {
             Form {
                 Section(record.kind == "chapter" ? "Chapter title":"Title") {
-                    TextField(record.kind == "chapter" ? "Name this chapter":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title").padding(.vertical,8).listRowSeparator(.hidden)
+                    TextField(record.kind == "chapter" ? "Name this chapter":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title").walkthroughTarget("chapter-title",session:store.walkthrough).padding(.vertical,8).listRowSeparator(.hidden)
                 }
                 Section("Context worth keeping") {
                     TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"Context worth keeping",text:$record.body,axis:.vertical).lineLimit(2...7).listRowSeparator(.hidden)
-                        .accessibilityIdentifier("creation-context").padding(.vertical,8)
+                        .accessibilityIdentifier("creation-context").walkthroughTarget("chapter-context",session:store.walkthrough).padding(.vertical,8)
                 }
                 if !detailKeys.isEmpty {
                     Section(record.kind == "chapter" ? "In this chapter":record.kind == "thread" ? "The thread":record.kind == "location" ? "The place":record.kind == "note" ? "Sources & connections":"Details") {
@@ -168,12 +170,13 @@ struct NativeCreation:View {
             }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Add "+noun).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement:.cancellationAction){Button("Close"){keepDraft();dismiss()}}
-                    ToolbarItem(placement:.confirmationAction){Button("Add"){if record.status == "CANON" {confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("creation-save").accessibilityLabel("Add "+noun)}
+                    ToolbarItem(placement:.confirmationAction){Button("Add"){if record.status == "CANON" {confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("creation-save").walkthroughTarget("chapter-save",session:store.walkthrough).accessibilityLabel("Add "+noun)}
                 }
-                .onChange(of:record){_,_ in keepDraft()}
+                .onChange(of:record){_,value in keepDraft();if !value.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("chapter-titled")};if !value.body.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("chapter-context")}}
                 .onChange(of:date){_,value in record.due=scheduled ? Time.string(value):nil}
                 .onChange(of:scheduled){_,value in record.due=value ? Time.string(date):nil}
                 .confirmationDialog("Add this to canon?",isPresented:$confirmCanon,titleVisibility:.visible){Button("Add to canon"){save()};Button("Cancel",role:.cancel){}}message:{Text("This marks the material as established in Moshia.")}
-        }.preferredColorScheme(.dark).tint(Design.accent)
+        }
+        }.onAppear{store.walkthrough?.event("creation-open")}.preferredColorScheme(.dark).tint(Design.accent)
     }
 }

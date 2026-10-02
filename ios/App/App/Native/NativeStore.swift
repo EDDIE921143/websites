@@ -15,9 +15,13 @@ import EdizCore
     @Published var ready = false
     private(set) var database: Database?
     private let root: URL
-    init() {
+    let isPractice:Bool
+    weak var walkthrough:WalkthroughSession?
+    init(practice:Bool=false) {
+        isPractice=practice
         let base=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("EdizOS",isDirectory:true)
-        if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+        if practice { root=FileManager.default.temporaryDirectory.appendingPathComponent("EdizPractice-"+UUID().uuidString,isDirectory:true) }
+        else if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
             let id=(ProcessInfo.processInfo.environment["EDIZ_UI_TEST_ID"] ?? "default").filter{$0.isLetter || $0.isNumber || $0 == "-"}
             root=base.appendingPathComponent("UITests",isDirectory:true).appendingPathComponent(id.isEmpty ? "default":id,isDirectory:true)
             if ProcessInfo.processInfo.arguments.contains("-reset-test-data"){try? FileManager.default.removeItem(at:root)}
@@ -25,8 +29,8 @@ import EdizCore
         open()
     }
     @Published var assistantConnected=false
-    var assistantToken:String? {if ProcessInfo.processInfo.arguments.contains("-ui-testing"){return nil};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
-    func connectAssistant(_ url:URL){guard url.scheme == "edizos",url.host == "assistant",let token=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "token"})?.value,token.count == 64,token.allSatisfy({$0.isHexDigit}) else{return};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device"];SecItemDelete(query as CFDictionary);var item=query;item[kSecValueData as String]=Data(token.utf8);item[kSecAttrAccessible as String]=kSecAttrAccessibleWhenUnlockedThisDeviceOnly;if SecItemAdd(item as CFDictionary,nil)==errSecSuccess{assistantConnected=true;loadContext()}else{error="This device could not connect to the assistant."}}
+    var assistantToken:String? {if isPractice || ProcessInfo.processInfo.arguments.contains("-ui-testing"){return nil};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
+    func connectAssistant(_ url:URL){guard !isPractice,url.scheme == "edizos",url.host == "assistant",let token=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "token"})?.value,token.count == 64,token.allSatisfy({$0.isHexDigit}) else{return};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device"];SecItemDelete(query as CFDictionary);var item=query;item[kSecValueData as String]=Data(token.utf8);item[kSecAttrAccessible as String]=kSecAttrAccessibleWhenUnlockedThisDeviceOnly;if SecItemAdd(item as CFDictionary,nil)==errSecSuccess{assistantConnected=true;loadContext()}else{error="This device could not connect to the assistant."}}
     func loadContext() {
         guard let token = assistantToken else { return }
         Task { @MainActor in await fetchContext(token) }
@@ -68,7 +72,7 @@ import EdizCore
         records = try database.records(); activity = try database.history(); preferences = try database.preferences()
     }
     @discardableResult func save(_ record: EdizCore.Record, action: String = "Updated") -> Bool {
-        do { guard let database else{throw CoreError.database("unavailable")};var copy=record;copy.updated=Time.string(Date());try database.save(copy,action:action);try reload();UISelectionFeedbackGenerator().selectionChanged();return true }
+        do { guard let database else{throw CoreError.database("unavailable")};var copy=record;copy.updated=Time.string(Date());try database.save(copy,action:action);try reload();UISelectionFeedbackGenerator().selectionChanged();walkthrough?.event("saved-"+copy.kind);return true }
         catch { self.error=error.localizedDescription;return false }
     }
     func complete(_ record: EdizCore.Record) { var copy=record;copy.status="done";if save(copy,action:"Completed"){undoRecord=record;UINotificationFeedbackGenerator().notificationOccurred(.success)} }
@@ -102,7 +106,8 @@ import EdizCore
             setPreferences(next)
         }catch{self.error="This conversation could not be saved. Your records are unchanged."}
     }
-    func setPreferences(_ next: Preferences) { do{try database?.setPreferences(next);preferences=next}catch{self.error=error.localizedDescription} }
+    func setPreferences(_ next: Preferences) { do{try database?.setPreferences(next);preferences=next;walkthrough?.event("density-"+next.density);walkthrough?.event("focus-"+next.focus)}catch{self.error=error.localizedDescription} }
+    func discardPractice(){guard isPractice else{return};database=nil;try? FileManager.default.removeItem(at:root)}
     func export() throws -> URL {
         guard let database else{throw CoreError.database("unavailable")}
         let data=try database.backupData()

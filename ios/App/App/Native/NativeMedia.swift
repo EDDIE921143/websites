@@ -3,6 +3,10 @@ import AVFoundation
 import Speech
 import QuickLook
 import EdizCore
+import PhotosUI
+import UniformTypeIdentifiers
+import ImageIO
+import NaturalLanguage
 
 @MainActor final class NativeSpeech:ObservableObject {
     @Published var listening=false
@@ -129,5 +133,152 @@ struct NativeRehearsal:View {
         .background(AppBackdrop()).foregroundStyle(Design.ink).preferredColorScheme(.dark)
         .simultaneousGesture(DragGesture(minimumDistance:50).onEnded{value in guard abs(value.translation.width)>abs(value.translation.height)*1.5 else{return};index=value.translation.width<0 ? min(max(0,songs.count-1),index+1):max(0,index-1)})
         .onAppear{applySongTempo()}.onChange(of:index){_,_ in applySongTempo()}.onChange(of:metronome.bpm){_,_ in metronome.changeBPM()}.onDisappear{metronome.stop()}
+    }
+}
+
+struct AssistantAttachment:Identifiable {
+    let id=UUID()
+    let name:String
+    let mimeType:String
+    let bytes:Data
+    var symbol:String{mimeType.hasPrefix("image/") ? "photo":mimeType.hasPrefix("video/") ? "video":"doc.text"}
+}
+struct AssistantAttachmentInfo:Codable,Identifiable {
+    var id=UUID()
+    let name:String
+    let mimeType:String
+}
+enum AssistantMedia {
+    static let limit=2_500_000
+    static func prepare(_ url:URL) async throws -> AssistantAttachment {
+        let type=UTType(filenameExtension:url.pathExtension) ?? .data
+        let name=UUID(uuidString:url.deletingPathExtension().lastPathComponent) != nil ? (type.conforms(to:.movie) ? "Video.mp4":"Photo.jpg"):String(url.lastPathComponent.prefix(180))
+        if type.conforms(to:.movie) {
+            let asset=AVURLAsset(url:url)
+            let duration=try await asset.load(.duration)
+            guard duration.seconds <= 60 else{throw issue("Choose a video of 60 seconds or less for this connection.")}
+            guard let export=AVAssetExportSession(asset:asset,presetName:AVAssetExportPreset640x480) else{throw issue("This video format couldn’t be prepared.")}
+            let output=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".mp4")
+            defer{try? FileManager.default.removeItem(at:output)}
+            try await export.export(to:output,as:.mp4)
+            guard (try output.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? limit+1)<=limit else{throw issue("This video is still too large. Choose a shorter clip; attachments can total 2.5 MB.")}
+            return .init(name:name,mimeType:"video/mp4",bytes:try Data(contentsOf:output))
+        }
+        guard (try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? limit+1) <= (type.conforms(to:.image) ? 50_000_000:limit) else{throw issue("Choose a smaller file; attachments can total 2.5 MB.")}
+        let data=try Data(contentsOf:url)
+        if type.conforms(to:.image) {
+            guard let source=CGImageSourceCreateWithData(data as CFData,nil),let image=CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceThumbnailMaxPixelSize:1600,kCGImageSourceCreateThumbnailWithTransform:true] as CFDictionary),let bytes=UIImage(cgImage:image).jpegData(compressionQuality:0.78) else{throw issue("This photo couldn’t be read.")}
+            return .init(name:name,mimeType:"image/jpeg",bytes:bytes)
+        }
+        if type.conforms(to:.pdf){return .init(name:name,mimeType:"application/pdf",bytes:data)}
+        if type.conforms(to:.text)||["txt","md","csv","json"].contains(url.pathExtension.lowercased()),String(data:data,encoding:.utf8) != nil {return .init(name:name,mimeType:"text/plain",bytes:data)}
+        throw issue("Use a photo, short video, PDF, or a text, Markdown, CSV or JSON file.")
+    }
+    static func issue(_ text:String)->NSError{NSError(domain:"AssistantMedia",code:1,userInfo:[NSLocalizedDescriptionKey:text])}
+}
+struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
+    var receive:(URL)->Void
+    var close:()->Void
+    var failed:(String)->Void
+    func makeUIViewController(context:Context)->PHPickerViewController {
+        var config=PHPickerConfiguration();config.filter = .any(of:[.images,.videos]);config.selectionLimit=3
+        let picker=PHPickerViewController(configuration:config);picker.delegate=context.coordinator;return picker
+    }
+    func updateUIViewController(_ controller:PHPickerViewController,context:Context){}
+    func makeCoordinator()->Coordinator{Coordinator(receive:receive,close:close,failed:failed)}
+    final class Coordinator:NSObject,PHPickerViewControllerDelegate {
+        let receive:(URL)->Void
+        let close:()->Void
+        let failed:(String)->Void
+        init(receive:@escaping(URL)->Void,close:@escaping()->Void,failed:@escaping(String)->Void){self.receive=receive;self.close=close;self.failed=failed}
+        func picker(_ picker:PHPickerViewController,didFinishPicking results:[PHPickerResult]) {
+            close()
+            for result in results {
+                let provider=result.itemProvider
+                let type=provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) ? UTType.movie.identifier:UTType.image.identifier
+                provider.loadFileRepresentation(forTypeIdentifier:type){url,error in
+                    guard let url else{DispatchQueue.main.async{self.failed("That photo or video couldn’t be loaded. Try again when it’s available on this phone.")};return}
+                    let copy=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+"."+url.pathExtension)
+                    do{try FileManager.default.copyItem(at:url,to:copy);DispatchQueue.main.async{self.receive(copy)}}catch{DispatchQueue.main.async{self.failed("That media couldn’t be prepared. Try choosing it again.")}}
+                }
+            }
+        }
+    }
+}
+@MainActor final class NativeAssistantSpeaker:NSObject,ObservableObject,AVSpeechSynthesizerDelegate,AVAudioPlayerDelegate {
+    @Published var speaking=false
+    @Published var preparing=false
+    @Published var voiceNote:String?
+    private var player:AVAudioPlayer?
+    private var generation:Task<Void,Never>?
+    private let synthesizer=AVSpeechSynthesizer()
+    var finished:(()->Void)?
+    override init(){super.init();synthesizer.delegate=self}
+    func say(_ text:String,token:String?=nil,natural:Bool=true){
+        stop();voiceNote=nil
+        guard natural,let token,!text.isEmpty else{deviceSay(text);return}
+        preparing=true
+        generation=Task{@MainActor in
+            do {
+                var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!)
+                request.httpMethod="POST";request.timeoutInterval=12
+                request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
+                request.httpBody=try JSONSerialization.data(withJSONObject:["mode":"speech","text":String(text.prefix(2000)),"voice":"Aoede"])
+                let (data,response)=try await URLSession.shared.data(for:request)
+                try Task.checkCancellation()
+                guard let response=response as? HTTPURLResponse,response.statusCode==200,
+                    let json=try JSONSerialization.jsonObject(with:data) as? [String:Any],let encoded=json["audio"] as? String,let audio=Data(base64Encoded:encoded) else{throw URLError(.cannotParseResponse)}
+                let session=AVAudioSession.sharedInstance();try session.setCategory(.playback,mode:.spokenAudio,options:.duckOthers);try session.setActive(true)
+                let audioPlayer=try AVAudioPlayer(data:audio);audioPlayer.delegate=self;player=audioPlayer
+                guard audioPlayer.play() else{throw URLError(.cannotDecodeContentData)}
+                preparing=false;speaking=true;voiceNote="Natural voice · Gemini"
+            }catch {
+                guard !Task.isCancelled else{return}
+                preparing=false;voiceNote="Using device voice while natural voice is unavailable.";deviceSay(text)
+            }
+        }
+    }
+    private func deviceSay(_ text:String){
+        do{let audio=AVAudioSession.sharedInstance();try audio.setCategory(.playback,mode:.spokenAudio,options:.duckOthers);try audio.setActive(true)}catch{return}
+        let utterance=AVSpeechUtterance(string:String(text.prefix(5000)));let recognizer=NLLanguageRecognizer();recognizer.processString(text)
+        let language=recognizer.dominantLanguage?.rawValue ?? Locale.current.language.languageCode?.identifier ?? "en"
+        let voices=AVSpeechSynthesisVoice.speechVoices().filter{$0.language.hasPrefix(language)}
+        utterance.voice=voices.max{left,right in left.quality.rawValue < right.quality.rawValue} ?? AVSpeechSynthesisVoice(language:language)
+        utterance.rate=AVSpeechUtteranceDefaultSpeechRate * 0.94;utterance.pitchMultiplier=1.0;utterance.preUtteranceDelay=0.08
+        speaking=true;synthesizer.speak(utterance)
+    }
+    func stop(){generation?.cancel();generation=nil;preparing=false;player?.stop();player=nil;speaking=false;synthesizer.stopSpeaking(at:.immediate);try? AVAudioSession.sharedInstance().setActive(false,options:.notifyOthersOnDeactivation)}
+    nonisolated func audioPlayerDidFinishPlaying(_ player:AVAudioPlayer,successfully flag:Bool){Task{@MainActor in self.speaking=false;self.player=nil;try? AVAudioSession.sharedInstance().setActive(false,options:.notifyOthersOnDeactivation);self.finished?()}}
+    nonisolated func speechSynthesizer(_ synthesizer:AVSpeechSynthesizer,didFinish utterance:AVSpeechUtterance){Task{@MainActor in self.speaking=false;try? AVAudioSession.sharedInstance().setActive(false,options:.notifyOthersOnDeactivation);self.finished?()}}
+}
+struct NativeAssistantVoicePanel:View {
+    @AppStorage("assistant-natural-voice") private var naturalVoice=true
+    @ObservedObject var speech:NativeSpeech
+    @ObservedObject var speaker:NativeAssistantSpeaker
+    let busy:Bool
+    let reply:String
+    let error:String?
+    let scope:String
+    let listen:()->Void
+    let send:()->Void
+    let read:()->Void
+    let end:()->Void
+    var accent:Color{scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)}
+    var body:some View {
+        VStack(spacing:24){
+            HStack{Text("Talk to your assistant").font(.headline);Spacer();Button("Done"){end()}.accessibilityIdentifier("voice-done")}
+            Spacer(minLength:12)
+            Image(systemName:speaker.speaking ? "waveform":speech.listening ? "mic.fill":busy ? "ellipsis.bubble":"mic").font(.system(size:52,weight:.light)).foregroundStyle(accent).frame(width:150,height:150).background(accent.opacity(0.10),in:Circle())
+            Text(speaker.preparing ? "Preparing natural voice…":busy ? "Thinking…":speaker.speaking ? "Your assistant is speaking":speech.listening ? "Listening to you":"Ready when you are").font(.title2.weight(.medium))
+            Picker("Voice",selection:$naturalVoice){Text("Natural").tag(true);Text("Device · faster").tag(false)}.pickerStyle(.segmented).disabled(speaker.speaking || speaker.preparing || speech.listening)
+            if let note=speaker.voiceNote{Text(note).font(.caption).foregroundStyle(Design.muted)}
+            Text("Speak, pause, then hear the answer. You can stop at any time.").font(.subheadline).foregroundStyle(Design.muted).multilineTextAlignment(.center)
+            ScrollView{Text(speech.listening || busy ? speech.transcript:reply).font(.body).lineSpacing(4).frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:180)
+            if let message=error ?? speech.message {Text(message).font(.footnote).foregroundStyle(Design.muted).multilineTextAlignment(.center)}
+            Spacer(minLength:12)
+            HStack(spacing:16){Button{listen()}label:{Label(speech.listening ? "Restart listening":"Speak",systemImage:"mic.fill")}.disabled(busy).buttonStyle(ActionStyle());if speech.listening{Button("Send now"){send()}.buttonStyle(ActionStyle()).disabled(speech.transcript.isEmpty)}}
+            Button(reply.isEmpty ? "Try the voice":"Hear the last reply"){read()}.font(.subheadline).disabled(busy || speaker.preparing).accessibilityIdentifier("voice-read-reply")
+            Button("End conversation"){end()}.font(.subheadline).foregroundStyle(Design.muted).padding(12)
+        }.padding(24).background(AppBackdrop(scope:scope)).preferredColorScheme(.dark)
     }
 }

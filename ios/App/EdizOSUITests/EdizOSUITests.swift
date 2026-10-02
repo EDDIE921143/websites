@@ -154,24 +154,69 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["Hello"].waitForExistence(timeout:5))
         snapshot("Conversation restored after app restart")
     }
-    func testTutorialCoversEveryStepAndReturnsToSettings(){
+    func testHandsOnTutorialsAdvanceWithRealActionsAndKeepYourData(){
+        snapshot("Warm welcoming Today screen")
         app.buttons["Settings and backup"].tap()
         let guide=app.buttons["settings-tutorial"]
-        for _ in 0..<5{if guide.isHittable{break};app.swipeUp()}
-        XCTAssertTrue(guide.waitForExistence(timeout:5));guide.tap()
-        XCTAssertTrue(app.staticTexts["Make room for your day"].waitForExistence(timeout:5))
-        snapshot("Tutorial welcome and clear navigation")
-        let next=app.buttons["tutorial-next"]
-        for number in 1...9 {
-            next.tap()
-            XCTAssertTrue(app.staticTexts["Step \(number+1) of 10"].waitForExistence(timeout:3))
-            if number == 5{snapshot("Tutorial assistant guidance")}
+        for _ in 0..<6 {if guide.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(guide.isHittable);guide.tap()
+        XCTAssertTrue(app.staticTexts["Learn by doing."].waitForExistence(timeout:5))
+        snapshot("Hands-on tutorial chooser")
+        func start(_ id:String){
+            let button=app.buttons["tutorial-start-"+id]
+            for _ in 0..<5 {if button.isHittable{break};app.swipeUp()}
+            XCTAssertTrue(button.isHittable);button.tap()
+            XCTAssertTrue(app.buttons["walkthrough-exit"].waitForExistence(timeout:5))
         }
-        XCTAssertTrue(app.staticTexts["Keep your work safe"].exists)
-        snapshot("Tutorial backup and privacy guidance")
-        next.tap();XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout:5))
+        func finish(){
+            XCTAssertTrue(app.buttons["walkthrough-done"].waitForExistence(timeout:5))
+            snapshot("Interactive tutorial completed")
+            app.buttons["walkthrough-done"].tap()
+            XCTAssertTrue(app.navigationBars["Your guide"].waitForExistence(timeout:5))
+        }
+        start("capture")
+        XCTAssertTrue(app.staticTexts["Open Capture"].exists)
+        app.tabBars.buttons["Capture"].tap()
+        XCTAssertTrue(app.staticTexts["Try typing"].waitForExistence(timeout:5))
+        snapshot("Capture tutorial highlights the actual input")
+        let input=app.descendants(matching:.any).matching(identifier:"capture-text").firstMatch
+        input.tap();input.typeText("Practice guitar tomorrow")
+        XCTAssertTrue(app.staticTexts["Save the thought"].exists)
+        app.buttons["capture-save"].tap();finish()
+        start("chapters");app.tabBars.buttons["Spaces"].tap()
+        let chapters=app.buttons["Chapters"]
+        for _ in 0..<5 {if chapters.isHittable{break};app.swipeUp()}
+        chapters.tap();app.buttons["module-add"].tap()
+        let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout:5));title.tap();title.typeText("My practice chapter")
+        let context=app.descendants(matching:.any).matching(identifier:"creation-context").firstMatch
+        context.tap();context.typeText("A character finds a letter.")
+        snapshot("Chapter tutorial highlights the real Add control")
+        app.buttons["creation-save"].tap();finish()
+        start("assistant");app.tabBars.buttons["Assistant"].tap()
+        app.buttons["assistant-workspace-moshia"].tap()
+        let message=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
+        message.tap();message.typeText("What have I saved about Moshia?")
+        snapshot("Assistant tutorial highlights the actual send button")
+        app.buttons["Send question"].tap();finish()
+        start("search");app.tabBars.buttons["Search"].tap()
+        let search=app.textFields["search-query"]
+        XCTAssertTrue(search.waitForExistence(timeout:5));search.tap();search.typeText("guitar")
+        app.staticTexts["Practice guitar"].tap();finish()
+        start("appearance");app.buttons["Settings and backup"].tap()
+        app.buttons["Compact"].tap()
+        XCTAssertTrue(app.staticTexts["Try Comfortable"].waitForExistence(timeout:5))
+        app.buttons["Comfortable"].tap();finish()
+        start("focus");app.buttons["Change focus"].tap()
+        app.buttons["Moshia"].tap();finish()
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.tabBars.buttons["Assistant"].exists)
+        for _ in 0..<6 {if app.buttons["Comfortable"].isHittable{break};app.swipeDown()}
+        XCTAssertTrue(app.buttons["Comfortable"].isSelected)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertFalse(app.staticTexts["My practice chapter"].exists)
+        app.tabBars.buttons["Search"].tap()
+        XCTAssertFalse(app.staticTexts["Practice guitar"].exists)
+        XCTAssertFalse(app.staticTexts["Practice guitar tomorrow"].exists)
     }
     func testInstalledContextAndWorkspaceBackgroundsReadOnly(){
         app.terminate()
@@ -205,6 +250,37 @@ final class EdizOSUITests:XCTestCase {
             if !card.isHittable {app.swipeUp()}
             card.tap();snapshot(name)
         }
+    }
+    func testConnectedNaturalVoiceReadOnly(){
+        app.terminate();app.launchArguments=[];app.launchEnvironment=[:];app.launch()
+        snapshot("Installed home with visible contour background")
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
+        app.buttons["assistant-voice"].tap()
+        app.segmentedControls.buttons["Natural"].tap()
+        XCTAssertTrue(app.buttons["voice-read-reply"].waitForExistence(timeout:5))
+        app.buttons["voice-read-reply"].tap()
+        XCTAssertTrue(app.staticTexts["Natural voice · Gemini"].waitForExistence(timeout:18))
+        XCTAssertTrue(app.staticTexts["Your assistant is speaking"].exists)
+        snapshot("Verified natural Gemini voice on the iPhone")
+        app.buttons["voice-done"].tap()
+    }
+    func testAssistantAttachmentPickersAndSpokenReply(){
+        snapshot("Refined iOS home with contour background")
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
+        app.buttons["assistant-attach"].tap();app.buttons["Choose a file"].tap()
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout:5));app.buttons["Cancel"].tap()
+        app.buttons["assistant-attach"].tap();app.buttons["Photo or video"].tap()
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout:5));app.buttons["Cancel"].tap()
+        let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
+        input.tap();input.typeText("Hello");app.buttons["Send question"].tap()
+        app.buttons["assistant-voice"].tap()
+        XCTAssertTrue(app.staticTexts["Ready when you are"].waitForExistence(timeout:5))
+        snapshot("Voice conversation with explicit microphone control")
+        app.buttons["voice-read-reply"].tap()
+        XCTAssertTrue(app.staticTexts["Your assistant is speaking"].waitForExistence(timeout:5))
+        snapshot("Assistant speaking the reply aloud")
+        app.buttons["voice-done"].tap()
+        XCTAssertTrue(app.buttons["assistant-question"].exists || app.textFields["assistant-question"].exists || app.textViews["assistant-question"].exists)
     }
     func testDistinctWorkspaceChatLayouts(){
         app.tabBars.buttons["Assistant"].tap()

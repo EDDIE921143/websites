@@ -9,7 +9,7 @@ struct NativeSettings:View {
     @State private var checkedEndpoint=""
     var body:some View {
         Form {
-            Section("Look & feel"){Picker("Density",selection:Binding(get:{store.preferences.density},set:{var next=store.preferences;next.density=$0;store.setPreferences(next)})){Text("Comfortable").tag("comfortable");Text("Compact").tag("compact")}.pickerStyle(.segmented);Text("Comfortable gives cards room to breathe. Compact uses shorter rows and smaller panels. Touch targets stay easy to reach.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Look & feel"){Picker("Density",selection:Binding(get:{store.preferences.density},set:{var next=store.preferences;next.density=$0;store.setPreferences(next)})){Text("Comfortable").tag("comfortable");Text("Compact").tag("compact")}.pickerStyle(.segmented).walkthroughTarget("density",session:store.walkthrough);Text("Comfortable gives cards room to breathe. Compact uses shorter rows and smaller panels. Touch targets stay easy to reach.").font(.footnote).foregroundStyle(Design.muted)}
             Section("Your attention"){Picker("Current focus",selection:Binding(get:{store.preferences.focus},set:{store.setFocus($0)})){Text("Balanced").tag("all");ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Text("This gives the chosen space more weight. Deadlines still matter.").font(.footnote).foregroundStyle(Design.muted)}
             Section("Your data"){
                 Button("Export full backup"){do{file=FilePreview(url:try store.export())}catch{store.error=error.localizedDescription}}
@@ -42,17 +42,17 @@ struct NativeSettings:View {
                     Text("Connect a model you run on your local network. Records are sent only when you switch on ‘Use my local model’ in Assistant and ask a question. No paid key is required.").font(.footnote).foregroundStyle(Design.muted)
                 }
             }
-            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.10 · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.11 · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
             Section {
                 NavigationLink { NativeTutorial() } label: {
                     HStack(spacing:14) {
                         Image(systemName:"book.pages.fill").font(.title2).foregroundStyle(Design.ink)
                             .frame(width:48,height:48).background(Design.raised,in:RoundedRectangle(cornerRadius:14))
-                        VStack(alignment:.leading,spacing:5){Text("Your guide to Ediz OS").font(.headline);Text("A step-by-step walkthrough").font(.subheadline).foregroundStyle(Design.muted)}
+                        VStack(alignment:.leading,spacing:5){Text("Your guide to Ediz OS").font(.headline);Text("Learn by using the app").font(.subheadline).foregroundStyle(Design.muted)}
                     }.padding(.vertical,8)
-                }.accessibilityIdentifier("settings-tutorial")
+                }.accessibilityIdentifier("settings-tutorial").disabled(store.isPractice)
             } header:{Text("Getting started")}
-        }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Settings")
+        }.onAppear{store.walkthrough?.event("settings-open")}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Settings")
             .sheet(item:$file){shared in NativeShare(url:shared.url){completed in if completed && shared.url.lastPathComponent.hasPrefix("ediz-os-"){store.markBackupShared()}}}
     }
 }
@@ -104,89 +104,118 @@ struct NativeHistory:View {
 }
 struct NativeHealth:View {
     @EnvironmentObject var store:NativeStore
-    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:"0.3.10");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
+    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:"0.3.11");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
 }
 
 struct NativeFocusChoice:View {
     @EnvironmentObject var store:NativeStore
     @Environment(\.dismiss) private var dismiss
-    var body:some View {NavigationStack {List {Section {Text("Choose where you want more attention. Important deadlines stay visible.").font(.subheadline).foregroundStyle(Design.muted).listRowSeparator(.hidden);choice("all","Balanced");ForEach(Catalog.spaces){choice($0.id,$0.name)}}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Focus on a space").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}}}
-    func choice(_ id:String,_ label:String)->some View {Button{store.setFocus(id);if store.preferences.focus == id{dismiss()}}label:{HStack{Text(label).foregroundStyle(Design.ink);Spacer();if store.preferences.focus == id{Image(systemName:"checkmark").foregroundStyle(Design.ink)}}.frame(minHeight:44)}.listRowSeparator(.hidden)}
+    var body:some View {VStack(spacing:0){if let session=store.walkthrough{WalkthroughCoach(session:session)};NavigationStack {List {Section {Text("Choose where you want more attention. Important deadlines stay visible.").font(.subheadline).foregroundStyle(Design.muted).listRowSeparator(.hidden);choice("all","Balanced");ForEach(Catalog.spaces){choice($0.id,$0.name)}}}.scrollContentBackground(.hidden).background(AppBackdrop()).onAppear{store.walkthrough?.event("focus-open")}.navigationTitle("Focus on a space").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}}}}
+    func choice(_ id:String,_ label:String)->some View {Button{store.setFocus(id);if store.preferences.focus == id{dismiss()}}label:{HStack{Text(label).foregroundStyle(Design.ink);Spacer();if store.preferences.focus == id{Image(systemName:"checkmark").foregroundStyle(Design.ink)}}.frame(minHeight:44)}.listRowSeparator(.hidden).walkthroughTarget(id == "moshia" ? "focus-moshia":"",session:store.walkthrough)}
 }
 
-private struct TutorialStep {
+struct WalkthroughStep {
     let title:String
-    let summary:String
-    let symbol:String
-    let space:String
-    let previewTitle:String
-    let previewDetail:String
-    let instructions:[String]
-    let tip:String
+    let instruction:String
+    let event:String
+    let target:String
+}
+enum WalkthroughKind:String,CaseIterable,Identifiable {
+    case capture,chapters,assistant,search,appearance,focus
+    var id:String{rawValue}
+    var title:String{switch self{case .capture:return "Capture a thought";case .chapters:return "Create a chapter";case .assistant:return "Explore a chat";case .search:return "Find your work";case .appearance:return "Change the look";case .focus:return "Focus on a space"}}
+    var symbol:String{switch self{case .capture:return "plus.circle.fill";case .chapters:return "book.closed.fill";case .assistant:return "text.bubble.fill";case .search:return "magnifyingglass";case .appearance:return "slider.horizontal.3";case .focus:return "scope"}}
+    var summary:String{switch self{case .capture:return "Type, preview, and save a thought.";case .chapters:return "Try the chapter title and context fields.";case .assistant:return "Open a workspace and send a practice message.";case .search:return "Search and open a real practice result.";case .appearance:return "Switch layouts and see the change immediately.";case .focus:return "Give Moshia the main space on Today."}}
+    var steps:[WalkthroughStep]{switch self{
+    case .capture:return [
+        .init(title:"Open Capture",instruction:"Tap Capture, the + in the bottom bar.",event:"tab-2",target:""),
+        .init(title:"Try typing",instruction:"Tap the highlighted field. Type ‘Practice guitar tomorrow’ or a thought of your own.",event:"capture-typed",target:"capture-text"),
+        .init(title:"Save the thought",instruction:"Look at the preview, then tap the highlighted Save button at the top right.",event:"captured",target:"capture-save")]
+    case .chapters:return [
+        .init(title:"Open your spaces",instruction:"Tap Spaces in the bottom bar.",event:"tab-1",target:""),
+        .init(title:"Find Moshia",instruction:"Tap the highlighted Chapters button in the Moshia card. Scroll a little if needed.",event:"chapters-open",target:"chapters"),
+        .init(title:"Add a chapter",instruction:"Tap the highlighted Add chapter button at the top left.",event:"creation-open",target:"add-chapter"),
+        .init(title:"Give it a title",instruction:"Tap the highlighted Chapter title field and type a title.",event:"chapter-titled",target:"chapter-title"),
+        .init(title:"Keep the context",instruction:"Tap the highlighted Context worth keeping field. Write one sentence about what happens.",event:"chapter-context",target:"chapter-context"),
+        .init(title:"Create your chapter",instruction:"Tap the highlighted Add button at the top right. This chapter stays in the practice workspace.",event:"saved-chapter",target:"chapter-save")]
+    case .assistant:return [
+        .init(title:"Open Assistant",instruction:"Tap Assistant in the bottom bar.",event:"tab-4",target:""),
+        .init(title:"Choose a conversation",instruction:"Tap the highlighted Moshia card to open its own conversation.",event:"chat-open",target:"assistant-moshia"),
+        .init(title:"Write a message",instruction:"Tap the highlighted Message field and ask ‘What have I saved about Moshia?’.",event:"assistant-typed",target:"assistant-message"),
+        .init(title:"Send it",instruction:"Tap the highlighted arrow. Practice uses Saved context; your connected Gemini chats work outside this tutorial.",event:"assistant-replied",target:"assistant-send")]
+    case .search:return [
+        .init(title:"Open Search",instruction:"Tap Search in the bottom bar.",event:"tab-3",target:""),
+        .init(title:"Search for a thought",instruction:"Tap the search field and type ‘guitar’. You’ll see the practice task below.",event:"searched",target:"search-query"),
+        .init(title:"Open the result",instruction:"Tap ‘Practice guitar’. The item opens so you can examine its details.",event:"result-open",target:"search-result")]
+    case .appearance:return [
+        .init(title:"Open Settings",instruction:"Tap the highlighted sliders button at the top right.",event:"settings-open",target:"settings"),
+        .init(title:"Try Compact",instruction:"Tap Compact in the highlighted Look & feel control. Watch the rows become shorter.",event:"density-compact",target:"density"),
+        .init(title:"Try Comfortable",instruction:"Tap Comfortable. The cards and rows have room to breathe again.",event:"density-comfortable",target:"density")]
+    case .focus:return [
+        .init(title:"Choose your attention",instruction:"Tap the highlighted Change focus sliders beside What matters.",event:"focus-open",target:"focus"),
+        .init(title:"Choose Moshia",instruction:"Tap the highlighted Moshia row. Then examine the larger story workspace on Today.",event:"focus-moshia",target:"focus-moshia")]
+    }}
+}
+@MainActor final class WalkthroughSession:ObservableObject,Identifiable {
+    let id=UUID()
+    let kind:WalkthroughKind
+    let practice:NativeStore
+    @Published var index=0
+    var onExit:(()->Void)?
+    var steps:[WalkthroughStep]{kind.steps}
+    var finished:Bool{index >= steps.count}
+    var step:WalkthroughStep?{finished ? nil:steps[index]}
+    init(kind:WalkthroughKind){
+        self.kind=kind;practice=NativeStore(practice:true)
+        var task=EdizCore.Record(space:"personal",kind:"task",title:"Practice guitar");task.body="A practice item. Open it, inspect its details, and try the controls."
+        _=practice.save(task,action:"Practice example")
+        var brief=EdizCore.Record(space:"moshia",kind:"note",title:"Moshia practice context");brief.body="Moshia is your story workspace. Chapters, characters and plot threads belong here. This example is only for learning the app.";brief.data["contextType"]="workspace-brief"
+        _=practice.save(brief,action:"Practice example")
+        practice.walkthrough=self
+    }
+    func event(_ value:String){guard step?.event == value else{return};index+=1;UISelectionFeedbackGenerator().selectionChanged()}
+    func close(){onExit?()}
+}
+struct WalkthroughCoach:View {
+    @ObservedObject var session:WalkthroughSession
+    var body:some View {
+        VStack(alignment:.leading,spacing:10){
+            HStack{Label("PRACTICE WORKSPACE",systemImage:"hand.tap.fill").font(.caption2.weight(.semibold)).tracking(1);Spacer();Button{session.close()}label:{Image(systemName:"xmark.circle.fill").font(.title2)}.accessibilityLabel("Exit tutorial").accessibilityIdentifier("walkthrough-exit")}
+            if let step=session.step {
+                HStack(alignment:.firstTextBaseline){Text(step.title).font(.headline);Spacer();Text("\(session.index+1) / \(session.steps.count)").font(.caption).foregroundStyle(Design.muted)}
+                Text(step.instruction).font(.subheadline).fixedSize(horizontal:false,vertical:true).accessibilityIdentifier("walkthrough-instruction")
+                ProgressView(value:Double(session.index),total:Double(session.steps.count)).tint(Design.ink)
+            } else {
+                Label("You’ve tried it yourself",systemImage:"checkmark.circle.fill").font(.headline).accessibilityIdentifier("walkthrough-complete")
+                Text("Look around this practice screen, or return to your app. Your own records and settings haven’t changed.").font(.subheadline)
+                Button("Done — back to tutorials"){session.close()}.buttonStyle(ActionStyle()).accessibilityIdentifier("walkthrough-done")
+            }
+        }.foregroundStyle(Design.ink).padding(16).background(Design.raised,in:RoundedRectangle(cornerRadius:18)).padding(.horizontal,12).padding(.vertical,8).background(Design.background)
+    }
+}
+struct WalkthroughTarget:ViewModifier {
+    @ObservedObject var session:WalkthroughSession
+    let id:String
+    func body(content:Content)->some View {
+        content.overlay{if !id.isEmpty && session.step?.target == id {RoundedRectangle(cornerRadius:12).strokeBorder(Design.ink,lineWidth:2).padding(-4).allowsHitTesting(false).accessibilityHidden(true)}}
+    }
+}
+extension View {
+    @ViewBuilder func walkthroughTarget(_ id:String,session:WalkthroughSession?)->some View {if let session{modifier(WalkthroughTarget(session:session,id:id))}else{self}}
 }
 struct NativeTutorial:View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reducedMotion
-    @State private var index=0
-    private let steps:[TutorialStep]=[
-        .init(title:"Make room for your day",summary:"One home for your work, ideas, and the things you want to keep.",symbol:"square.stack.3d.up.fill",space:"all",previewTitle:"Ediz OS",previewDetail:"Today · Spaces · Capture · Search · Assistant",instructions:["Today brings your next steps together.","Spaces keeps each part of your life organized.","Use the center Capture button whenever something comes to mind."],tip:"You can return to this guide from the bottom of Settings at any time."),
-        .init(title:"Choose what matters",summary:"Give one workspace your attention without losing your other work.",symbol:"scope",space:"moshia",previewTitle:"Focused on Moshia",previewDetail:"A dedicated workspace at the top of Today",instructions:["Open Today and tap Change focus beside What matters.","Choose a space to see its work and a larger focus panel.","Choose Balanced to bring every space back into view."],tip:"Workspace focus changes Today. It is separate from the timer you start on an individual task."),
-        .init(title:"Everything has a place",summary:"Keep business, music, fiction, school, and everyday life distinct.",symbol:"square.grid.2x2.fill",space:"ejj",previewTitle:"Your five spaces",previewDetail:"EJJ Digital · CLEARANCE 19 · Moshia · School · Personal",instructions:["Open Spaces, then choose a workspace.","Tap a module such as Leads, Songs, Chapters, or Homework.","Use Add to create the right kind of item, or tap an existing item to edit it."],tip:"Use the Area picker inside a workspace to move between its modules."),
-        .init(title:"Catch the thought",summary:"Get an idea out of your head before worrying about its details.",symbol:"mic.fill",space:"personal",previewTitle:"Capture",previewDetail:"Type a thought or speak it",instructions:["Tap the center Capture button and type your thought.","Tap the microphone to dictate. Allow iOS speech and microphone access when prompted.","Review the space, type, and details, then tap Save."],tip:"For structured work, use Add inside a module. A new chapter then opens the dedicated chapter form."),
-        .init(title:"Keep the details clear",summary:"Give each item enough context to make sense when you return.",symbol:"book.closed.fill",space:"moshia",previewTitle:"A chapter, clearly organized",previewDetail:"Title · Context · POV · Purpose · Location",instructions:["Open a chapter to edit its title and context in separate sections.","Keep POV, purpose, and location in their own fields.","Choose the story state deliberately: POSSIBLE, PLANNED, CANON, or REJECTED."],tip:"Planning a possibility does not make it canon. Review the state before saving important story changes."),
-        .init(title:"Talk with your context",summary:"Open a conversation for the part of your life you want to work on.",symbol:"bubble.left.and.bubble.right.fill",space:"ejj",previewTitle:"Your own workspace chat",previewDetail:"Saved context · Conversation · Reviewable changes",instructions:["Open Assistant and choose Everyday or a workspace.","Ask a question, plan something, or request a change. Review a proposed change before confirming it.","Use the context menu at the top to choose Gemini, a configured local model, or Saved context."],tip:"Recent chats are kept per workspace. Saved context is an on-device helper; Gemini and a local model provide AI conversation. Provider errors show a retry option."),
-        .init(title:"Find it again",summary:"Search the work you have saved without remembering where it lives.",symbol:"magnifyingglass",space:"school",previewTitle:"Search your saved work",previewDetail:"Titles · Notes · Details",instructions:["Open Search and enter a word or phrase.","Use the available filters to narrow the results.","Tap a result to open its full record and make changes."],tip:"Search in this tab works with your local records. Internet research belongs in Assistant and depends on the provider’s availability."),
-        .init(title:"Work at your own pace",summary:"Use a timer for a task, or practice music with the tools in your band space.",symbol:"timer",space:"band",previewTitle:"A little focused time",previewDetail:"Start · Pause · Resume · Finish",instructions:["Open a task and choose Focus to start a session.","Pause or resume when you need to. Finish the session when you are done.","For music practice, open CLEARANCE 19 → Songs → Rehearsal mode."],tip:"Rehearsal mode includes the metronome. Keep your device volume at a comfortable level."),
-        .init(title:"Make the app yours",summary:"Choose a layout that fits how you like to see your work.",symbol:"slider.horizontal.3",space:"personal",previewTitle:"Comfortable or Compact",previewDetail:"Roomier cards or shorter rows",instructions:["Open Settings from the sliders button at the top of a main screen.","Choose Comfortable for larger panels and more breathing room.","Choose Compact for shorter cards and a denser list. Your choice is saved."],tip:"Text follows your iPhone’s preferred text size. The app also respects Reduce Motion for its transitions."),
-        .init(title:"Keep your work safe",summary:"Know what is saved, what the assistant sees, and how to take your work with you.",symbol:"externaldrive.fill",space:"all",previewTitle:"Your data, in your hands",previewDetail:"Context · Full backup · Import & restore",instructions:["In Settings → Assistant context, review and edit your workspace briefs and refresh imported context.","Use Export full backup and save the file somewhere safe. A profile export contains settings, not your records or chats.","Use Import & restore to bring in supported files. Read the preview before merging or restoring."],tip:"Records are stored on your device. AI requests share the selected context with the chosen provider. Imported ChatGPT context is a snapshot; future ChatGPT messages do not sync automatically.")
-    ]
-    private var step:TutorialStep {steps[index]}
-    private var accent:Color {step.space == "all" ? Design.ink:Design.color(Catalog.space(step.space).color)}
+    @State private var session:WalkthroughSession?
+    @State private var practiceStore:NativeStore?
     var body:some View {
-        ScrollViewReader { reader in
-            ScrollView {
-                VStack(alignment:.leading,spacing:24) {
-                    VStack(alignment:.leading,spacing:12) {
-                        HStack{Text("Step \(index+1) of \(steps.count)").font(.subheadline.weight(.medium));Spacer();Text("EDIZ OS GUIDE").font(.caption).tracking(1.5).foregroundStyle(Design.muted)}
-                        ProgressView(value:Double(index+1),total:Double(steps.count)).tint(accent)
-                    }.id("tutorial-top")
-                    VStack(alignment:.leading,spacing:12) {
-                        Text(step.title).font(.largeTitle.weight(.semibold)).fixedSize(horizontal:false,vertical:true).accessibilityAddTraits(.isHeader)
-                        Text(step.summary).font(.body).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)
-                    }
-                    HStack(alignment:.center,spacing:18) {
-                        if index == 0 {
-                            Image("EdizLogo").resizable().scaledToFit().frame(width:60,height:60).clipShape(RoundedRectangle(cornerRadius:16)).accessibilityHidden(true)
-                        } else {
-                            Image(systemName:step.symbol).font(.system(size:28,weight:.medium)).foregroundStyle(accent)
-                                .frame(width:60,height:60).background(accent.opacity(0.15),in:RoundedRectangle(cornerRadius:18)).accessibilityHidden(true)
-                        }
-                        VStack(alignment:.leading,spacing:8) {
-                            Text(step.previewTitle).font(.headline).foregroundStyle(Design.ink)
-                            Text(step.previewDetail).font(.subheadline).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)
-                        }.frame(maxWidth:.infinity,alignment:.leading)
-                    }.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:22))
-                    VStack(alignment:.leading,spacing:20) {
-                        ForEach(Array(step.instructions.enumerated()),id:\.offset) { number,instruction in
-                            HStack(alignment:.top,spacing:14) {
-                                Text("\(number+1)").font(.caption.weight(.semibold)).foregroundStyle(accent).frame(width:28,height:28).background(accent.opacity(0.12),in:Circle())
-                                Text(instruction).font(.body).fixedSize(horizontal:false,vertical:true).padding(.top,2)
-                            }
-                        }
-                    }
-                    HStack(alignment:.top,spacing:12){Image(systemName:"lightbulb").foregroundStyle(accent);Text(step.tip).font(.footnote).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)}.padding(18).background(Design.surface,in:RoundedRectangle(cornerRadius:18))
-                }.padding(24)
-            }.onChange(of:index){_,_ in reader.scrollTo("tutorial-top",anchor:.top)}
-                .safeAreaInset(edge:.bottom,spacing:0) {
-                    HStack(spacing:14) {
-                        Button("Previous"){move(-1)}.font(.subheadline.weight(.medium)).frame(minWidth:84,minHeight:50).disabled(index == 0).accessibilityIdentifier("tutorial-previous")
-                        Button(index == steps.count-1 ? "Finish":"Continue") {
-                            if index == steps.count-1{dismiss()}else{move(1)}
-                        }.font(.body.weight(.semibold)).foregroundStyle(Design.background).frame(maxWidth:.infinity,minHeight:50).background(accent,in:RoundedRectangle(cornerRadius:16)).accessibilityIdentifier("tutorial-next")
-                    }.padding(.horizontal,24).padding(.vertical,12).background(Design.background)
-                }
-        }.background(AppBackdrop(scope:step.space)).navigationTitle("Your guide").navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar)
-            .toolbar{ToolbarItem(placement:.topBarTrailing){Menu{ForEach(steps.indices,id:\.self){number in Button("\(number+1). "+steps[number].title){index=number}}}label:{Image(systemName:"list.bullet")}.accessibilityLabel("Tutorial contents")}}
+        ScrollView{VStack(alignment:.leading,spacing:22){
+            Image(systemName:"hand.tap.fill").font(.system(size:38)).foregroundStyle(Design.ink)
+            Text("Learn by doing.").font(.largeTitle.weight(.semibold))
+            Text("Choose something to try. We’ll take you through the real screens, highlight the next control, and move on when you use it.").font(.body).foregroundStyle(Design.muted)
+            Label("A separate practice workspace keeps your own records and settings safe.",systemImage:"checkmark.shield.fill").font(.subheadline).foregroundStyle(Design.muted)
+            ForEach(WalkthroughKind.allCases){kind in
+                Button{let next=WalkthroughSession(kind:kind);practiceStore=next.practice;session=next}label:{HStack(alignment:.top,spacing:16){Image(systemName:kind.symbol).font(.title2).frame(width:34);VStack(alignment:.leading,spacing:7){Text(kind.title).font(.headline);Text(kind.summary).font(.subheadline).foregroundStyle(Design.muted);Text("\(kind.steps.count) hands-on steps").font(.caption).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.right").font(.subheadline)}.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}.buttonStyle(.plain).accessibilityIdentifier("tutorial-start-"+kind.id)
+            }
+        }.padding(22)}.background(AppBackdrop()).navigationTitle("Your guide").navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar)
+            .fullScreenCover(item:$session,onDismiss:{practiceStore?.discardPractice();practiceStore=nil}){active in NativeRoot(store:active.practice).onAppear{active.onExit={session=nil}}}
     }
-    private func move(_ delta:Int){withAnimation(reducedMotion ? nil:.easeOut(duration:0.18)){index=min(steps.count-1,max(0,index+delta))}}
 }

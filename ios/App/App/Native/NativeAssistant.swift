@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import EdizCore
+import UniformTypeIdentifiers
 
 struct ConversationEntry:Identifiable,Codable {
     var id=UUID()
@@ -12,6 +13,7 @@ struct ConversationEntry:Identifiable,Codable {
     var sources:[AssistantSource]=[]
     var searchSuggestions:String?
     var provider:String?
+    var attachments:[AssistantAttachmentInfo]?
 }
 enum LocalAssistant {
     static func baseURL(_ endpoint:String) throws -> URL {
@@ -92,7 +94,7 @@ struct NativeAssistant:View {
             }.padding(16).frame(maxWidth:.infinity,alignment:.leading).frame(minHeight:rows ? rowHeight:cardHeight)
                 .background(Design.surface,in:RoundedRectangle(cornerRadius:compact ? 16:22))
                 .contentShape(RoundedRectangle(cornerRadius:22))
-        }.buttonStyle(.plain).accessibilityIdentifier("assistant-workspace-"+id)
+        }.buttonStyle(.plain).accessibilityIdentifier("assistant-workspace-"+id).walkthroughTarget(id == "moshia" ? "assistant-moshia":"",session:store.walkthrough)
     }
 }
 struct NativeAssistantChat:View {
@@ -102,6 +104,18 @@ struct NativeAssistantChat:View {
     let scope:String
     @Environment(\.edizCompact) private var compact
     @State private var proposal:GeminiProposal?
+    @State private var attachments:[AssistantAttachment]=[]
+    @State private var importingFiles=false
+    @State private var choosingMedia=false
+    @State private var preparing=0
+    @State private var mediaError:String?
+    @State private var voiceOpen=false
+    @State private var voiceWanted=false
+    @State private var voiceAuto=false
+    @State private var voiceTurn:Task<Void,Never>?
+    @StateObject private var speech=NativeSpeech()
+    @StateObject private var speaker=NativeAssistantSpeaker()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var mode="cloud"
     var accent:Color {scope == "all" ? Design.ink:Design.color(Catalog.space(scope).color)}
     var corners:CGFloat {scope == "moshia" ? 12:scope == "ejj" || scope == "school" ? 16:24}
@@ -120,8 +134,14 @@ struct NativeAssistantChat:View {
                 .onChange(of:entries.count){_,_ in scrollToBottom(reader)}
                 .onChange(of:busy){_,_ in scrollToBottom(reader)}
                 .safeAreaInset(edge:.bottom){composer}
-        }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
-            .onAppear{if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
+        }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}
+            .sheet(isPresented:$choosingMedia){NativeAssistantMediaPicker(receive:{url in prepareAttachment(url,temporary:true)},close:{choosingMedia=false},failed:{mediaError=$0})}
+            .fileImporter(isPresented:$importingFiles,allowedContentTypes:[.image,.movie,.pdf,.plainText,.text,.json,.commaSeparatedText],allowsMultipleSelection:true){result in switch result{case .success(let urls):for url in urls{prepareAttachment(url)};case .failure:mediaError="That file couldn’t be opened. Try choosing it again."}}
+            .fullScreenCover(isPresented:$voiceOpen,onDismiss:{endVoice()}){NativeAssistantVoicePanel(speech:speech,speaker:speaker,busy:busy,reply:entries.last(where:{$0.role == "assistant"})?.text ?? "",error:message,scope:scope,listen:{beginListening()},send:{sendVoice()},read:{voiceAuto=false;speech.stop();speaker.say(entries.last(where:{$0.role == "assistant"})?.text ?? "Hi Ediz. I’m here to help with your day, your projects, and your ideas.",token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true)},end:{endVoice()})}
+            .onChange(of:speech.transcript){_,value in scheduleVoice(value)}
+            .onChange(of:entries.count){_,_ in if voiceWanted,let last=entries.last,last.role == "assistant"{speech.stop();speaker.say(last.text,token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true)}}
+            .onChange(of:scenePhase){_,phase in if phase == .background{endVoice()}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
+            .onAppear{if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
             .toolbar { ToolbarItem(placement:.topBarTrailing) { Menu {
                 Picker("Assistant",selection:$mode) {
                     if store.assistantToken != nil { Text("Gemini").tag("cloud") }
@@ -175,7 +195,10 @@ struct NativeAssistantChat:View {
     @ViewBuilder func entryView(_ entry:ConversationEntry)->some View {
         VStack(alignment:entry.role == "user" ? .trailing:.leading,spacing:10){
             if entry.role == "user" {
-                Text(entry.text).font(Design.font(16,weight:"Regular")).padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:corners)).frame(maxWidth:.infinity,alignment:.trailing)
+                VStack(alignment:.trailing,spacing:8){
+                    ForEach(entry.attachments ?? []){file in Label(file.name,systemImage:file.mimeType.hasPrefix("image/") ? "photo":file.mimeType.hasPrefix("video/") ? "video":"doc.text").font(.caption).lineLimit(2)}
+                    Text(entry.text).font(Design.font(16,weight:"Regular"))
+                }.padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:corners)).frame(maxWidth:.infinity,alignment:.trailing)
             } else {
                 VStack(alignment:.leading,spacing:10){if let provider=entry.provider{Text(provider).font(.caption.weight(.medium)).foregroundStyle(accent)};Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
                     ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
@@ -199,32 +222,75 @@ struct NativeAssistantChat:View {
         }
     }
     var composer:some View {
-        HStack(alignment:.bottom,spacing:10) {
-            TextField("Message…",text:$question,axis:.vertical)
-                .lineLimit(1...4).font(Design.font(16,weight:"Regular"))
-                .focused($typing).accessibilityIdentifier("assistant-question")
-                .padding(.vertical,11).padding(.leading,6)
-                .frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
-                .contentShape(Rectangle()).onTapGesture { typing=true }
-            Button { send() } label: {
-                Image(systemName:"arrow.up").font(.body.weight(.medium))
-                    .frame(width:44,height:44).foregroundStyle(Design.background)
-                    .background(accent,in:Circle())
-            }.disabled(busy || question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
-                .accessibilityLabel("Send question")
-        }.padding(8).background(Design.raised,in:RoundedRectangle(cornerRadius:corners))
+        VStack(alignment:.leading,spacing:8){
+            if preparing>0{HStack{ProgressView();Text("Preparing attachment…").font(.caption)}}
+            if !attachments.isEmpty {
+                ScrollView(.horizontal,showsIndicators:false){HStack(spacing:8){ForEach(attachments){file in
+                    HStack(spacing:8){
+                        if file.mimeType.hasPrefix("image/"),let picture=UIImage(data:file.bytes){Image(uiImage:picture).resizable().scaledToFill().frame(width:36,height:36).clipped().clipShape(RoundedRectangle(cornerRadius:6))}else{Image(systemName:file.symbol)}
+                        Text(file.name).font(.caption).lineLimit(1).frame(maxWidth:140)
+                        Button{attachments.removeAll{$0.id == file.id}}label:{Image(systemName:"xmark.circle.fill").frame(width:32,height:36)}.accessibilityLabel("Remove "+file.name).disabled(busy)
+                    }.padding(6).background(Design.surface,in:RoundedRectangle(cornerRadius:12))
+                }}}
+                Text("Shared with Gemini when you send · 2.5 MB total").font(.caption2).foregroundStyle(Design.muted)
+            }
+            if let mediaError{Text(mediaError).font(.caption).foregroundStyle(Design.muted)}
+            HStack(alignment:.bottom,spacing:6) {
+                Menu {
+                    Button("Photo or video",systemImage:"photo.on.rectangle"){mediaError=nil;choosingMedia=true}
+                    Button("Choose a file",systemImage:"doc"){mediaError=nil;importingFiles=true}
+                    Text("Photos, videos up to 60 seconds, PDFs and text")
+                } label:{Image(systemName:"plus").font(.body.weight(.medium)).frame(width:40,height:44)}.accessibilityLabel("Add attachment").accessibilityIdentifier("assistant-attach").disabled(busy || preparing>0)
+                TextField("Message…",text:$question,axis:.vertical)
+                    .lineLimit(1...4).font(Design.font(16,weight:"Regular"))
+                    .focused($typing).accessibilityIdentifier("assistant-question").walkthroughTarget("assistant-message",session:store.walkthrough)
+                    .padding(.vertical,11).frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
+                    .contentShape(Rectangle()).onTapGesture { typing=true }
+                Button{typing=false;voiceWanted=true;voiceOpen=true;speaker.finished={if voiceWanted && voiceAuto{beginListening()}}}label:{Image(systemName:"waveform").font(.body).frame(width:40,height:44)}.accessibilityLabel("Talk to your assistant").accessibilityIdentifier("assistant-voice").disabled(busy || preparing>0)
+                Button { send() } label: {
+                    Image(systemName:"arrow.up").font(.body.weight(.medium))
+                        .frame(width:44,height:44).foregroundStyle(Design.background)
+                        .background(accent,in:Circle())
+                }.disabled(busy || preparing>0 || (question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && attachments.isEmpty))
+                    .accessibilityLabel("Send question").walkthroughTarget("assistant-send",session:store.walkthrough)
+            }
+        }.onChange(of:question){_,value in if !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("assistant-typed")}}
+            .padding(8).background(Design.raised,in:RoundedRectangle(cornerRadius:corners))
             .padding(.horizontal,16).padding(.bottom,8)
     }
+    func prepareAttachment(_ url:URL,temporary:Bool=false){
+        let access=url.startAccessingSecurityScopedResource();preparing+=1;mediaError=nil
+        Task{@MainActor in
+            defer{preparing-=1;if access{url.stopAccessingSecurityScopedResource()};if temporary{try? FileManager.default.removeItem(at:url)}}
+            do{
+                guard attachments.count<3 else{throw AssistantMedia.issue("Attach up to three files per message.")}
+                let file=try await AssistantMedia.prepare(url)
+                guard attachments.count<3,attachments.reduce(0,{$0+$1.bytes.count})+file.bytes.count<=AssistantMedia.limit else{throw AssistantMedia.issue("Choose smaller files or a shorter clip; attachments can total 2.5 MB.")}
+                attachments.append(file)
+            }catch{mediaError=error.localizedDescription}
+        }
+    }
+    func beginListening(){guard voiceWanted,!busy else{return};voiceAuto=true;voiceTurn?.cancel();speaker.stop();speech.stop();speech.toggle()}
+    func scheduleVoice(_ value:String){
+        voiceTurn?.cancel();guard voiceWanted,speech.listening,!busy,!speaker.speaking,!value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{return}
+        voiceTurn=Task{@MainActor in do{try await Task.sleep(for:.seconds(1.6));guard !Task.isCancelled,voiceWanted else{return};sendVoice()}catch{}}
+    }
+    func sendVoice(){guard voiceWanted,!busy else{return};let text=speech.transcript.trimmingCharacters(in:.whitespacesAndNewlines);guard !text.isEmpty else{return};voiceTurn?.cancel();speech.stop();question=text;send()}
+    func endVoice(){voiceAuto=false;voiceWanted=false;voiceOpen=false;voiceTurn?.cancel();voiceTurn=nil;speech.stop();speaker.stop()}
     func forPrompt(_ prompt:String)->some View {
         Button{question=prompt;send()}label:{HStack(spacing:12){Text(prompt).font(.subheadline).multilineTextAlignment(.leading);Spacer();Image(systemName:"arrow.up.left").font(.caption).foregroundStyle(accent)}.padding(.horizontal,16).padding(.vertical,12).frame(minHeight:52).foregroundStyle(Design.ink).background(Design.surface,in:RoundedRectangle(cornerRadius:corners))}.buttonStyle(.plain)
     }
     func send(){
-        let q=question.trimmingCharacters(in:.whitespacesAndNewlines);guard !q.isEmpty,!busy else{return}
+        var q=question.trimmingCharacters(in:.whitespacesAndNewlines);guard !busy,preparing==0 else{return}
+        if q.isEmpty,!attachments.isEmpty{q="What can you tell me about these attachments?"}
+        guard !q.isEmpty else{return}
+        if !attachments.isEmpty,(mode != "cloud" || store.assistantToken == nil){mediaError="Choose Gemini from Chat context to ask about attached media. Saved context and local text models can’t read these files.";return}
+        let outgoing=attachments
         let prior=(entries.last(where:{$0.role == "assistant"})?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}
         let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity.filter{scope == "all" || Set(scopedRecords.map(\.id)).contains($0.entityId)},focus:scope,previous:prior)
-        let conversation=entries;entries.append(ConversationEntry(role:"user",text:q));question="";typing=false;message=nil;failedQuestion=nil
-        if mode == "cloud",let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope);entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:"Gemini"))}catch{message=error.localizedDescription;failedQuestion=q}};return}
-        guard mode == "local" else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft,provider:"Saved context"));return}
+        let conversation=entries;entries.append(ConversationEntry(role:"user",text:q,attachments:outgoing.isEmpty ? nil:outgoing.map{AssistantAttachmentInfo(name:$0.name,mimeType:$0.mimeType)}));question="";typing=false;message=nil;failedQuestion=nil
+        if mode == "cloud",let token=store.assistantToken{busy=true;let context=scopedRecords;Task{@MainActor in defer{busy=false};do{let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing);attachments.removeAll{file in outgoing.contains{$0.id == file.id}};entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:"Gemini"))}catch{message=error.localizedDescription;failedQuestion=q}};return}
+        guard mode == "local" else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft,provider:"Saved context"));store.walkthrough?.event("assistant-replied");return}
         guard store.preferences.labs,let endpoint=store.preferences.localEndpoint,!endpoint.isEmpty else{message="Add your local model’s network address and test the connection in Settings.";failedQuestion=q;return}
         busy=true
         let context=reply.records.isEmpty ? Array(scopedRecords.prefix(50)):reply.records
@@ -309,10 +375,10 @@ struct NativeSearchSuggestions:UIViewRepresentable {
     }
 }
 enum GeminiAssistant {
-    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String) async throws -> GeminiResponse {
+    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String,attachments:[AssistantAttachment]=[]) async throws -> GeminiResponse {
         var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!);request.httpMethod="POST";request.timeoutInterval=55;request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
         let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(records.prefix(500))))
-        request.httpBody=try JSONSerialization.data(withJSONObject:["question":question,"scope":scope,"records":encoded,"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.text]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier])
+        request.httpBody=try JSONSerialization.data(withJSONObject:["question":question,"scope":scope,"records":encoded,"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.text]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
         let (data,response)=try await URLSession.shared.data(for:request)
         guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode) else{let detail=(try? JSONSerialization.jsonObject(with:data)) as? [String:String];throw NSError(domain:"EdizAssistant",code:1,userInfo:[NSLocalizedDescriptionKey:detail?["error"] ?? "Gemini is unavailable. Please try again."])}
         return try JSONDecoder().decode(GeminiResponse.self,from:data)

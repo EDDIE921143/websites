@@ -3,11 +3,11 @@ import EdizCore
 import UIKit
 
 enum Design {
-    static let background=Color(red:0.055,green:0.051,blue:0.043)
-    static let surface=Color(red:0.12,green:0.118,blue:0.11)
-    static let raised=Color(red:0.18,green:0.175,blue:0.16)
+    static let background=Color(red:0.045,green:0.052,blue:0.065)
+    static let surface=Color(red:0.105,green:0.116,blue:0.133)
+    static let raised=Color(red:0.16,green:0.176,blue:0.196)
     static let ink=Color(red:0.94,green:0.92,blue:0.87)
-    static let muted=Color(red:0.68,green:0.66,blue:0.62)
+    static let muted=Color(red:0.67,green:0.70,blue:0.75)
     static let accent=ink
     static let glassLettering=LinearGradient(colors:[Color.white,ink,Color(red:0.80,green:0.79,blue:0.74),ink],startPoint:.topLeading,endPoint:.bottomTrailing)
     static func font(_ size:CGFloat,weight:String="Medium",relativeTo:Font.TextStyle = .body)->Font {
@@ -22,10 +22,16 @@ struct AppBackdrop:View {
     var body:some View {
         ZStack {
             Design.background
-            LinearGradient(colors:[accent.opacity(scope == "all" ? 0.035:0.10),.clear,accent.opacity(0.025)],startPoint:.topLeading,endPoint:.bottomTrailing)
+            RadialGradient(colors:[(scope == "all" ? Color(red:0.80,green:0.56,blue:0.31):accent).opacity(scope == "all" ? 0.14:0.18),.clear],center:.topLeading,startRadius:0,endRadius:650)
             Canvas { context,size in
                 var pattern=Path()
-                let step:CGFloat=scope == "personal" ? 24:36
+                if scope == "all" {
+                    for offset in stride(from:CGFloat(-100),through:500,by:80){
+                        pattern.move(to:CGPoint(x:size.width+offset,y:-80))
+                        pattern.addCurve(to:CGPoint(x:-120,y:size.height*0.8+offset),control1:CGPoint(x:size.width*0.12+offset,y:size.height*0.18),control2:CGPoint(x:size.width*1.3,y:size.height*0.58+offset))
+                    }
+                }
+                let step:CGFloat=scope == "school" ? 48:scope == "personal" ? 32:48
                 for y in stride(from:CGFloat(0),through:size.height,by:step) {
                     for x in stride(from:CGFloat(0),through:size.width,by:step) {
                         switch scope {
@@ -38,11 +44,12 @@ struct AppBackdrop:View {
                             pattern.move(to:CGPoint(x:x,y:y-2));pattern.addLine(to:CGPoint(x:x+2,y:y));pattern.addLine(to:CGPoint(x:x,y:y+2));pattern.addLine(to:CGPoint(x:x-2,y:y));pattern.closeSubpath()
                         case "school":
                             pattern.move(to:CGPoint(x:x,y:y));pattern.addLine(to:CGPoint(x:x+step,y:y))
-                        default: pattern.addEllipse(in:CGRect(x:x,y:y,width:1,height:1))
+                        case "personal":pattern.addEllipse(in:CGRect(x:x,y:y,width:1.5,height:1.5))
+                        default:break
                         }
                     }
                 }
-                context.stroke(pattern,with:.color(accent.opacity(scope == "all" ? 0.065:0.11)),lineWidth:0.7)
+                context.stroke(pattern,with:.color(accent.opacity(scope == "all" ? 0.065:0.13)),lineWidth:0.8)
             }
         }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }
@@ -66,7 +73,7 @@ extension EnvironmentValues {
 struct Surface<Content:View>:View {
     @Environment(\.edizCompact) private var compact
     @ViewBuilder var content:Content
-    var body:some View { content.padding(compact ? 12:22).frame(maxWidth:.infinity,alignment:.leading).background(compact ? Design.raised:Design.surface,in:RoundedRectangle(cornerRadius:compact ? 10:22)) }
+    var body:some View { content.padding(compact ? 12:22).frame(maxWidth:.infinity,alignment:.leading).background(compact ? Design.raised:Design.surface,in:RoundedRectangle(cornerRadius:compact ? 10:22)).overlay{RoundedRectangle(cornerRadius:compact ? 10:22).strokeBorder(Design.ink.opacity(0.055),lineWidth:1).allowsHitTesting(false)} }
 }
 struct ControlMaterial:ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reducedTransparency
@@ -89,12 +96,13 @@ struct ActionStyle:ButtonStyle {
 }
 struct SpaceRoute:Hashable { let id:String;var kind:String?=nil }
 struct OSNavigation<Content:View>:View {
+    @EnvironmentObject var store:NativeStore
     @ViewBuilder var content:Content
     var body:some View {
         NavigationStack {
             content.navigationDestination(for:EdizCore.Record.self){NativeEditor(record:$0)}
                 .navigationDestination(for:SpaceRoute.self){NativeSpace(route:$0)}
-                .toolbar { ToolbarItem(placement:.topBarTrailing) { NavigationLink { NativeSettings() } label:{ Image(systemName:"slider.horizontal.3").font(.body).foregroundStyle(Design.muted).frame(minWidth:44,minHeight:44) }.accessibilityLabel("Settings and backup") } }
+                .toolbar { ToolbarItem(placement:.topBarTrailing) { NavigationLink { NativeSettings() } label:{ Image(systemName:"slider.horizontal.3").font(.body).foregroundStyle(Design.muted).frame(minWidth:44,minHeight:44) }.accessibilityLabel("Settings and backup").walkthroughTarget("settings",session:store.walkthrough) } }
         }.tint(Design.accent)
     }
 }

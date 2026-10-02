@@ -64,8 +64,8 @@ struct NativeSpace:View {
             }
             if route.id == "moshia" && kind == "event"{NativeTimeline()}
         }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop(scope:route.id)).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
-            .toolbar{ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add")}}
-            .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind}}
+            .toolbar{ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add").walkthroughTarget("add-chapter",session:store.walkthrough)}}
+            .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind};if route.id == "moshia" && kind == "chapter"{store.walkthrough?.event("chapters-open")}}
             .onChange(of:kind){_,_ in filter="all"}
             .fullScreenCover(isPresented:$rehearsal){NativeRehearsal(songs:songs)}
     }
