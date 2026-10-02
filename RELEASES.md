@@ -50,3 +50,10 @@ Rebuilt the interface for iPhone: black canvas, solid groups without hairline di
 # 0.1.0
 
 A calm, local-first home for Ediz’s work, music, writing, school, and everyday life. Includes an explainable Today view, fast capture, five built-in spaces, offline access, installable app assets, and portable backups.
+
+## 0.3.5
+- Workspace focus now shapes Continue, space shortcuts, and meaningful updates as well as priorities. Urgent school deadlines remain protected.
+- Compact density affects settings, songs, chapters, timeline, agenda, and workspace lists. Preference updates are protected against stale initial loads.
+- Local model connection testing and model discovery, with honest LAN/browser errors and a useful on-device fallback.
+- Fixed unsaved-edit dismissal, explicit canon confirmation, safe record moves, import ID conflicts, atomic attachment saves, deletion history, and stable collection ordering.
+- Removed the empty Start focus action and misleading lead completion checkbox. Grade projections stay within the selected subject.
