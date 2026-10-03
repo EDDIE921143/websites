@@ -450,24 +450,33 @@ struct NativeVoiceVisual:View {
         if reducedMotion || (!thinking && level<0.001){visual(at:0)}
         else{TimelineView(.periodic(from:.distantPast,by:1.0/30)){timeline in visual(at:timeline.date.timeIntervalSinceReferenceDate)}}
     }
-    private func visual(at t:Double)->some View {
-            Canvas{context,size in
-                let radius=min(size.width,size.height)*0.32
-                let center=CGPoint(x:size.width/2,y:size.height/2)
-                for layer in 0..<5 {
-                    var path=Path()
-                    for point in 0...180 {
-                        let a=Double(point)/180 * .pi*2
-                        let wave=sin(a*3+t*(0.7+Double(level)*1.5)+Double(layer)*0.8)*(0.04+Double(level)*0.12)+cos(a*5-t*0.4)*0.025
-                        let r=Double(radius)*(1+wave+Double(level)*0.38+Double(layer)*0.035)
-                        let p=CGPoint(x:center.x+cos(a)*r,y:center.y+sin(a)*r)
-                        if point==0{path.move(to:p)}else{path.addLine(to:p)}
-                    }
-                    path.closeSubpath()
-                    context.fill(path,with:.radialGradient(Gradient(colors:[color.opacity(0.18),color.opacity(thinking ? 0.12:0.08),color.opacity(0.02)]),center:center,startRadius:0,endRadius:radius*1.3))
-                    context.stroke(path,with:.color(color.opacity(0.32+Double(level)*0.32-Double(layer)*0.045)),lineWidth:1.3)
-                }
-            }.accessibilityHidden(true)
+    private func visual(at time:Double)->some View {
+        Canvas { context,size in
+            let radius=min(size.width,size.height)*0.32
+            let center=CGPoint(x:size.width/2,y:size.height/2)
+            for layer in 0..<5 {
+                let path=outline(center:center,radius:radius,layer:layer,time:time)
+                let middleOpacity=thinking ? 0.12:0.08
+                let gradient=Gradient(colors:[color.opacity(0.18),color.opacity(middleOpacity),color.opacity(0.02)])
+                context.fill(path,with:.radialGradient(gradient,center:center,startRadius:0,endRadius:radius*1.3))
+                let opacity=0.32+Double(level)*0.32-Double(layer)*0.045
+                context.stroke(path,with:.color(color.opacity(opacity)),lineWidth:1.3)
+            }
+        }.accessibilityHidden(true)
+    }
+    private func outline(center:CGPoint,radius:CGFloat,layer:Int,time:Double)->Path {
+        var path=Path()
+        let amplitude=Double(level)
+        for point in 0...180 {
+            let angle=Double(point)/180 * Double.pi*2
+            let phase=angle*3+time*(0.7+amplitude*1.5)+Double(layer)*0.8
+            let wave=sin(phase)*(0.04+amplitude*0.12)+cos(angle*5-time*0.4)*0.025
+            let distance=Double(radius)*(1+wave+amplitude*0.38+Double(layer)*0.035)
+            let position=CGPoint(x:Double(center.x)+cos(angle)*distance,y:Double(center.y)+sin(angle)*distance)
+            if point==0 {path.move(to:position)} else {path.addLine(to:position)}
+        }
+        path.closeSubpath()
+        return path
     }
 }
 
