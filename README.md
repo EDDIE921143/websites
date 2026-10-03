@@ -1,12 +1,14 @@
-# Ediz OS 0.3.0
+# Ediz OS 0.3.17
 
 An owner-specific personal operating system, primarily a genuine SwiftUI iPhone app. The web companion is available at https://ediz-os.vercel.app. Both editions work locally without paid APIs, analytics or a server database.
+
+Current update: [0.3.17 validation and limits](docs/UPDATE-0.3.17.md).
 
 ## Native iPhone edition
 
 `ios/` contains a real SwiftUI application with no WebView or Capacitor runtime. It uses iOS TabView, NavigationStack, sheets, file pickers, sharing, Quick Look, on-device speech and AVFoundation. The iPhone 17 Pro is the primary test device. iOS 26 supplies native liquid-glass controls; older supported versions use material controls. Content remains on stable warm charcoal surfaces, with Avenir Next typography, neutral space rows and restrained identity colors. No personal images or fabricated data are included.
 
-The floating system tab bar supports horizontal scrubbing through Today, Capture, Spaces, Search and Assistant. Capture is a real tab; contextual capture remains available as a dismissible sheet. Native swipe-back and sheet dismissal are preserved.
+The floating system tab bar supports horizontal scrubbing through Today, Assistant, Capture, Search and Spaces. Capture is a real tab; contextual capture remains available as a dismissible sheet. Native swipe-back and sheet dismissal are preserved.
 
 The local `native/Core` Swift package uses durable SQLite with WAL, foreign keys, transactions, history, recoverable capture/edit drafts and seven daily safety snapshots. Attachments and structured data are separate. Full JSON backups, readable Markdown and profile exports support migration and recovery. Daily snapshots protect recent edits; external exports are still needed for device loss.
 

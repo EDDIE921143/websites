@@ -3,11 +3,11 @@ import EdizCore
 import UIKit
 
 enum Design {
-    static let background=Color(red:0.045,green:0.052,blue:0.065)
-    static let surface=Color(red:0.105,green:0.116,blue:0.133)
-    static let raised=Color(red:0.16,green:0.176,blue:0.196)
+    static let background=Color(red:0.065,green:0.058,blue:0.052)
+    static let surface=Color(red:0.125,green:0.112,blue:0.102)
+    static let raised=Color(red:0.19,green:0.17,blue:0.15)
     static let ink=Color(red:0.94,green:0.92,blue:0.87)
-    static let muted=Color(red:0.67,green:0.70,blue:0.75)
+    static let muted=Color(red:0.73,green:0.70,blue:0.66)
     static let accent=ink
     static let glassLettering=LinearGradient(colors:[Color.white,ink,Color(red:0.80,green:0.79,blue:0.74),ink],startPoint:.topLeading,endPoint:.bottomTrailing)
     static func font(_ size:CGFloat,weight:String="Medium",relativeTo:Font.TextStyle = .body)->Font {
@@ -20,19 +20,19 @@ enum WorkspaceTheme {
     static func base(_ scope:String)->Color {
         switch scope {
         case "ejj":return Color(red:0.055,green:0.070,blue:0.085)
-        case "band":return Color(red:0.13,green:0.035,blue:0.075)
+        case "band":return Color(red:0.105,green:0.060,blue:0.050)
         case "moshia":return Color(red:0.14,green:0.105,blue:0.065)
         case "school":return Color(red:0.025,green:0.105,blue:0.09)
         case "personal":return Color(red:0.115,green:0.075,blue:0.12)
-        case "capture":return Color(red:0.095,green:0.105,blue:0.13)
-        case "spaces":return Color(red:0.045,green:0.065,blue:0.10)
+        case "capture":return Color(red:0.090,green:0.078,blue:0.065)
+        case "spaces":return Color(red:0.072,green:0.063,blue:0.055)
         default:return Design.background
         }
     }
     static func accent(_ scope:String)->Color {
         switch scope {
         case "ejj":return Color(red:0.64,green:0.72,blue:0.77)
-        case "band":return Color(red:1,green:0.43,blue:0.51)
+        case "band":return Color(red:0.78,green:0.49,blue:0.38)
         case "moshia":return Color(red:0.89,green:0.72,blue:0.43)
         case "school":return Color(red:0.40,green:0.85,blue:0.67)
         case "personal":return Color(red:0.78,green:0.65,blue:0.95)
@@ -112,7 +112,7 @@ struct WorkspacePanel:View {
 struct SpaceMark: View {
     var space:SpaceDefinition
     var symbol:String { switch space.id { case "ejj":return "rectangle.3.group.fill";case "band":return "waveform";case "moshia":return "book.closed.fill";case "school":return "graduationcap.fill";default:return "person.fill" } }
-    var body:some View { Image(systemName:symbol).font(.system(size:21,weight:.medium)).foregroundStyle(Design.color(space.color)).frame(width:36,height:40).accessibilityHidden(true) }
+    var body:some View { Image(systemName:symbol).font(.system(size:21,weight:.medium)).foregroundStyle(WorkspaceTheme.accent(space.id)).frame(width:36,height:40).accessibilityHidden(true) }
 }
 struct GlassAction<Content:View>:View {
     @ViewBuilder var content:Content

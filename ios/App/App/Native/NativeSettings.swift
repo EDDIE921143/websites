@@ -53,7 +53,7 @@ struct NativeSettings:View {
                 Picker("Recorded natural voice",selection:$tutorialVoice){ForEach(RecordedGuide.voices,id:\.self){Text($0).tag($0)}}.disabled(RecordedGuide.voices.count<2).accessibilityIdentifier("tutorial-voice-choice")
                 Text("Aoede’s complete guide plays directly from your app, including offline. More recorded narrators need provider capacity; your call offers three natural voices.").font(.footnote).foregroundStyle(Design.muted)
             }
-            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.16 · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.17 · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
             Section {
                 NavigationLink { NativeTutorial() } label: {
                     HStack(spacing:14) {
@@ -93,7 +93,7 @@ struct NativeAssistantContext:View {
                             VStack(alignment:.leading,spacing:8) {
                                 Text(brief.title).foregroundStyle(Design.ink)
                                 Text(brief.body).font(.subheadline).foregroundStyle(Design.muted).lineLimit(4)
-                                if let sources=brief.data["source"] {Text(sources).font(.caption).foregroundStyle(Design.color(space.color))}
+                                if let sources=brief.data["source"] {Text(sources).font(.caption).foregroundStyle(WorkspaceTheme.accent(space.id))}
                             }.padding(.vertical,6)
                         }
                     }
@@ -115,7 +115,7 @@ struct NativeHistory:View {
 }
 struct NativeHealth:View {
     @EnvironmentObject var store:NativeStore
-    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:"0.3.16");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
+    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:"0.3.17");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
 }
 
 struct NativeFocusChoice:View {
@@ -198,6 +198,7 @@ enum WalkthroughKind:String,CaseIterable,Identifiable {
     let kind:WalkthroughKind
     let practice:NativeStore
     @Published var index=0
+    @Published var celebrating=false
     @Published var narrationEnabled:Bool
     let narrator=NativeAssistantSpeaker()
     private let narrationToken:String?
@@ -215,7 +216,7 @@ enum WalkthroughKind:String,CaseIterable,Identifiable {
         _=practice.save(brief,action:"Practice example")
         practice.walkthrough=self
     }
-    func event(_ value:String){guard step?.event == value else{return};index+=1;if finished{NativeVoicePreferences.defaults.set(true,forKey:"guide-completed-"+kind.id)};UISelectionFeedbackGenerator().selectionChanged();readStep()}
+    func event(_ value:String){guard step?.event == value else{return};index+=1;celebrating=true;Task{@MainActor in try? await Task.sleep(for:.milliseconds(1400));self.celebrating=false};if finished{NativeVoicePreferences.defaults.set(true,forKey:"guide-completed-"+kind.id)};UINotificationFeedbackGenerator().notificationOccurred(.success);readStep()}
     func startGuidance(){guard !guidanceStarted else{return};guidanceStarted=true;readStep(welcome:true)}
     func toggleNarration(){narrationEnabled.toggle();if narrationEnabled{readStep()}else{narrator.stop()}}
     func muteForRecording(){narrationEnabled=false;narrator.stop()}
@@ -243,13 +244,14 @@ struct WalkthroughCoach:View {
     var body:some View {
         VStack(alignment:.leading,spacing:10){
             HStack{Label("PRACTICE WORKSPACE",systemImage:"hand.tap.fill").font(.caption2.weight(.semibold)).tracking(1);Spacer();Button{session.close()}label:{Image(systemName:"xmark.circle.fill").font(.title2)}.accessibilityLabel("Exit tutorial").accessibilityIdentifier("walkthrough-exit")}
+            if session.celebrating {Label(session.finished ? "Woohoo! You did it!":"Nice — you’ve got it!",systemImage:"checkmark.seal.fill").font(.subheadline.weight(.semibold)).foregroundStyle(WorkspaceTheme.accent("moshia")).symbolEffect(.bounce,value:reducedMotion ? 0:session.index).transition(reducedMotion ? .opacity:.move(edge:.top).combined(with:.opacity))}
             if let step=session.step {
                 HStack(alignment:.firstTextBaseline){Text(step.title).font(.headline);Spacer();Text("\(session.index+1) / \(session.steps.count)").font(.caption).foregroundStyle(Design.muted)}
                 Text(step.instruction).font(.subheadline).fixedSize(horizontal:false,vertical:true).accessibilityIdentifier("walkthrough-instruction")
                 ProgressView(value:Double(session.index),total:Double(session.steps.count)).tint(Design.ink)
                     .animation(reducedMotion ? nil:.easeInOut(duration:0.25),value:session.index)
             } else {
-                Label("You’ve tried it yourself",systemImage:"checkmark.circle.fill").font(.headline).accessibilityIdentifier("walkthrough-complete")
+                Label("You’ve tried it yourself",systemImage:"checkmark.circle.fill").symbolEffect(.bounce,value:reducedMotion ? 0:session.index).font(.headline).accessibilityIdentifier("walkthrough-complete")
                 Text("Look around this practice screen, or return to your app. Your own records and settings haven’t changed.").font(.subheadline)
                 Button("Done — back to tutorials"){session.close()}.buttonStyle(ActionStyle()).accessibilityIdentifier("walkthrough-done")
             }
@@ -261,7 +263,7 @@ struct WalkthroughCoach:View {
                     Button{session.readStep()}label:{Image(systemName:"arrow.counterclockwise").frame(width:44,height:44)}.buttonStyle(.plain).accessibilityLabel("Replay instruction").accessibilityIdentifier("walkthrough-voice-replay")
                 }
             }.accessibilityElement(children:.contain).accessibilityIdentifier("tutorial-voice-activity").accessibilityValue("Audio level \(Int(narrator.level*100))")
-        }.foregroundStyle(Design.ink).padding(16).background(Design.raised,in:RoundedRectangle(cornerRadius:18)).padding(.horizontal,12).padding(.vertical,8).background(Design.background)
+        }.animation(reducedMotion ? nil:.spring(response:0.35,dampingFraction:0.8),value:session.celebrating).animation(reducedMotion ? nil:.easeInOut(duration:0.25),value:session.index).foregroundStyle(Design.ink).padding(16).background(Design.raised,in:RoundedRectangle(cornerRadius:18)).padding(.horizontal,12).padding(.vertical,8).background(Design.background)
     }
 }
 struct WalkthroughTarget:ViewModifier {

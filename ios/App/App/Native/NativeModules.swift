@@ -44,7 +44,7 @@ struct NativeSpace:View {
                                 let details = [record.data["POV"], record.data["purpose"], record.data["location"], record.data["wordCount"].map { "\($0) words" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                                 if !details.isEmpty { Text(details).font(.subheadline).foregroundStyle(Design.muted) }
                                 Text(record.status).font(.caption.weight(.medium))
-                                    .foregroundStyle(Design.color(space.color))
+                                    .foregroundStyle(WorkspaceTheme.accent(space.id))
                                     .padding(.horizontal, 10).padding(.vertical, 6)
                                     .background(Design.raised, in: Capsule())
                             }.padding(.vertical, store.preferences.density == "compact" ? 8 : 14)
@@ -57,7 +57,7 @@ struct NativeSpace:View {
                 if records.isEmpty{QuietEmpty(title:"Ready for your \(kind == "assignment" ? "homework":kind == "lead" ? "leads":kind == "chapter" ? "chapters":"work").",message:"Add your own material or bring in an existing file.");Button("Add \(creationNoun)"){store.capture(space:route.id,kind:kind)}}
                 ForEach(records){record in
                     VStack(alignment:.leading,spacing:10){if record.kind == "chapter"{Text("Chapter \((records.firstIndex(where:{$0.id == record.id}) ?? 0)+1)").font(Design.font(13)).foregroundStyle(Design.muted)};RecordRow(record:record)
-                        if route.id == "moshia"{Text(record.status).font(.caption.weight(.medium)).foregroundStyle(Design.color(space.color))}
+                        if route.id == "moshia"{Text(record.status).font(.caption.weight(.medium)).foregroundStyle(WorkspaceTheme.accent(space.id))}
                         if record.kind == "song"{Text([record.data["artist"],record.data["BPM"].map{"\($0) BPM"},record.data["tuning"],record.status].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}
                         if record.kind == "chapter"{Text([record.data["POV"],record.data["wordCount"].map{"\($0) words"},record.data["location"]].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}
                     }.id(record.id).listRowSeparator(.hidden).swipeActions(edge:.trailing,allowsFullSwipe:true){if record.actionable{Button{store.complete(record)}label:{Label("Done",systemImage:"checkmark")}.tint(.green)}}

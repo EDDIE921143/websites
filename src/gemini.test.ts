@@ -43,7 +43,7 @@ it('retries empty speech once and tries alternate models once on quota rejection
  const fetcher=vi.fn().mockResolvedValueOnce(new Response('data: {}\n\n')).mockResolvedValueOnce(new Response(good));vi.stubGlobal('fetch',fetcher);
  const parts=[];for await(const b of speechChunks('Retry this empty response','test-key'))parts.push(b);expect(parts).toHaveLength(1);expect(fetcher).toHaveBeenCalledTimes(2);
  clearSpeechCache();fetcher.mockReset().mockResolvedValue(new Response('{}',{status:429}));
- await expect((async()=>{for await(const _ of speechChunks('Quota rejected','test-key')){}})()).rejects.toThrow('quota');expect(fetcher).toHaveBeenCalledTimes(4);expect(new Set(fetcher.mock.calls.map(call=>call[0])).size).toBe(4);
+ await expect((async()=>{for await(const _ of speechChunks('Quota rejected','test-key')){}})()).rejects.toThrow('quota');expect(fetcher).toHaveBeenCalledTimes(5);expect(new Set(fetcher.mock.calls.map(call=>call[0])).size).toBe(5);
 });
 it('refuses truncated audio and keeps private speech caches isolated by credential',async()=>{
  const event=(finish:string)=>'data: '+JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'audio/l16',data:'AQACAA=='}}]},finishReason:finish}]})+'\n\n';

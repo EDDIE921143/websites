@@ -7,6 +7,7 @@ struct AssistantCard:Codable,Identifiable {
     let title:String
     var subtitle:String?
     var items:[AssistantCardItem]
+    var purpose:String?
 }
 struct AssistantCardItem:Codable,Identifiable {
     var id:String{title+(detail ?? "")}
@@ -115,15 +116,21 @@ struct NativeChatHistory:View {
     func row(_ thread:ChatThread)->some View {HStack(alignment:.top,spacing:12){Image(systemName:current == thread.id ? "bubble.left.and.bubble.right.fill":"bubble.left").foregroundStyle(WorkspaceTheme.accent(scope)).padding(.top,3);VStack(alignment:.leading,spacing:7){Text(thread.title).font(.headline).foregroundStyle(Design.ink);Text(thread.entries.last?.text ?? "").font(.subheadline).foregroundStyle(Design.muted).lineLimit(2);Text(thread.updated,format:.dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(Design.muted)}.padding(.vertical,7);Spacer(minLength:0)}}
 }
 struct AssistantResultCard:View {
+    @EnvironmentObject var store:NativeStore
     let card:AssistantCard
     let scope:String
+    var onOpen:()->Void = {}
+    @State private var selected:EdizCore.Record?
+    var saved:Bool{!card.items.isEmpty && card.items.allSatisfy{$0.recordId != nil}}
+    var category:String{saved ? "From your saved work":card.type == "songs" ? "Song suggestions":card.type == "practice" ? "Generated practice plan":card.type == "outline" ? "Draft outline":"Generated list"}
     var body:some View {
         VStack(alignment:.leading,spacing:14){
-            HStack(spacing:12){Image(systemName:card.type == "songs" ? "music.note.list":card.type == "practice" ? "metronome":card.type == "outline" ? "book.pages":"list.bullet.rectangle").font(.title3).foregroundStyle(WorkspaceTheme.accent(scope));VStack(alignment:.leading,spacing:5){Text(card.title).font(.headline.weight(.medium));if let subtitle=card.subtitle{Text(subtitle).font(.caption).foregroundStyle(Design.muted)}};Spacer(minLength:0)}
+            HStack(spacing:12){Image(systemName:card.type == "songs" ? "music.note.list":card.type == "practice" ? "metronome":card.type == "outline" ? "book.pages":"list.bullet.rectangle").font(.title3).foregroundStyle(WorkspaceTheme.accent(scope));VStack(alignment:.leading,spacing:5){Text(category).font(.caption).foregroundStyle(Design.muted);Text(card.title).font(.headline.weight(.medium));if let subtitle=card.subtitle{Text(subtitle).font(.caption).foregroundStyle(Design.muted)}};Spacer(minLength:0)}
             ForEach(Array(card.items.enumerated()),id:\.offset){index,item in
-                HStack(alignment:.top,spacing:12){Text(String(format:"%02d",index+1)).font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(WorkspaceTheme.accent(scope)).frame(width:25,alignment:.leading).padding(.top,3);VStack(alignment:.leading,spacing:5){Text(item.title).font(.body.weight(.medium));if let detail=item.detail{Text(detail).font(.subheadline).foregroundStyle(Design.muted)};if let meta=item.meta{Text(meta).font(.caption.weight(.medium)).foregroundStyle(WorkspaceTheme.accent(scope))}};Spacer(minLength:0)}
+                HStack(alignment:.top,spacing:12){Text(String(format:"%02d",index+1)).font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(WorkspaceTheme.accent(scope)).frame(width:25,alignment:.leading).padding(.top,3);VStack(alignment:.leading,spacing:5){Text(item.title).font(.body.weight(.medium)).fixedSize(horizontal:false,vertical:true);if let detail=item.detail{Text(detail).font(.subheadline).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)};if let meta=item.meta{Text(meta).font(.caption.weight(.medium)).foregroundStyle(WorkspaceTheme.accent(scope))}};Spacer(minLength:0)}
+                if let id=item.recordId{if let record=store.records.first(where:{$0.id == id}){Button{onOpen();selected=record}label:{Label("Open saved item",systemImage:"arrow.up.right.square").font(.subheadline)}.accessibilityIdentifier("assistant-card-record-"+id)}else{Text("This saved item is no longer available.").font(.caption).foregroundStyle(Design.muted)}}
                 if index<card.items.count-1{Divider().opacity(0.35)}
             }
-        }.padding(18).frame(maxWidth:.infinity,alignment:.leading).foregroundStyle(Design.ink).background(Design.surface,in:RoundedRectangle(cornerRadius:18)).overlay{RoundedRectangle(cornerRadius:18).strokeBorder(WorkspaceTheme.accent(scope).opacity(0.18),lineWidth:1)}
+        }.padding(18).frame(maxWidth:.infinity,alignment:.leading).foregroundStyle(Design.ink).background(Design.surface,in:RoundedRectangle(cornerRadius:18)).overlay{RoundedRectangle(cornerRadius:18).strokeBorder(WorkspaceTheme.accent(scope).opacity(0.12),lineWidth:1)}.sheet(item:$selected){record in NavigationStack{NativeEditor(record:record)}}
     }
 }

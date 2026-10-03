@@ -8,6 +8,11 @@ struct NativeCapture:View {
     @State private var draft:EdizCore.Record
     @State private var automatic:Bool
     @State private var voicePrefix=""
+    @State private var originalVoice=""
+    @State private var polishedVoice=""
+    @State private var polishBusy=false
+    @State private var polishMessage:String?
+    @State private var polishJob:Task<Void,Never>?
     @State private var voiceOpen=false
     @State private var voiceFinishing=false
     @State private var voiceStarted=Date()
@@ -18,14 +23,14 @@ struct NativeCapture:View {
     @StateObject private var speech=NativeSpeech()
     @FocusState private var typing:Bool
     private var onFinish:(()->Void)?
-    init(seed:EdizCore.Record,onFinish:(()->Void)?=nil){self.onFinish=onFinish;_draft=State(initialValue:seed);_automatic=State(initialValue:seed.data["_captureAuto"] == "1");_date=State(initialValue:Time.date(seed.due) ?? Date());_explicitDate=State(initialValue:seed.due != nil)}
+    init(seed:EdizCore.Record,onFinish:(()->Void)?=nil){self.onFinish=onFinish;_draft=State(initialValue:seed);_originalVoice=State(initialValue:seed.data["dictationOriginal"] ?? "");_polishedVoice=State(initialValue:seed.data["dictationPolished"] ?? "");_automatic=State(initialValue:seed.data["_captureAuto"] == "1");_date=State(initialValue:Time.date(seed.due) ?? Date());_explicitDate=State(initialValue:seed.due != nil)}
     var preview:EdizCore.Record {
         var parsed=CaptureParser.parse(draft.title)
         parsed.id=draft.id;parsed.created=draft.created
         if !automatic { parsed.space=draft.space;parsed.kind=draft.kind }
         parsed.status=Catalog.states(kind:parsed.kind,space:parsed.space)[0]
         if explicitDate { parsed.due=Time.string(date) }
-        parsed.body=draft.body
+        parsed.body=draft.body;parsed.data.merge(draft.data.filter{!$0.key.hasPrefix("_")}){_,new in new}
         return parsed
     }
     var body:some View {
@@ -38,6 +43,9 @@ struct NativeCapture:View {
                             TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...8).font(.title3).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
                             Divider().overlay(Design.muted.opacity(0.15))
                             HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{typing=false;store.walkthrough?.muteForRecording();voicePrefix=draft.title;voiceStarted=Date();voiceOpen=true;speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
+                            if polishBusy {Label("Making your idea clearer…",systemImage:"sparkles").font(.footnote).foregroundStyle(Design.muted)}
+                            if !originalVoice.isEmpty {HStack {Button("Original"){draft.title=originalVoice};if !polishedVoice.isEmpty{Button("Polished"){draft.title=polishedVoice}}else if !polishBusy,store.assistantToken != nil{Button("Polish idea"){polishIdea(originalVoice)}}}.font(.footnote).buttonStyle(.bordered)}
+                            if let polishMessage {Text(polishMessage).font(.footnote).foregroundStyle(Design.muted)}
                             if let error=speech.message{Text(error).font(.footnote).foregroundStyle(Design.muted)}
                         }
                     }
@@ -64,19 +72,19 @@ struct NativeCapture:View {
                 .onChange(of:date){_,value in draft.due=explicitDate ? Time.string(value):nil}
                 .onChange(of:explicitDate){_,value in draft.due=value ? Time.string(date):nil}
                 .onChange(of:speech.transcript){_,value in if !value.isEmpty{draft.title=voicePrefix+(voicePrefix.isEmpty ? "":" ")+value} }
-                .onDisappear{if !voiceOpen{voiceJob?.cancel();speech.stop()}}
+                .onDisappear{if !voiceOpen{voiceJob?.cancel();polishJob?.cancel();speech.stop()}}
                 .sheet(isPresented:$voiceOpen,onDismiss:{if speech.listening{finishCaptureVoice()}else{speech.stop()}}){
                     VStack(alignment:.leading,spacing:22){
                         HStack{Label("Voice capture",systemImage:"waveform").font(.subheadline.weight(.semibold));Spacer();Button{voiceJob?.cancel();speech.stop();draft.title=voicePrefix;voiceFinishing=false;voiceOpen=false}label:{Image(systemName:"xmark").frame(width:44,height:44)}.accessibilityLabel("Cancel voice capture")}
-                        Text("Say what’s\non your mind.").font(.system(.largeTitle,design:.rounded).weight(.medium)).fixedSize(horizontal:false,vertical:true)
+                        Text("Let the idea\ncome as it is.").font(.system(.largeTitle,design:.rounded).weight(.medium)).fixedSize(horizontal:false,vertical:true)
                         HStack(spacing:8){Circle().fill(voiceFinishing ? Design.muted:Color(red:0.84,green:0.47,blue:0.38)).frame(width:7,height:7);Text(speech.requesting ? "Starting…":voiceFinishing ? "Keeping your last words…":"Listening to you").font(.subheadline);Spacer();TimelineView(.periodic(from:voiceStarted,by:1)){time in let elapsed=Int(max(0,time.date.timeIntervalSince(voiceStarted)));Text(String(format:"%d:%02d",elapsed/60,elapsed%60)).font(.subheadline.monospacedDigit()).foregroundStyle(Design.muted)}}
-                        AudioWaveform(levels:speech.levels.isEmpty ? Array(repeating:CGFloat(0.035),count:48):speech.levels,color:Design.accent,height:64).padding(16).background(Design.accent.opacity(0.08),in:RoundedRectangle(cornerRadius:18)).accessibilityIdentifier("capture-waveform")
+                        AudioWaveform(levels:speech.levels.isEmpty ? Array(repeating:CGFloat(0.035),count:48):speech.levels,color:WorkspaceTheme.accent("band"),height:90).padding(.vertical,24).accessibilityIdentifier("capture-waveform")
                         ScrollView{
                             Text(speech.transcript.isEmpty ? "Your words will appear here…":speech.transcript).font(speech.transcript.isEmpty ? .body:.title3).foregroundStyle(speech.transcript.isEmpty ? Design.muted:Design.ink).lineSpacing(6).frame(maxWidth:.infinity,alignment:.leading).textSelection(.enabled)
                         }.frame(maxWidth:.infinity,maxHeight:.infinity).accessibilityIdentifier("capture-live-transcript")
                         if let message=speech.message{Text(message).font(.footnote).foregroundStyle(Design.muted)}
-                        VStack(spacing:12){Button{finishCaptureVoice()}label:{Label(voiceFinishing ? "Finishing…":"Stop and keep",systemImage:"stop.fill").font(.headline).frame(maxWidth:.infinity,minHeight:54)}.buttonStyle(ActionStyle()).disabled(speech.requesting || voiceFinishing).accessibilityIdentifier("capture-voice-stop");Text("Your words stay editable before you save.").font(.caption).foregroundStyle(Design.muted).frame(maxWidth:.infinity)}
-                    }.padding(.horizontal,24).padding(.top,16).padding(.bottom,24).frame(maxWidth:.infinity,maxHeight:.infinity).background(Design.background).presentationDetents([.large]).presentationDragIndicator(.visible)
+                        VStack(spacing:12){Button{finishCaptureVoice()}label:{Label(voiceFinishing ? "Finishing…":"Stop and keep",systemImage:"stop.fill").font(.headline).frame(maxWidth:.infinity,minHeight:54)}.buttonStyle(ActionStyle()).disabled(speech.requesting || voiceFinishing).accessibilityIdentifier("capture-voice-stop");Text("Speak freely. Your idea stays editable.").font(.caption).foregroundStyle(Design.muted).frame(maxWidth:.infinity)}
+                    }.padding(.horizontal,24).padding(.top,16).padding(.bottom,24).frame(maxWidth:.infinity,maxHeight:.infinity).background(AppBackdrop(scope:"capture")).presentationDetents([.large]).presentationDragIndicator(.visible)
                 }
 
         }.tint(Design.accent).preferredColorScheme(.dark)
@@ -86,8 +94,24 @@ struct NativeCapture:View {
         voiceJob=Task{@MainActor in
             let text=await speech.finish().trimmingCharacters(in:.whitespacesAndNewlines)
             guard !Task.isCancelled else{return}
-            if !text.isEmpty{draft.title=voicePrefix+(voicePrefix.isEmpty ? "":" ")+text}
+            if !text.isEmpty{draft.title=voicePrefix+(voicePrefix.isEmpty ? "":" ")+text;originalVoice=draft.title;draft.data["dictationOriginal"]=originalVoice;polishedVoice="";draft.data["dictationPolished"]=nil;polishIdea(originalVoice)}
             voiceFinishing=false;voiceOpen=false;typing=false
+        }
+    }
+
+    func polishIdea(_ original:String){
+        guard let token=store.assistantToken else{polishMessage="Your original words are ready to edit. Connect your assistant to polish ideas.";return}
+        polishJob?.cancel();polishBusy=true;polishMessage=nil
+        polishJob=Task{@MainActor in
+            defer{polishBusy=false}
+            do{
+                let response=try await GeminiAssistant.answer(question:"Polish this dictated idea into a clear note. Remove filler words and false starts, preserve my meaning and uncertainty, and add no facts or advice. Return only the rewritten note in text, no cards or actions. Original: "+original,records:[],conversation:[],token:token,scope:"personal",requestMode:"capture-polish")
+                guard !Task.isCancelled else{return}
+                let cleaned=response.text.trimmingCharacters(in:.whitespacesAndNewlines)
+                guard !cleaned.isEmpty else{throw NSError(domain:"Capture",code:1)}
+                polishedVoice=cleaned;draft.data["dictationPolished"]=cleaned
+                if draft.title == original{draft.title=cleaned;polishMessage="Made clearer · your original is still available."}else{polishMessage="Your polished idea is ready. Your edits were kept."}
+            }catch{if !Task.isCancelled{polishMessage="Your original words were kept. The assistant couldn’t polish them right now."}}
         }
     }
 

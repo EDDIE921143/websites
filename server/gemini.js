@@ -81,7 +81,7 @@ export async function* speechChunks(text,apiKey,voice='Aoede',signal) {
  const key=speechKey(text,apiKey,voice),cached=speechCache.get(key);
  if(cached?.until>Date.now()){yield cached.bytes;return}
  const quota=[];
- const models=[...new Set([process.env.GEMINI_SPEECH_MODEL||'gemini-3.8-flash-lite-tts','gemini-3.1-flash-tts-preview','gemini-2.5-flash-preview-tts','gemini-2.5-pro-preview-tts'])];
+ const models=[...new Set([process.env.GEMINI_SPEECH_MODEL||'gemini-3.8-flash-tts','gemini-3.8-flash-lite-tts','gemini-3.1-flash-tts-preview','gemini-2.5-flash-preview-tts','gemini-2.5-pro-preview-tts'])];
  for(const model of models){
   for(let attempt=0;attempt<2;attempt++){
    let started=false,total=0,finishReason;const collected=[];

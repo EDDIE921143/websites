@@ -82,7 +82,7 @@ struct NativeAssistant:View {
         NavigationLink {
             NativeConversationHost(scope:id)
         } label: {
-            let accent=id == "all" ? Design.ink:Design.color(Catalog.space(id).color)
+            let accent=id == "all" ? Design.ink:WorkspaceTheme.accent(id)
             (rows ? AnyLayout(HStackLayout(spacing:14)):AnyLayout(VStackLayout(alignment:.leading,spacing:12))) {
                 Image(systemName:symbol).font(.system(size:22,weight:.medium))
                     .foregroundStyle(accent).frame(width:44,height:44)
@@ -128,6 +128,7 @@ struct NativeAssistantChat:View {
     @State private var voiceOpen=false
     @State private var voiceWanted=false
     @State private var voiceAuto=false
+    @State private var interruptionPrefix=""
     @State private var voiceTurn:Task<Void,Never>?
     @State private var responseTask:Task<Void,Never>?
     @State private var callRequest=false
@@ -151,7 +152,7 @@ struct NativeAssistantChat:View {
     @FocusState private var typing:Bool
     var body:some View {
         ScrollViewReader{reader in
-            ScrollView{conversation}
+            ScrollView{conversation}.mask{VStack(spacing:0){LinearGradient(colors:[.clear,.black],startPoint:.top,endPoint:.bottom).frame(height:14);Rectangle().fill(.black);LinearGradient(colors:[.black,.clear],startPoint:.top,endPoint:.bottom).frame(height:22)}}
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of:entries.count){_,_ in scrollToBottom(reader)}
                 .onChange(of:busy){_,_ in scrollToBottom(reader)}
@@ -186,7 +187,7 @@ struct NativeAssistantChat:View {
             } label: { Image(systemName:"info.circle") }.accessibilityLabel("Chat context") } } }
     }
     func scrollToBottom(_ reader:ScrollViewProxy) {
-        Task{@MainActor in await Task.yield();withAnimation(reducedMotion ? nil:.easeOut(duration:0.18)){reader.scrollTo("conversation-bottom",anchor:.bottom)}}
+        Task{@MainActor in await Task.yield();withAnimation(reducedMotion ? nil:.easeOut(duration:0.18)){if let last=entries.last,last.role == "assistant"{reader.scrollTo(last.id,anchor:.top)}else{reader.scrollTo("conversation-bottom",anchor:.bottom)}}}
     }
     var conversation:some View {
         VStack(alignment:.leading,spacing:compact ? 12:22){
@@ -236,7 +237,7 @@ struct NativeAssistantChat:View {
                     Text(entry.text).font(Design.font(16,weight:"Regular"))
                 }.padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:corners)).frame(maxWidth:.infinity,alignment:.trailing)
             } else {
-                VStack(alignment:.leading,spacing:10){if let provider=entry.provider{Text(provider == "Gemini" ? WorkspaceBot.name(scope):provider).font(.caption.weight(.medium)).foregroundStyle(accent)};Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(3).textSelection(.enabled)
+                VStack(alignment:.leading,spacing:10){if let provider=entry.provider{Text(provider == "Gemini" ? WorkspaceBot.name(scope):provider).font(.caption.weight(.medium)).foregroundStyle(accent)};Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(5).fixedSize(horizontal:false,vertical:true).textSelection(.enabled)
                     ForEach(entry.cards ?? []){AssistantResultCard(card:$0,scope:scope)}
                     ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
                     ForEach(entry.actions){action in Button("Review: "+action.title){proposal=action}.buttonStyle(ActionStyle())}
@@ -286,9 +287,9 @@ struct NativeAssistantChat:View {
                 Button {
                     if hasMessage{send()}else{typing=false;callStarted=Date();callEntryStart=entries.count;
                         #if DEBUG
-                        if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-call-results"){callEntryStart=0}
+                        if ProcessInfo.processInfo.arguments.contains("-ui-testing") && (ProcessInfo.processInfo.arguments.contains("-test-call-results") || ProcessInfo.processInfo.arguments.contains("-test-call-saved-results")){callEntryStart=0}
                         #endif
-                        callEnded=nil;voiceWanted=true;voiceAuto=true;voiceOpen=true;speaker.finished={if voiceWanted && voiceAuto{beginListening()}}}
+                        callEnded=nil;voiceWanted=true;voiceAuto=true;voiceOpen=true;speaker.finished={if voiceWanted && voiceAuto{beginListening()}};speaker.interrupted={text in interruptionPrefix=text;message=nil;speaker.acknowledgeInterruption{if voiceWanted{beginListening()}}}}
                 } label: {
                     Image(systemName:hasMessage ? "arrow.up":"waveform").font(.body.weight(.medium)).frame(width:44,height:44).foregroundStyle(Design.background).background(accent,in:Circle())
                 }.disabled(busy || preparing>0).accessibilityLabel(hasMessage ? "Send question":"Talk to your assistant").accessibilityIdentifier(hasMessage ? "assistant-send":"assistant-voice").walkthroughTarget("assistant-send",session:store.walkthrough)
@@ -352,7 +353,7 @@ struct NativeAssistantChat:View {
         guard voiceWanted,!busy,!speech.transcript.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{return}
         voiceTurn?.cancel();voiceTurn=Task{@MainActor in
             let text=await speech.finish().trimmingCharacters(in:.whitespacesAndNewlines)
-            guard !Task.isCancelled,voiceWanted,!text.isEmpty else{return};question=text;send()
+            guard !Task.isCancelled,voiceWanted,!text.isEmpty else{return};question=interruptionPrefix.isEmpty ? text:interruptionPrefix+" "+text;interruptionPrefix="";send()
         }
     }
     func pauseVoice(){
@@ -361,7 +362,7 @@ struct NativeAssistantChat:View {
     }
     func endVoice(){
         if voiceWanted{let seconds=Int(Date().timeIntervalSince(callStarted));callEnded="Voice conversation ended · \(seconds/60):"+String(format:"%02d",seconds%60);UIImpactFeedbackGenerator(style:.soft).impactOccurred()}
-        voiceAuto=false;voiceWanted=false;voiceOpen=false;voiceTurn?.cancel();voiceTurn=nil;speaker.finished=nil;speech.stop();speaker.stop()
+        voiceAuto=false;voiceWanted=false;voiceOpen=false;voiceTurn?.cancel();voiceTurn=nil;interruptionPrefix="";speaker.finished=nil;speaker.interrupted=nil;speech.stop();speaker.stop()
         if callRequest{activeRequest=UUID();responseTask?.cancel();responseTask=nil;callRequest=false;busy=false;message=nil;failedQuestion=nil}
     }
     func forPrompt(_ prompt:String)->some View {
@@ -383,7 +384,8 @@ struct NativeAssistantChat:View {
             responseTask=Task{@MainActor in
                 defer{if activeRequest==requestID{busy=false;callRequest=false}}
                 do{
-                    let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing,voiceMode:inCall)
+                    let memories=store.searchableMemories().filter{$0.data["_chatID"] != nil && $0.data["_chatID"] != threadID?.uuidString && (scope == "all" || $0.space == scope)}
+                    let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing,voiceMode:inCall,memories:Array(memories.prefix(12)))
                     guard !Task.isCancelled,(!inCall || voiceWanted) else{return}
                     attachments.removeAll{file in outgoing.contains{$0.id == file.id}}
                     entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:WorkspaceBot.name(scope),cards:answer.cards,spokenText:answer.spokenText))
@@ -475,10 +477,10 @@ struct NativeSearchSuggestions:UIViewRepresentable {
     }
 }
 enum GeminiAssistant {
-    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String,attachments:[AssistantAttachment]=[],voiceMode:Bool=false,requestMode:String="chat") async throws -> GeminiResponse {
+    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String,attachments:[AssistantAttachment]=[],voiceMode:Bool=false,requestMode:String="chat",memories:[EdizCore.Record]=[]) async throws -> GeminiResponse {
         var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!);request.httpMethod="POST";request.timeoutInterval=55;request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
         let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(records.prefix(500))))
-        request.httpBody=try JSONSerialization.data(withJSONObject:["mode":requestMode,"voiceMode":voiceMode,"question":question,"scope":scope,"records":encoded,"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.contextText]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
+        request.httpBody=try JSONSerialization.data(withJSONObject:["mode":requestMode,"voiceMode":voiceMode,"question":question,"scope":scope,"records":encoded,"memories":memories.prefix(12).map{["title":$0.title,"space":$0.space,"body":String($0.body.suffix(6000))]},"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.contextText]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
         let (data,response)=try await URLSession.shared.data(for:request)
         guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode) else{let detail=(try? JSONSerialization.jsonObject(with:data)) as? [String:String];throw NSError(domain:"EdizAssistant",code:1,userInfo:[NSLocalizedDescriptionKey:detail?["error"] ?? "Your assistant couldn’t answer. Please try again."])}
         return try JSONDecoder().decode(GeminiResponse.self,from:data)

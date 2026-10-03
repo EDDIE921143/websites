@@ -128,7 +128,7 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["A sweep import note"].waitForExistence(timeout:5))
         app.navigationBars.buttons.firstMatch.tap()
         for _ in 0..<6{if app.buttons["System health"].isHittable{break};app.swipeUp()}
-        app.buttons["System health"].tap();XCTAssertTrue(app.staticTexts["Database, SQLite · WAL"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Version, 0.3.15"].exists)
+        app.buttons["System health"].tap();XCTAssertTrue(app.staticTexts["Database, SQLite · WAL"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Version, 0.3.17"].exists)
         snapshot("System health after a real text import")
     }
     func testChapterCreationKeepsItsOwnDraftAndFields(){
@@ -463,11 +463,32 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["Our acoustic bridge needs a slower run-through"].waitForExistence(timeout:5))
         snapshot("Search returns and reopens a remembered conversation")
     }
+    func testCallSavedResultsOpenAndPreparedChangesRequireReview(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-call-saved-results"];app.launch()
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-band"].tap();app.buttons["assistant-voice"].tap()
+        let saved=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","voice-record-")).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Changes to review · nothing saved yet"].exists);saved.tap()
+        XCTAssertTrue(app.buttons["record-save"].waitForExistence(timeout:5));XCTAssertEqual(app.descendants(matching:.any).matching(identifier:"record-title").firstMatch.value as? String,"Saved Friday rehearsal");app.buttons["record-save"].tap()
+        XCTAssertTrue(app.buttons["voice-listen"].waitForExistence(timeout:5));app.buttons["voice-review-Prepare Saturday rehearsal"].tap()
+        app.buttons["Review new item"].tap();XCTAssertTrue(app.buttons["creation-save"].waitForExistence(timeout:5));app.buttons["creation-save"].tap()
+        XCTAssertTrue(app.buttons["voice-done"].waitForExistence(timeout:5));app.buttons["voice-done"].tap()
+        app.tabBars.buttons["Search"].tap();let field=app.textFields["search-query"];field.tap();field.typeText("Prepared Saturday rehearsal\n")
+        XCTAssertTrue(app.staticTexts["Prepared Saturday rehearsal"].waitForExistence(timeout:5));snapshot("Saved call results open actual records; proposals save only after review")
+    }
+    func testLongChatResultCanBeReadFromBeginningToEnd(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-long-chat-result"];app.launch()
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-band"].tap()
+        let first=app.staticTexts["Practice idea 1 · A longer title that should wrap without losing its meaning."]
+        XCTAssertTrue(first.waitForExistence(timeout:5));snapshot("Long chat result opens at the start with soft scroll edges")
+        let last=app.staticTexts["Practice idea 24 · A longer title that should wrap without losing its meaning."]
+        for _ in 0..<16{if last.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(last.isHittable);snapshot("Last item of a complete 24-item chat result remains readable")
+    }
     func testCallShowsDesignedResultsAndEnds(){
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-call-results"];app.launch()
         app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-band"].tap();app.buttons["assistant-voice"].tap()
         XCTAssertTrue(app.staticTexts["CLEARANCE 19 Bot"].waitForExistence(timeout:5))
-        XCTAssertTrue(app.staticTexts["Friday practice ideas"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Everlong"].exists);XCTAssertTrue(app.buttons["voice-listen"].exists)
+        XCTAssertTrue(app.staticTexts["Friday practice ideas"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Song suggestions"].exists);XCTAssertTrue(app.staticTexts["Everlong"].exists);XCTAssertTrue(app.buttons["voice-listen"].exists)
         snapshot("Structured song suggestions inside the voice conversation")
         app.buttons["voice-done"].tap();XCTAssertTrue(app.staticTexts["call-ended"].waitForExistence(timeout:5));XCTAssertTrue(app.buttons["assistant-voice"].exists)
     }

@@ -77,7 +77,7 @@ struct NativeToday:View {
                     }
                     HStack(spacing:12){if store.preferences.focus != "all"{GlassAction{Button{store.capture()}label:{Label("Capture",systemImage:"plus").padding(.horizontal,8).frame(minHeight:44)}.accessibilityIdentifier("capture-from-today")}};NavigationLink{NativeImport()}label:{Label("Bring in existing work",systemImage:"square.and.arrow.down").font(.subheadline).foregroundStyle(Design.muted).frame(minHeight:44)};Spacer()}
                 }
-                if let recent=store.recent,store.preferences.focus == "all" || recent.space == store.preferences.focus { VStack(alignment:.leading,spacing:10){Text("Continue where you left off").font(Design.font(19,weight:"DemiBold"));RecordRow(record:recent).padding(.vertical,8)} }
+                if let recent=store.recent,store.preferences.focus == "all" || recent.space == store.preferences.focus { Surface { VStack(alignment:.leading,spacing:10){Text("Continue where you left off").font(Design.font(19,weight:"DemiBold"));RecordRow(record:recent).padding(.vertical,8)} } }
                 if !upcoming.isEmpty { VStack(alignment:.leading,spacing:10){Text("Coming up").font(Design.font(19,weight:"DemiBold"));VStack(spacing:12){ForEach(Array(upcoming.prefix(3))){RecordRow(record:$0);Divider().opacity(0.4)}}} }
                 VStack(alignment:.leading,spacing:12){Text(store.preferences.focus == "all" ? "Your spaces":"Your workspace").font(Design.font(19,weight:"DemiBold",relativeTo:.headline));ForEach(Catalog.spaces.filter{store.preferences.focus == "all" || $0.id == store.preferences.focus}){space in NativeSpaceShortcut(space:space);Divider().opacity(0.35)};if store.preferences.focus != "all"{GlassAction{Button("All spaces"){store.setFocus("all")}.frame(minHeight:44)}}}
 
@@ -92,8 +92,8 @@ struct NativeToday:View {
             HStack(spacing:12){FocusLogo(scope:store.preferences.focus).frame(width:46,height:46).clipShape(RoundedRectangle(cornerRadius:10));Text("YOUR DAY").font(.caption.weight(.semibold)).tracking(1.5).foregroundStyle(Design.muted);Spacer();Text(Date.now,format:.dateTime.weekday(.abbreviated).day().month(.abbreviated)).font(.caption).foregroundStyle(Design.muted)}
             if let date=store.lastRefresh {Label("Updated "+date.formatted(date:.omitted,time:.shortened),systemImage:"checkmark.circle").font(.caption).foregroundStyle(Design.muted).accessibilityIdentifier("workspace-refreshed")}
             if store.preferences.focus == "all" {
-                Text(greeting+",\nEdiz.").font(.system(.largeTitle,design:.rounded).weight(.semibold)).fixedSize(horizontal:false,vertical:true)
-                Text("A little space for your plans, stories, and ideas.").font(.subheadline).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)
+                Text(greeting+", Ediz.").font(.system(.largeTitle,design:.rounded).weight(.medium)).fixedSize(horizontal:false,vertical:true)
+                Text("Your ideas, your music, your next chapter. Make yourself at home.").font(.subheadline).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)
                 Button{store.capture()}label:{HStack{Text("Capture a thought").font(.subheadline.weight(.semibold));Image(systemName:"plus").font(.subheadline.weight(.semibold))}.padding(.horizontal,18).frame(minHeight:46).foregroundStyle(Design.background).background(Design.ink,in:Capsule())}.buttonStyle(.plain).accessibilityIdentifier("capture-from-today")
             } else {Text("A little room to focus.").font(.title2.weight(.medium))}
         }.padding(.vertical,store.preferences.density == "compact" ? 12:22).frame(maxWidth:.infinity,alignment:.leading)
@@ -103,14 +103,14 @@ struct NativeToday:View {
         let count=store.records.filter{$0.space == space.id}.count
         return VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 16:24) {
             HStack { Label("YOUR FOCUS",systemImage:"scope").font(.caption.weight(.semibold));Spacer();Button("Change"){choosingFocus=true}.font(.subheadline) }
-                .foregroundStyle(Design.color(space.color))
+                .foregroundStyle(WorkspaceTheme.accent(space.id))
             Text(space.name).font(.largeTitle.weight(.semibold)).foregroundStyle(Design.ink)
             Text(space.summary+" · \(count) saved items").font(.subheadline).foregroundStyle(Design.muted)
             LazyVGrid(columns:[GridItem(.flexible()),GridItem(.flexible())],spacing:12) {
                 ForEach(Array(space.modules.prefix(4))) { module in
                     NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)) {
                         Text(module.label).font(.body.weight(.medium)).frame(maxWidth:.infinity,minHeight:50)
-                            .background(Design.color(space.color).opacity(0.15),in:RoundedRectangle(cornerRadius:16))
+                            .background(WorkspaceTheme.accent(space.id).opacity(0.15),in:RoundedRectangle(cornerRadius:16))
                     }.buttonStyle(.plain)
                 }
             }

@@ -33,11 +33,12 @@ import EdizCore
     @Published var assistantConnected=false
     var assistantToken:String? {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-voice-fallback"){return String(repeating:"0",count:64)}
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-voice-fallback"){NativeVoicePreferences.defaults.set(true,forKey:"assistant-offline-voice");return String(repeating:"0",count:64)}
         #endif
         if isPractice || ProcessInfo.processInfo.arguments.contains("-ui-testing"){return nil};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
     func connectAssistant(_ url:URL){guard !isPractice,url.scheme == "edizos",url.host == "assistant",let token=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "token"})?.value,token.count == 64,token.allSatisfy({$0.isHexDigit}) else{return};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device"];SecItemDelete(query as CFDictionary);var item=query;item[kSecValueData as String]=Data(token.utf8);item[kSecAttrAccessible as String]=kSecAttrAccessibleWhenUnlockedThisDeviceOnly;if SecItemAdd(item as CFDictionary,nil)==errSecSuccess{assistantConnected=true;loadContext()}else{error="This device could not connect to the assistant."}}
     func loadContext() {
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing"){return}
         guard let token = assistantToken else { return }
         Task { @MainActor in _ = await fetchContext(token) }
     }
@@ -69,12 +70,28 @@ import EdizCore
             let database = try Database(url:root.appendingPathComponent("ediz.sqlite"))
             self.database = database
             try reload()
+            if !isPractice,!ProcessInfo.processInfo.arguments.contains("-ui-testing"),!records.contains(where:{$0.id == "ediz-context-websites-20261003"}){
+                var websites=EdizCore.Record(space:"ejj",kind:"note",title:"Websites project · verified links")
+                websites.id="ediz-context-websites-20261003";websites.data["contextType"]="workspace-brief"
+                websites.body="The local Websites project contains RELAX CUT, an independent EJJ Digital barbershop demo for Reutlingen, and HSS, an automotive hail-damage concept. RELAX CUT public demo: https://relax-cut-demo.pages.dev . Its booking is simulated, not a live business booking service. HSS is a local project with no verified public URL. Do not invent a live link. Other demos and repositories may exist in separate projects; confirm their current links before sharing them. EJJ Digital’s normal complete website offer is €299."
+                try database.save(websites,action:"Context imported");try reload()
+            }
             for scope in ["all"]+Catalog.spaces.map(\.id) where chatShelf(scope).threads.isEmpty && !conversation(scope).isEmpty{_=openThread(scope:scope)}
             try database.snapshot(directory:root.appendingPathComponent("Snapshots"))
             try? FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],ofItemAtPath:root.path)
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-call-results"){
                 let id=openThread(scope:"band");let card=AssistantCard(type:"songs",title:"Friday practice ideas",subtitle:"Suggestions to try together",items:[AssistantCardItem(title:"Everlong",detail:"Foo Fighters · Work on steady dynamics"),AssistantCardItem(title:"Seven Nation Army",detail:"The White Stripes · Keep the riff locked in"),AssistantCardItem(title:"Come As You Are",detail:"Nirvana · Listen to the guitar phrasing")]);saveThread([ConversationEntry(role:"user",text:"Suggest rock songs for Friday"),ConversationEntry(role:"assistant",text:"Here are three ideas to try together.",provider:"CLEARANCE 19 Bot",cards:[card],spokenText:"I’ve put three ideas on your screen. Which would you like to start with?")],id:id,scope:"band");nameThread(id,scope:"band",title:"Friday practice ideas")
+            }
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-call-saved-results"){
+                let record=EdizCore.Record(space:"band",kind:"note",title:"Saved Friday rehearsal");_ = save(record)
+                let proposal=GeminiProposal(type:"create",title:"Prepare Saturday rehearsal",fields:GeminiFields(space:"band",kind:"rehearsal",title:"Prepared Saturday rehearsal"))
+                let id=openThread(scope:"band");saveThread([ConversationEntry(role:"user",text:"Find my rehearsal and prepare a new one"),ConversationEntry(role:"assistant",text:"Here is your saved Friday rehearsal and a Saturday plan to review.",records:[record],actions:[proposal],provider:"CLEARANCE 19 Bot")],id:id,scope:"band")
+            }
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-long-chat-result"){
+                let id=openThread(scope:"band");let items=(1...24).map{number in AssistantCardItem(title:"Practice idea \(number) · A longer title that should wrap without losing its meaning.",detail:"A complete explanation with enough detail to verify that a large result remains readable from its first item through its last item.")}
+                let card=AssistantCard(type:"practice",title:"Complete rehearsal plan",items:items)
+                saveThread([ConversationEntry(role:"user",text:"Show the whole practice plan"),ConversationEntry(role:"assistant",text:"Here is the complete plan.",provider:"CLEARANCE 19 Bot",cards:[card])],id:id,scope:"band")
             }
             #endif
             ready = true

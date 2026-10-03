@@ -30,3 +30,12 @@ it('tries the next configured model after a transport timeout',async()=>{
  const fetcher=vi.fn().mockRejectedValueOnce(new DOMException('Timeout','TimeoutError')).mockResolvedValueOnce(new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Recovered reply',actions:[]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
  const res=response();await handler(request({question:'Hello',records:[]}),res);expect(res.statusCode).toBe(200);expect(fetcher).toHaveBeenCalledTimes(2);expect(res.headers['X-Ediz-Model']).toBe('gemini-3.8-flash');
 });
+
+it('recovers from a provider schema rejection while retaining JSON and action validation',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ const fetcher=vi.fn().mockResolvedValueOnce(new Response('{}',{status:400})).mockResolvedValueOnce(new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Hello Ediz!',actions:[{type:'delete',recordId:'invented'}]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
+ const res=response();await handler(request({question:'Hello',scope:'band',records:[]}),res);
+ expect(res.statusCode).toBe(200);expect(fetcher).toHaveBeenCalledTimes(2);
+ const first=JSON.parse(fetcher.mock.calls[0][1].body),retry=JSON.parse(fetcher.mock.calls[1][1].body);
+ expect(first.generationConfig.responseJsonSchema).toBeDefined();expect(retry.generationConfig.responseJsonSchema).toBeUndefined();expect(retry.generationConfig.responseMimeType).toBe('application/json');expect((res.body as any).actions).toEqual([]);
+});
