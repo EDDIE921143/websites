@@ -259,6 +259,13 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.buttons["walkthrough-voice-replay"].exists)
         app.buttons["walkthrough-voice-replay"].tap()
         expectation(for:audible,evaluatedWith:activity);waitForExpectations(timeout:8)
+        app.buttons["Speak"].tap()
+        XCTAssertTrue(app.buttons["Stop"].waitForExistence(timeout:8))
+        XCTAssertTrue(app.buttons["walkthrough-voice-toggle"].label.contains("Read aloud"))
+        XCTAssertFalse(app.buttons["walkthrough-voice-replay"].exists)
+        app.buttons["Stop"].tap()
+        app.buttons["walkthrough-voice-toggle"].tap()
+        XCTAssertTrue(app.buttons["walkthrough-voice-replay"].waitForExistence(timeout:5))
         app.buttons["walkthrough-exit"].tap()
         XCTAssertTrue(app.navigationBars["Your guide"].waitForExistence(timeout:5))
         XCTAssertFalse(app.otherElements["tutorial-voice-activity"].exists)
@@ -349,7 +356,10 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertFalse(app.staticTexts["Practice guitar"].exists)
         XCTAssertFalse(app.staticTexts["Practice guitar tomorrow"].exists)
     }
-    func testInstalledContextAndWorkspaceBackgroundsReadOnly(){
+    func testInstalledContextAndWorkspaceBackgroundsReadOnly() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Private installed context is verified on the paired phone; no device credential is copied into CI.")
+        #endif
         app.terminate()
         app.launchArguments=[];app.launchEnvironment=[:];app.launch()
         app.buttons["Settings and backup"].tap()
@@ -453,9 +463,9 @@ final class EdizOSUITests:XCTestCase {
         snapshot("Refined iOS home with contour background")
         app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
         app.buttons["assistant-attach"].tap();app.buttons["Choose a file"].tap()
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout:5));app.buttons["Cancel"].tap()
+        let dismissPicker=app.descendants(matching:.any).matching(NSPredicate(format:"label IN %@",["Cancel","Close"])).firstMatch;XCTAssertTrue(dismissPicker.waitForExistence(timeout:10));dismissPicker.tap()
         app.buttons["assistant-attach"].tap();app.buttons["Photo or video"].tap()
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout:5));app.buttons["Cancel"].tap()
+        XCTAssertTrue(dismissPicker.waitForExistence(timeout:10));dismissPicker.tap()
         let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
         input.tap();input.typeText("Hello");app.buttons["Send question"].tap()
         app.buttons["assistant-voice"].tap()

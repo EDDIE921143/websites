@@ -208,6 +208,7 @@ enum WalkthroughKind:String,CaseIterable,Identifiable {
     func event(_ value:String){guard step?.event == value else{return};index+=1;UISelectionFeedbackGenerator().selectionChanged();readStep()}
     func startGuidance(){guard !guidanceStarted else{return};guidanceStarted=true;readStep(welcome:true)}
     func toggleNarration(){narrationEnabled.toggle();if narrationEnabled{readStep()}else{narrator.stop()}}
+    func muteForRecording(){narrationEnabled=false;narrator.stop()}
     func readStep(welcome:Bool=false){
         narrator.stop();guard narrationEnabled,guidanceStarted else{return}
         let text=(welcome ? kind.welcome:"")+(step?.spoken ?? "Nice, you’ve tried it yourself. That is yours to use whenever you need it. You can explore a little more here, or head back to your app when you’re ready.")

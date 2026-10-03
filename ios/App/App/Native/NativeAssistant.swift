@@ -263,7 +263,7 @@ struct NativeAssistantChat:View {
                     .focused($typing).accessibilityIdentifier("assistant-question").walkthroughTarget("assistant-message",session:store.walkthrough)
                     .padding(.vertical,11).frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
                     .contentShape(Rectangle()).onTapGesture { typing=true }
-                Button{typing=false;endVoice();mediaError=nil;recordStarted=Date();dictating=true;dictation.toggle()}label:{Image(systemName:"mic").font(.body).frame(width:40,height:44)}.accessibilityLabel("Record voice memo").accessibilityIdentifier("assistant-memo").disabled(busy || preparing>0)
+                Button{typing=false;endVoice();store.walkthrough?.muteForRecording();mediaError=nil;recordStarted=Date();dictating=true;dictation.toggle()}label:{Image(systemName:"mic").font(.body).frame(width:40,height:44)}.accessibilityLabel("Record voice memo").accessibilityIdentifier("assistant-memo").disabled(busy || preparing>0)
                 let hasMessage = !question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !attachments.isEmpty
                 Button {
                     if hasMessage{send()}else{typing=false;voiceWanted=true;voiceOpen=true;speaker.finished={if voiceWanted && voiceAuto{beginListening()}}}

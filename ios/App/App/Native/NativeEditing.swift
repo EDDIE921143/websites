@@ -32,7 +32,7 @@ struct NativeCapture:View {
                         VStack(alignment:.leading,spacing:14){
                             TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...8).font(.title3).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
                             Divider().overlay(Design.muted.opacity(0.15))
-                            HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{if !speech.listening{store.walkthrough?.narrator.stop();voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
+                            HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{if !speech.listening{store.walkthrough?.muteForRecording();voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
                             if speech.listening{AudioWaveform(levels:speech.levels,color:Design.accent)}
                             if let error=speech.message{Text(error).font(.footnote).foregroundStyle(Design.muted)}
                         }

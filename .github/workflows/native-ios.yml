@@ -1,6 +1,7 @@
 name: Native iOS checks
 on:
   push:
+    branches: [ediz-os-native]
     paths: ['ios/**', 'native/**', '.github/workflows/native-ios.yml']
   pull_request:
     paths: ['ios/**', 'native/**', '.github/workflows/native-ios.yml']
@@ -10,7 +11,7 @@ permissions:
 jobs:
   core-and-simulator:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 26
