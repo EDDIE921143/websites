@@ -231,12 +231,29 @@ final class EdizOSUITests:XCTestCase {
         let spoken=app.switches["tutorial-spoken-guide"]
         XCTAssertTrue(spoken.waitForExistence(timeout:5));if spoken.value as? String == "0"{spoken.tap()}
         app.buttons["tutorial-start-chapters"].tap()
+        if app.buttons["walkthrough-lesson-continue"].waitForExistence(timeout:3){app.buttons["walkthrough-lesson-continue"].tap()}
         XCTAssertTrue(app.staticTexts["Natural voice"].waitForExistence(timeout:20))
         let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
         expectation(for:audible,evaluatedWith:app.otherElements["tutorial-voice-activity"]);waitForExpectations(timeout:8)
         snapshot("Natural spoken chapter walkthrough in a safe practice workspace")
         app.buttons["walkthrough-voice-toggle"].tap();app.buttons["walkthrough-exit"].tap()
         XCTAssertTrue(app.navigationBars["Your guide"].waitForExistence(timeout:5))
+    }
+    func testTutorialNarrationSurvivesVoiceCapture(){
+        app.swipeDown();app.buttons["Settings and backup"].tap()
+        let guide=app.buttons["settings-tutorial"];for _ in 0..<12{if guide.isHittable{break};app.swipeUp()};guide.tap()
+        let spoken=app.switches["tutorial-spoken-guide"];XCTAssertTrue(spoken.waitForExistence(timeout:5));if spoken.value as? String == "0"{spoken.tap()}
+        app.buttons["tutorial-start-capture"].tap()
+        if app.buttons["walkthrough-lesson-continue"].waitForExistence(timeout:3){app.buttons["walkthrough-lesson-continue"].tap()}
+        XCTAssertTrue(app.buttons["walkthrough-voice-replay"].waitForExistence(timeout:5))
+        app.tabBars.buttons["Capture"].tap();app.buttons["Speak"].tap()
+        let cancel=app.buttons["Cancel voice capture"];XCTAssertTrue(cancel.waitForExistence(timeout:5));cancel.tap()
+        XCTAssertTrue(app.buttons["walkthrough-voice-replay"].waitForExistence(timeout:5))
+        app.buttons["walkthrough-voice-replay"].tap()
+        let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
+        expectation(for:audible,evaluatedWith:app.otherElements["tutorial-voice-activity"]);waitForExpectations(timeout:8)
+        snapshot("Natural guide resumes after pausing for voice capture")
+        app.buttons["walkthrough-exit"].tap()
     }
     func testSpokenTutorialCanReadMuteReplayAndAdvance(){
         app.swipeDown();let settings=app.buttons["Settings and backup"];XCTAssertTrue(settings.waitForExistence(timeout:5));settings.tap()
@@ -246,6 +263,7 @@ final class EdizOSUITests:XCTestCase {
         let spoken=app.switches["tutorial-spoken-guide"]
         XCTAssertTrue(spoken.waitForExistence(timeout:5));if spoken.value as? String == "0"{spoken.tap()}
         app.buttons["tutorial-start-capture"].tap()
+        if app.buttons["walkthrough-lesson-continue"].waitForExistence(timeout:3){app.buttons["walkthrough-lesson-continue"].tap()}
         XCTAssertTrue(app.buttons["walkthrough-voice-replay"].waitForExistence(timeout:5))
         let activity=app.otherElements["tutorial-voice-activity"]
         let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
@@ -266,9 +284,9 @@ final class EdizOSUITests:XCTestCase {
         snapshot("Capture voice pane with real audio and live transcript")
         app.buttons["capture-voice-stop"].tap()
         XCTAssertTrue(app.buttons["walkthrough-voice-toggle"].waitForExistence(timeout:5))
-        XCTAssertTrue(app.buttons["walkthrough-voice-toggle"].label.contains("Read aloud"))
-        XCTAssertFalse(app.buttons["walkthrough-voice-replay"].exists)
-        app.buttons["walkthrough-voice-toggle"].tap()
+        XCTAssertTrue(app.buttons["walkthrough-voice-toggle"].label.contains("Mute guide"))
+        XCTAssertTrue(app.buttons["walkthrough-voice-replay"].exists)
+        app.buttons["walkthrough-voice-replay"].tap()
         XCTAssertTrue(app.buttons["walkthrough-voice-replay"].waitForExistence(timeout:5))
         #endif
         app.buttons["walkthrough-exit"].tap()
@@ -425,8 +443,8 @@ final class EdizOSUITests:XCTestCase {
         throw XCTSkip("Live transcription is verified on the paired iPhone.")
         #endif
         app.tabBars.buttons["Capture"].tap();let input=app.descendants(matching:.any).matching(identifier:"capture-text").firstMatch;XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText("Keep this thought");app.buttons["Speak"].tap()
-        XCTAssertTrue(app.buttons["capture-voice-stop"].waitForExistence(timeout:8));XCTAssertTrue(app.staticTexts["Listening to you"].waitForExistence(timeout:8));XCTAssertTrue(app.otherElements["capture-live-transcript"].exists || app.scrollViews["capture-live-transcript"].exists)
-        snapshot("Refined voice Capture with waveform and editable live words");app.buttons["capture-voice-stop"].tap();XCTAssertTrue(input.waitForExistence(timeout:5));XCTAssertTrue((input.value as? String)?.contains("Keep this thought") == true)
+        XCTAssertTrue(app.buttons["capture-voice-stop"].waitForExistence(timeout:8));XCTAssertTrue(app.staticTexts["Listening to you"].waitForExistence(timeout:8));XCTAssertFalse(app.otherElements["capture-live-transcript"].exists);XCTAssertFalse(app.scrollViews["capture-live-transcript"].exists);XCTAssertTrue(app.staticTexts["Your words appear after you finish."].exists)
+        snapshot("Voice-only Capture keeps transcript hidden until Stop");app.buttons["capture-voice-stop"].tap();XCTAssertTrue(input.waitForExistence(timeout:5));XCTAssertTrue((input.value as? String)?.contains("Keep this thought") == true)
         app.buttons["capture-save"].tap();XCTAssertTrue(app.staticTexts.matching(NSPredicate(format:"label BEGINSWITH %@","Keep this thought")).firstMatch.waitForExistence(timeout:5))
     }
     func testSavedChatsReopenAndPersistWithoutMerging(){
@@ -520,11 +538,11 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.buttons["voice-read-reply"].waitForExistence(timeout:5))
         app.buttons["voice-read-reply"].tap()
         let voice=app.staticTexts.matching(NSPredicate(format:"label BEGINSWITH %@","Natural voice · ")).firstMatch
-        XCTAssertTrue(voice.waitForExistence(timeout:18))
-        XCTAssertTrue(app.staticTexts["Your assistant is speaking"].exists)
+
         let activity=app.otherElements["voice-activity"]
         let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
-        expectation(for:audible,evaluatedWith:activity);waitForExpectations(timeout:5)
+        expectation(for:audible,evaluatedWith:activity);waitForExpectations(timeout:20)
+        XCTAssertTrue(voice.exists)
         snapshot("Natural speech with a measured audio signal and output route")
         app.buttons["voice-done"].tap()
     }

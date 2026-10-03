@@ -23,7 +23,7 @@ it('shares earlier chats as scoped read-only memory and requests dependable stru
  await handler({method:'POST',headers:{host:'ediz-os.vercel.app',authorization:'Bearer '+token},body:{question:'What did we agree in our earlier rehearsal conversation?',scope:'band',records:[],memories:[{title:'Warm-up',space:'band',body:'Acoustic warm-up for five minutes.'},{title:'Private client',space:'ejj',body:'Business context'}]}},res);
  expect(res.statusCode).toBe(200);expect(res.body.actions).toEqual([]);expect(res.body.recordIds).toEqual([]);
  const request=JSON.parse((fetcher.mock.calls[0] as any)[1].body);const input=JSON.parse(request.contents[0].parts[0].text);
- expect(input.conversationMemory).toEqual([{title:'Warm-up',space:'band',body:'Acoustic warm-up for five minutes.',readOnly:true}]);expect(request.generationConfig.responseJsonSchema.required).toEqual(['text','recordIds','actions']);
+ expect(input.conversationMemory).toEqual([{title:'Warm-up',space:'band',body:'Acoustic warm-up for five minutes.',readOnly:true}]);expect(request.generationConfig.responseMimeType).toBe('application/json');expect(request.generationConfig.responseJsonSchema).toBeUndefined();
 });
 it('validates result cards without inventing saved links or accepting unsupported cards',()=>{
  const result=presentationReply({spokenText:'Here are three suggestions.',cards:[{type:'songs',title:'Friday rehearsal',items:[{title:'A song',detail:'Suggested, not saved',recordId:'invented'},{title:'Saved song',recordId:'known'}]},{type:'html',title:'Unsafe card',items:[{title:'x'}]}]},new Set(['known']));

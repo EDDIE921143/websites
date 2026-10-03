@@ -40,7 +40,7 @@ struct NativeCapture:View {
                     VStack(alignment:.leading,spacing:6){Text("Make room for a thought.").font(.system(size:27,weight:.medium,design:.rounded));Text("Say it or write it. We’ll help put it in its place.").font(.subheadline).foregroundStyle(Design.muted)}.padding(.top,8)
                     Surface {
                         VStack(alignment:.leading,spacing:14){
-                            TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...8).font(.title3).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
+                            TextEditor(text:$draft.title).frame(height:170).scrollContentBackground(.hidden).font(.body).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
                             Divider().overlay(Design.muted.opacity(0.15))
                             HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{typing=false;store.walkthrough?.muteForRecording();voicePrefix=draft.title;voiceStarted=Date();voiceOpen=true;speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
                             if polishBusy {Label("Making your idea clearer…",systemImage:"sparkles").font(.footnote).foregroundStyle(Design.muted)}
@@ -60,7 +60,7 @@ struct NativeCapture:View {
                     }
                     if !draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
                         VStack(alignment:.leading,spacing:10){Text("READY TO SAVE").font(.caption2.weight(.semibold)).tracking(1.5).foregroundStyle(Design.muted)
-                            HStack(alignment:.top,spacing:12){SpaceMark(space:Catalog.space(preview.space));VStack(alignment:.leading,spacing:5){Text(preview.title).font(.body.weight(.medium));Text("\(Catalog.space(preview.space).name) · \(preview.kind)").font(.caption).foregroundStyle(Design.muted);if let due=Time.date(preview.due){Text(due,format:.dateTime.weekday().day().month().hour().minute()).font(.caption).foregroundStyle(Design.muted)};if preview.space == "moshia"{Text("POSSIBLE — canon only when you choose it.").font(.caption).foregroundStyle(Design.muted)}}}
+                            HStack(alignment:.top,spacing:12){SpaceMark(space:Catalog.space(preview.space));VStack(alignment:.leading,spacing:5){Text(preview.title).font(.body.weight(.medium)).lineLimit(3);Text("\(Catalog.space(preview.space).name) · \(preview.kind)").font(.caption).foregroundStyle(Design.muted);if let due=Time.date(preview.due){Text(due,format:.dateTime.weekday().day().month().hour().minute()).font(.caption).foregroundStyle(Design.muted)};if preview.space == "moshia"{Text("POSSIBLE — canon only when you choose it.").font(.caption).foregroundStyle(Design.muted)}}}
                         }.padding(18).frame(maxWidth:.infinity,alignment:.leading).background(Design.accent.opacity(0.06),in:RoundedRectangle(cornerRadius:18))
                     }
                 }.padding(20)
@@ -71,17 +71,23 @@ struct NativeCapture:View {
                 .onChange(of:automatic){_,value in draft.data["_captureAuto"]=value ? "1":nil}
                 .onChange(of:date){_,value in draft.due=explicitDate ? Time.string(value):nil}
                 .onChange(of:explicitDate){_,value in draft.due=value ? Time.string(date):nil}
-                .onChange(of:speech.transcript){_,value in if !value.isEmpty{draft.title=voicePrefix+(voicePrefix.isEmpty ? "":" ")+value} }
+                .onChange(of:speech.transcript){_,value in if !voiceOpen,!value.isEmpty{draft.title=voicePrefix+(voicePrefix.isEmpty ? "":" ")+value} }
                 .onDisappear{if !voiceOpen{voiceJob?.cancel();polishJob?.cancel();speech.stop()}}
                 .sheet(isPresented:$voiceOpen,onDismiss:{if speech.listening{finishCaptureVoice()}else{speech.stop()}}){
                     VStack(alignment:.leading,spacing:22){
                         HStack{Label("Voice capture",systemImage:"waveform").font(.subheadline.weight(.semibold));Spacer();Button{voiceJob?.cancel();speech.stop();draft.title=voicePrefix;voiceFinishing=false;voiceOpen=false}label:{Image(systemName:"xmark").frame(width:44,height:44)}.accessibilityLabel("Cancel voice capture")}
-                        Text("Let the idea\ncome as it is.").font(.system(.largeTitle,design:.rounded).weight(.medium)).fixedSize(horizontal:false,vertical:true)
-                        HStack(spacing:8){Circle().fill(voiceFinishing ? Design.muted:Color(red:0.84,green:0.47,blue:0.38)).frame(width:7,height:7);Text(speech.requesting ? "Starting…":voiceFinishing ? "Keeping your last words…":"Listening to you").font(.subheadline);Spacer();TimelineView(.periodic(from:voiceStarted,by:1)){time in let elapsed=Int(max(0,time.date.timeIntervalSince(voiceStarted)));Text(String(format:"%d:%02d",elapsed/60,elapsed%60)).font(.subheadline.monospacedDigit()).foregroundStyle(Design.muted)}}
-                        AudioWaveform(levels:speech.levels.isEmpty ? Array(repeating:CGFloat(0.035),count:48):speech.levels,color:WorkspaceTheme.accent("band"),height:90).padding(.vertical,24).accessibilityIdentifier("capture-waveform")
-                        ScrollView{
-                            Text(speech.transcript.isEmpty ? "Your words will appear here…":speech.transcript).font(speech.transcript.isEmpty ? .body:.title3).foregroundStyle(speech.transcript.isEmpty ? Design.muted:Design.ink).lineSpacing(6).frame(maxWidth:.infinity,alignment:.leading).textSelection(.enabled)
-                        }.frame(maxWidth:.infinity,maxHeight:.infinity).accessibilityIdentifier("capture-live-transcript")
+                        Text("Let the idea come as it is.").font(.title2.weight(.medium)).fixedSize(horizontal:false,vertical:true)
+                        HStack(spacing:8){Circle().fill(voiceFinishing ? Design.muted:Color(red:0.84,green:0.47,blue:0.38)).frame(width:7,height:7);Text(speech.requesting ? "Starting…":voiceFinishing ? "Keeping your last words…":"Recording").font(.subheadline);Spacer();TimelineView(.periodic(from:voiceStarted,by:1)){time in let elapsed=Int(max(0,time.date.timeIntervalSince(voiceStarted)));Text(String(format:"%d:%02d",elapsed/60,elapsed%60)).font(.subheadline.monospacedDigit()).foregroundStyle(Design.muted)}}
+                        Spacer(minLength:12)
+                        CaptureListeningVisual(level:speech.levels.last ?? 0,reducedMotion:reducedMotion)
+                            .frame(maxWidth:.infinity).frame(height:220).accessibilityIdentifier("capture-waveform")
+                        Text("Listening to you").font(.title3.weight(.medium))
+                            .foregroundStyle(Design.ink.opacity(0.65+Double(min(speech.levels.last ?? 0,1))*0.35))
+                            .scaleEffect(reducedMotion ? 1:1+min(speech.levels.last ?? 0,1)*0.035)
+                            .animation(.easeOut(duration:0.16),value:speech.levels.last ?? 0)
+                            .frame(maxWidth:.infinity)
+                        Text("Your words appear after you finish.").font(.subheadline).foregroundStyle(Design.muted).frame(maxWidth:.infinity)
+                        Spacer(minLength:12)
                         if let message=speech.message{Text(message).font(.footnote).foregroundStyle(Design.muted)}
                         VStack(spacing:12){Button{finishCaptureVoice()}label:{Label(voiceFinishing ? "Finishing…":"Stop and keep",systemImage:"stop.fill").font(.headline).frame(maxWidth:.infinity,minHeight:54)}.buttonStyle(ActionStyle()).disabled(speech.requesting || voiceFinishing).accessibilityIdentifier("capture-voice-stop");Text("Speak freely. Your idea stays editable.").font(.caption).foregroundStyle(Design.muted).frame(maxWidth:.infinity)}
                     }.padding(.horizontal,24).padding(.top,16).padding(.bottom,24).frame(maxWidth:.infinity,maxHeight:.infinity).background(AppBackdrop(scope:"capture")).presentationDetents([.large]).presentationDragIndicator(.visible)

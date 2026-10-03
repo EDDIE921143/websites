@@ -154,7 +154,7 @@ struct NativeSearch:View {
     @State private var searchError:String?
     @State private var searchJob:Task<Void,Never>?
     @FocusState private var searching:Bool
-    var corpus:[EdizCore.Record]{store.searchableMemories().filter{space == "all" || $0.space == space}}
+    var corpus:[EdizCore.Record]{(store.searchableMemories()+(query.isEmpty ? []:store.originalManuscript)).filter{space == "all" || $0.space == space}}
     var results:[EdizCore.Record]{if let ranked{return ranked.compactMap{id in corpus.first{$0.id == id}}};return SearchIndex.find(corpus,query:query)}
     var body:some View {
         List {
@@ -167,25 +167,32 @@ struct NativeSearch:View {
             Section {Picker("Space",selection:$space){Text("Everything").tag("all");ForEach(Catalog.spaces){Text($0.name).tag($0.id)}}}
             if let reasoning{Section{Text(reasoning).font(.subheadline).foregroundStyle(Design.muted)}}
             if let searchError{Section{Text(searchError).font(.footnote).foregroundStyle(Design.muted)}}
-            Section(query.isEmpty ? "Recent":ranked == nil ? "Matching words":"Closest memories") {
+            Section(query.isEmpty ? "Recent":ranked == nil ? "Your memories":"Do you mean…") {
                 if results.isEmpty{QuietEmpty(title:query.isEmpty ? "Your work will appear here.":"No matches yet.",message:query.isEmpty ? "Capture something or start a conversation.":"Try describing another detail you remember.")}
                 ForEach(Array(results.prefix(100))){record in
                     if let scope=record.data["_chatScope"],let text=record.data["_chatID"],let id=UUID(uuidString:text){
                         NavigationLink{NativeConversationHost(scope:scope,initialID:id)}label:{HStack(alignment:.top,spacing:12){Image(systemName:"bubble.left.and.bubble.right").foregroundStyle(WorkspaceTheme.accent(scope));VStack(alignment:.leading,spacing:6){Text(record.title).font(.headline);Text(record.body).font(.caption).foregroundStyle(Design.muted).lineLimit(2);Text((scope == "all" ? "Everyday":Catalog.space(scope).name)+" · Chat").font(.caption2).foregroundStyle(Design.muted)}}.padding(.vertical,5)}
+                    }else if record.data["readOnly"] == "true"{NavigationLink{ScrollView{Text(record.body).textSelection(.enabled).padding(20)}.background(AppBackdrop(scope:"moshia")).navigationTitle(record.title)}label:{Label(record.title,systemImage:"book.closed")}
                     }else{RecordRow(record:record).walkthroughTarget(record.title == "Practice guitar" ? "search-result":"",session:store.walkthrough)}
                 }
             }
         }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop()).listRowSpacing(store.preferences.density == "compact" ? 4:12).modifier(BrandedRefresh()).navigationTitle("Search")
-            .onChange(of:query){_,value in resetSearch();if value.localizedCaseInsensitiveContains("guitar"){store.walkthrough?.event("searched")}}
-            .onChange(of:space){_,_ in resetSearch()}.onDisappear{searchJob?.cancel();finding=false}
+            .onChange(of:query){_,value in resetSearch();scheduleMeaningSearch();if value.localizedCaseInsensitiveContains("guitar"){store.walkthrough?.event("searched")}}
+            .onChange(of:space){_,_ in resetSearch();scheduleMeaningSearch()}.onDisappear{searchJob?.cancel();finding=false}
     }
     func resetSearch(){searchJob?.cancel();finding=false;ranked=nil;reasoning=nil;searchError=nil}
+    func scheduleMeaningSearch(){
+        guard query.trimmingCharacters(in:.whitespacesAndNewlines).count>=3,store.assistantConnected else{return}
+        searchJob=Task{@MainActor in
+            try? await Task.sleep(for:.milliseconds(650));guard !Task.isCancelled else{return};findByMeaning()
+        }
+    }
     func findByMeaning(){
         let q=query.trimmingCharacters(in:.whitespacesAndNewlines);guard !q.isEmpty,let token=store.assistantToken else{return}
         searchJob?.cancel();finding=true;searchError=nil;let items=Array(corpus.prefix(500)).map{item in var trimmed=item;trimmed.body=String(item.body.suffix(6000));return trimmed}
         searchJob=Task{@MainActor in
             do{let reply=try await GeminiAssistant.answer(question:q,records:items,conversation:[],token:token,scope:space,requestMode:"semantic-search");guard !Task.isCancelled else{return};ranked=reply.recordIds;reasoning=reply.text;finding=false}
-            catch{guard !Task.isCancelled else{return};finding=false;searchError="Meaning search couldn’t finish. Matches by words are still shown."}
+            catch{guard !Task.isCancelled else{return};finding=false;searchError="The AI connection couldn’t finish this search. Your saved results are still available."}
         }
     }
 }

@@ -278,10 +278,10 @@ struct BrandedRefresh:ViewModifier {
             failed=false;refreshing=true
             withAnimation(reducedMotion ? nil:.easeOut(duration:0.18)){showing=true}
             let succeeded=await store.refresh()
-            try? await Task.sleep(for:.milliseconds(450))
+            try? await Task.sleep(for:.milliseconds(750))
             failed = !succeeded
             refreshing=false
-            try? await Task.sleep(for:.milliseconds(550))
+            try? await Task.sleep(for:.milliseconds(900))
             withAnimation(reducedMotion ? nil:.easeOut(duration:0.2)){showing=false}
         }.overlay(alignment:.top){
             if showing {

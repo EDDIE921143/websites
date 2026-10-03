@@ -5,6 +5,7 @@ import Security
 import EdizCore
 
 @MainActor final class NativeStore: ObservableObject {
+    private(set) var originalManuscript:[EdizCore.Record]=[]
     @Published var records: [EdizCore.Record] = []
     @Published var activity: [Activity] = []
     @Published var preferences = Preferences()
@@ -70,6 +71,9 @@ import EdizCore
             let database = try Database(url:root.appendingPathComponent("ediz.sqlite"))
             self.database = database
             try reload()
+            if !isPractice,!ProcessInfo.processInfo.arguments.contains("-ui-testing"),let url=Bundle.main.url(forResource:"moshia-manuscript",withExtension:"json",subdirectory:"GuideAudio/PrivateContext"),let bytes=try? Data(contentsOf:url),let envelope=(try? JSONSerialization.jsonObject(with:bytes)) as? [String:Any],let items=envelope["items"] as? [[String:Any]]{
+                originalManuscript=items.compactMap{item in guard let id=item["id"] as? String,let title=item["title"] as? String,let body=item["body"] as? String else{return nil};var record=EdizCore.Record(space:"moshia",kind:"note",title:title);record.id=id;record.body=body;record.data=item["data"] as? [String:String] ?? [:];return record}
+            }
             if !isPractice,!ProcessInfo.processInfo.arguments.contains("-ui-testing"),!records.contains(where:{$0.id == "ediz-context-websites-20261003"}){
                 var websites=EdizCore.Record(space:"ejj",kind:"note",title:"Websites project · verified links")
                 websites.id="ediz-context-websites-20261003";websites.data["contextType"]="workspace-brief"

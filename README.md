@@ -1,8 +1,8 @@
-# Ediz OS 0.3.17
+# Ediz OS 0.3.18
 
 An owner-specific personal operating system, primarily a genuine SwiftUI iPhone app. The web companion is available at https://ediz-os.vercel.app. Both editions work locally without paid APIs, analytics or a server database.
 
-Current update: [0.3.17 validation and limits](docs/UPDATE-0.3.17.md).
+Current update: [0.3.18 validation and limits](docs/UPDATE-0.3.18.md).
 
 ## Native iPhone edition
 
@@ -20,7 +20,7 @@ Implemented modules include EJJ leads/pipeline and websites; band songs, rehears
 
 GitHub Actions run https://github.com/EDDIE921143/websites/actions/runs/36847582563 compiled the app and UI tests with Xcode 26.3 on macOS 15. All 18 Swift core tests and seven XCUITests passed on an iPhone 17 Pro simulator. Tests cover capture/reload/completion/undo, edge swipe-back, sheet dismissal/draft recovery, real space destinations and creative states, assistant follow-ups and reminder preview, focus controls, and sliding across the tab bar. Actual screenshots and test evidence are archived by the workflow. An unsigned physical-iPhone Release archive also built successfully.
 
-**Installation remains blocked by Apple signing access.** An unsigned archive or simulator build is not an installable iPhone app. No signing identity, owner-authorized Mac/device access or distribution credentials are available in this workspace. No Apple membership or paid service was purchased. Physical-device testing has not been performed.
+**Current physical-device status:** 0.3.18 was signed, installed and launched on the owner’s paired iPhone. Capture’s voice-only screen and Stop/edit behavior passed an on-device UI test; guide narration/mute/replay also passed earlier in this update. This supersedes the original signing blocker above. Human confirmation of call audio and long-form acoustic testing remain separate checks.
 
 ## Web companion
 

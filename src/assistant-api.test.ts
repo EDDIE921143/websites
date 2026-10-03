@@ -34,8 +34,15 @@ it('tries the next configured model after a transport timeout',async()=>{
 it('recovers from a provider schema rejection while retaining JSON and action validation',async()=>{
  vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
  const fetcher=vi.fn().mockResolvedValueOnce(new Response('{}',{status:400})).mockResolvedValueOnce(new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Hello Ediz!',actions:[{type:'delete',recordId:'invented'}]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
- const res=response();await handler(request({question:'Hello',scope:'band',records:[]}),res);
+ const res=response();await handler(request({mode:'semantic-search',question:'Find a remembered chapter',scope:'band',records:[]}),res);
  expect(res.statusCode).toBe(200);expect(fetcher).toHaveBeenCalledTimes(2);
  const first=JSON.parse(fetcher.mock.calls[0][1].body),retry=JSON.parse(fetcher.mock.calls[1][1].body);
  expect(first.generationConfig.responseJsonSchema).toBeDefined();expect(retry.generationConfig.responseJsonSchema).toBeUndefined();expect(retry.generationConfig.responseMimeType).toBe('application/json');expect((res.body as any).actions).toEqual([]);
+});
+
+it('suppresses unsolicited cards and saved-item panels in ordinary conversation',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Hello Ediz!',recordIds:['saved'],cards:[{type:'songs',title:'Unrequested songs',items:[{title:'An unrelated song'}]}],actions:[]})}]},finishReason:'STOP'}]}))));
+ const res=response();await handler(request({question:'Hello',scope:'band',records:[{id:'saved'}]}),res);
+ expect(res.statusCode).toBe(200);expect((res.body as any).cards).toBeUndefined();expect((res.body as any).recordIds).toEqual([]);
 });

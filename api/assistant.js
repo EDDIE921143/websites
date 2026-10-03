@@ -1,6 +1,7 @@
+import {requestedSong,musicPreview} from '../server/music-preview.js';
 import {slackContext} from '../server/slack-context.js';
 import {authorized,validateReply,systemPrompt,workspaceContext,groundedSources,parseModelText,attachmentParts,generatedSpeech,botDirections,speechChunks} from '../server/gemini.js';
-import {featureInstructions,generateImage,replySchema,needsWebSearch} from '../server/app-features.js';
+import {featureInstructions,generateImage,replySchema,needsWebSearch,requestsPresentation} from '../server/app-features.js';
 const requests=new Map();
 export default async function handler(req,res) {
  const apiKey=process.env.GEMINI_API_KEY||process.env.geminiapi;
@@ -31,6 +32,11 @@ export default async function handler(req,res) {
  let media;try{media=attachmentParts(body.attachments)}catch(error){return res.status(400).json({error:error.message})}
  const model=process.env.GEMINI_MODEL||'gemini-3.8-flash';
  try{
+  const song=body.mode !== 'semantic-search' && body.scope==='band' ? requestedSong(body.question):null;
+  if(song){
+   try{const preview=await musicPreview(song);return res.status(200).json({text:preview?`Here’s a preview of ${preview.title} by ${preview.artist}.`:'I couldn’t find a catalog preview for that song. Try its title and artist.',recordIds:[],actions:[],...(preview?{musicPreview:preview}:{})})}
+   catch(error){return res.status(503).json({error:error.message})}
+  }
   const special=['semantic-search','chat-title','capture-polish'].includes(body.mode);
   const search=!special && needsWebSearch(body.question);
   const slack= !special && ['ejj','all',undefined].includes(body.scope) ? await slackContext():{status:'out_of_scope',messages:[]};
@@ -38,13 +44,13 @@ export default async function handler(req,res) {
   let response,selectedModel;
   for(const candidate of models){
    selectedModel=candidate;
-   const payload={systemInstruction:{parts:[{text:systemPrompt+"\n"+botDirections(body.scope,body.voiceMode===true)+"\n"+featureInstructions(body.mode)}]},contents:[{role:'user',parts:[{text:JSON.stringify({question:body.question,slackContext:slack,workspace:body.scope||'all',workspaceBriefs:special?[]:workspaceContext(process.env.EDIZ_CONTEXT_JSON,body.scope||'all').filter(item=>!body.records.some(record=>record.id===item.id)),records:body.records,conversationMemory:special?[]:(Array.isArray(body.memories)?body.memories:[]).slice(0,12).filter(item=>item&&typeof item.title==='string'&&typeof item.body==='string'&&(body.scope==='all'||!body.scope||item.space===body.scope)).map(item=>({title:item.title.slice(0,100),body:item.body.slice(0,6000),space:item.space,readOnly:true})),conversation:(body.conversation||[]).slice(-8),localDate:body.localDate,timeZone:body.timeZone})},...media]}],...(search?{tools:[{google_search:{}}]}:{}),generationConfig:{...(search?{}:{responseMimeType:"application/json",responseJsonSchema:replySchema(body.mode)}),temperature:.25,maxOutputTokens:body.mode==='chat-title'?128:body.mode==='semantic-search'?1400:4096,...(/^gemini-3\./.test(candidate)?{thinkingConfig:{thinkingLevel:candidate==='gemini-3.1-flash-lite'?'minimal':'low'}}:{})}};
+   const payload={systemInstruction:{parts:[{text:systemPrompt+"\n"+botDirections(body.scope,body.voiceMode===true)+"\n"+featureInstructions(body.mode)}]},contents:[{role:'user',parts:[{text:JSON.stringify({question:body.question,slackContext:slack,workspace:body.scope||'all',workspaceBriefs:special?[]:workspaceContext(process.env.EDIZ_CONTEXT_JSON,body.scope||'all').filter(item=>!body.records.some(record=>record.id===item.id)),records:body.records,conversationMemory:special?[]:(Array.isArray(body.memories)?body.memories:[]).slice(0,12).filter(item=>item&&typeof item.title==='string'&&typeof item.body==='string'&&(body.scope==='all'||!body.scope||item.space===body.scope)).map(item=>({title:item.title.slice(0,100),body:item.body.slice(0,6000),space:item.space,readOnly:true})),conversation:(body.conversation||[]).slice(-8),localDate:body.localDate,timeZone:body.timeZone})},...media]}],...(search?{tools:[{google_search:{}}]}:{}),generationConfig:{...(search?{}:{responseMimeType:"application/json",...(special?{responseJsonSchema:replySchema(body.mode)}:{})}),temperature:.25,maxOutputTokens:body.mode==='chat-title'?128:body.mode==='semantic-search'?1400:4096,...(/^gemini-3\./.test(candidate)?{thinkingConfig:{thinkingLevel:candidate==='gemini-3.1-flash-lite'?'minimal':'low'}}:{})}};
    const request=()=>fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidate)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},signal:AbortSignal.timeout(20000),body:JSON.stringify(payload)});
    try{
     response=await request();
     if(response.status===400 && !search && payload.generationConfig.responseJsonSchema){delete payload.generationConfig.responseJsonSchema;response=await request()}
    }catch(error){if(candidate===models.at(-1))throw error;continue}
-   if(![429,500,502,503,504,404].includes(response.status))break;
+   if(![400,429,500,502,503,504,404].includes(response.status))break;
   }
   if(!response.ok){const status=response.status;return res.status(status===429?429:502).json({error:status===429?'Google’s quota is temporarily unavailable. Please try again shortly.':status===401||status===403?'The cloud connection was rejected. Check the assistant connection in Settings.':'The assistant provider couldn’t answer. Please try again.'});}
   res.setHeader('X-Ediz-Model',selectedModel);
@@ -53,6 +59,7 @@ export default async function handler(req,res) {
   if(result.candidates?.[0]?.finishReason==='MAX_TOKENS')return res.status(502).json({error:'That reply was cut short. Try a more focused question.'});
   const metadata=result.candidates?.[0]?.groundingMetadata;
   const reply=validateReply(parseModelText(text),body.records);if(special)reply.actions=[];
+  if(!special && !requestsPresentation(body.question,body.conversation)){delete reply.cards;reply.recordIds=[]}
   return res.status(200).json({...reply,sources:groundedSources(metadata),searchSuggestions:metadata?.searchEntryPoint?.renderedContent||null});
  }catch(error){return res.status(502).json({error:['TimeoutError','AbortError'].includes(error?.name)?'The assistant took too long to reply. Please try again.':'That reply couldn’t be completed. Please try again.'});}
 }

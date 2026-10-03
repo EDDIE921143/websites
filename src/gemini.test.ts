@@ -56,3 +56,5 @@ it('refuses truncated audio and keeps private speech caches isolated by credenti
 it('samples video more frequently while keeping audio and image parts intact',()=>{const video=attachmentParts([{name:'practice.mp4',mimeType:'video/mp4',data:'AQACAA=='}])[1];expect(video).toEqual({inlineData:{mimeType:'video/mp4',data:'AQACAA=='},videoMetadata:{fps:4}});expect(attachmentParts([{name:'photo.png',mimeType:'image/png',data:'AQACAA=='}])[1]).not.toHaveProperty('videoMetadata')});
 
 it('accepts common audio file formats without discarding the soundtrack',()=>{for(const mimeType of ['audio/mpeg','audio/mp4','audio/aac','audio/aiff','audio/flac','audio/ogg'])expect(attachmentParts([{name:'Recording',mimeType,data:'AQACAA=='}])[1]).toEqual({inlineData:{mimeType,data:'AQACAA=='}})});
+
+vi.mock('../server/natural-live.js',()=>({naturalLiveSpeech:async function*(){throw new Error('Speech quota reached');}}));

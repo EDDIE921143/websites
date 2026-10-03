@@ -131,6 +131,6 @@ struct AssistantResultCard:View {
                 if let id=item.recordId{if let record=store.records.first(where:{$0.id == id}){Button{onOpen();selected=record}label:{Label("Open saved item",systemImage:"arrow.up.right.square").font(.subheadline)}.accessibilityIdentifier("assistant-card-record-"+id)}else{Text("This saved item is no longer available.").font(.caption).foregroundStyle(Design.muted)}}
                 if index<card.items.count-1{Divider().opacity(0.35)}
             }
-        }.padding(18).frame(maxWidth:.infinity,alignment:.leading).foregroundStyle(Design.ink).background(Design.surface,in:RoundedRectangle(cornerRadius:18)).overlay{RoundedRectangle(cornerRadius:18).strokeBorder(WorkspaceTheme.accent(scope).opacity(0.12),lineWidth:1)}.sheet(item:$selected){record in NavigationStack{NativeEditor(record:record)}}
+        }.padding(18).frame(maxWidth:.infinity,alignment:.leading).foregroundStyle(Design.ink).background{if card.items.count<=6{RoundedRectangle(cornerRadius:18).fill(Design.surface)}}.overlay{if card.items.count<=6{RoundedRectangle(cornerRadius:18).strokeBorder(WorkspaceTheme.accent(scope).opacity(0.12),lineWidth:1)}}.sheet(item:$selected){record in NavigationStack{NativeEditor(record:record)}}
     }
 }

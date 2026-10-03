@@ -28,6 +28,12 @@ import Accelerate
         return .standard
     }()
 }
+private final class RecognitionFeed: @unchecked Sendable {
+    private let lock=NSLock()
+    private var request:SFSpeechAudioBufferRecognitionRequest?
+    func set(_ value:SFSpeechAudioBufferRecognitionRequest?){lock.lock();request=value;lock.unlock()}
+    func append(_ buffer:AVAudioPCMBuffer){lock.lock();request?.append(buffer);lock.unlock()}
+}
 @MainActor final class NativeSpeech:ObservableObject {
     @Published var listening=false
     @Published var requesting=false
@@ -42,6 +48,12 @@ import Accelerate
     private var task:SFSpeechRecognitionTask?
     private var tapInstalled=false
     private var finalText:CheckedContinuation<String,Never>?
+    private let feed=RecognitionFeed()
+    private var accumulated=DictationTranscript()
+    private var rotation:Task<Void,Never>?
+    private var finishing=false
+    private var sessionID=UUID()
+    private var failures=0
     func toggle(){
         #if targetEnvironment(simulator)
         message="Voice input is available on your iPhone. You can type here.";return
@@ -64,13 +76,42 @@ import Accelerate
     }
     private func start(){
         guard let recognizer=SFSpeechRecognizer(locale:.current),recognizer.isAvailable,recognizer.supportsOnDeviceRecognition else{requesting=false;message="On-device transcription isn’t available for this language. Use the keyboard or change your speech language.";return}
-        do{stop();transcript="";levels=[];try NativeAudioSession.activate(audioID,category:.record,mode:.measurement);let recognitionID=UUID();self.recognitionID=recognitionID;let request=SFSpeechAudioBufferRecognitionRequest();request.requiresOnDeviceRecognition=true;request.shouldReportPartialResults=true;self.request=request;let input=engine.inputNode;let format=input.outputFormat(forBus:0);input.installTap(onBus:0,bufferSize:1024,format:format){[weak self] buffer,_ in
-            request.append(buffer)
-            if let channel=buffer.floatChannelData?[0]{let count=Int(buffer.frameLength);var rms:Float=0;vDSP_rmsqv(channel,1,&rms,vDSP_Length(count));let value=AudioMeter.level(rms:rms);Task{@MainActor in guard let self,self.recognitionID==recognitionID else{return};self.level=CGFloat(AudioMeter.smooth(previous:Float(self.level),target:value));self.levels.append(self.level);if self.levels.count>48{self.levels.removeFirst(self.levels.count-48)}}}
-        };tapInstalled=true;engine.prepare();try engine.start();listening=true;requesting=false;task=recognizer.recognitionTask(with:request){result,error in Task{@MainActor in guard self.recognitionID==recognitionID else{return};if let result{self.transcript=result.bestTranscription.formattedString};if let error,self.listening,result?.isFinal != true{self.message="Transcription stopped: "+error.localizedDescription};if error != nil || result?.isFinal == true{self.stop()}}}}catch{stop();message="The microphone couldn’t start. Your text is still here."}
+        do{
+            stop();transcript="";accumulated=DictationTranscript();levels=[];finishing=false;failures=0;sessionID=UUID()
+            try NativeAudioSession.activate(audioID,category:.record,mode:.measurement)
+            listening=true;requesting=false;beginWindow(recognizer)
+            let input=engine.inputNode;let format=input.outputFormat(forBus:0);let id=sessionID;let feed=self.feed
+            input.installTap(onBus:0,bufferSize:1024,format:format){[weak self] buffer,_ in
+                feed.append(buffer)
+                if let channel=buffer.floatChannelData?[0]{var rms:Float=0;vDSP_rmsqv(channel,1,&rms,vDSP_Length(buffer.frameLength));let value=AudioMeter.level(rms:rms);Task{@MainActor in guard let self,self.sessionID==id,self.listening else{return};self.level=CGFloat(AudioMeter.smooth(previous:Float(self.level),target:value));self.levels.append(self.level);if self.levels.count>48{self.levels.removeFirst(self.levels.count-48)}}}
+            }
+            tapInstalled=true;engine.prepare();try engine.start()
+        }catch{stop();message="The microphone couldn’t start. Your text is still here."}
+    }
+    private func beginWindow(_ recognizer:SFSpeechRecognizer){
+        rotation?.cancel();request?.endAudio();task?.cancel()
+        let id=UUID();recognitionID=id
+        let next=SFSpeechAudioBufferRecognitionRequest();next.requiresOnDeviceRecognition=true;next.shouldReportPartialResults=true
+        request=next;feed.set(next)
+        task=recognizer.recognitionTask(with:next){result,error in Task{@MainActor in
+            guard self.recognitionID==id else{return}
+            if let result{self.failures=0;self.accumulated.update(result.bestTranscription.formattedString,segmentStart:result.bestTranscription.segments.first?.timestamp);self.transcript=self.accumulated.text}
+            if self.finishing{if error != nil || result?.isFinal == true{self.stop()};return}
+            if error != nil || result?.isFinal == true{
+                guard self.listening else{return}
+                self.accumulated.commit()
+                if error != nil{self.failures+=1}
+                if recognizer.isAvailable,self.failures<3{self.beginWindow(recognizer)}else{self.stop();self.message="Transcription paused because speech recognition became unavailable. Your full text is retained."}
+            }
+        }}
+        rotation=Task{@MainActor in
+            try? await Task.sleep(for:.seconds(50));guard !Task.isCancelled,self.recognitionID==id,self.listening,!self.finishing else{return}
+            self.accumulated.commit();self.beginWindow(recognizer)
+        }
     }
     func finish() async -> String {
         guard listening else{return transcript}
+        finishing=true;rotation?.cancel();feed.set(nil)
         engine.stop();if tapInstalled{engine.inputNode.removeTap(onBus:0);tapInstalled=false}
         listening=false;level=0;NativeAudioSession.release(audioID)
         let id=recognitionID
@@ -79,7 +120,7 @@ import Accelerate
             Task{@MainActor in try? await Task.sleep(for:.milliseconds(1500));guard self.recognitionID==id else{return};self.stop()}
         }
     }
-    func stop(){let completion=finalText;finalText=nil;completion?.resume(returning:transcript);recognitionID=UUID();requesting=false;engine.stop();if tapInstalled{engine.inputNode.removeTap(onBus:0);tapInstalled=false};request?.endAudio();task?.cancel();request=nil;task=nil;listening=false;level=0;NativeAudioSession.release(audioID)}
+    func stop(){rotation?.cancel();rotation=nil;feed.set(nil);finishing=false;sessionID=UUID();let completion=finalText;finalText=nil;completion?.resume(returning:transcript);recognitionID=UUID();requesting=false;engine.stop();if tapInstalled{engine.inputNode.removeTap(onBus:0);tapInstalled=false};request?.endAudio();task?.cancel();request=nil;task=nil;listening=false;level=0;NativeAudioSession.release(audioID)}
 }
 struct FilePreview:Identifiable{let id=UUID();let url:URL}
 struct NativeFilePreview:UIViewControllerRepresentable {
@@ -108,7 +149,6 @@ struct NativeFilePreview:UIViewControllerRepresentable {
     }
     func toggle(){
         if playing || starting {player.pause();playing=false;starting=false;return}
-        guard duration>0 else{message="This audio file isn’t ready to play yet.";return}
         do {message=nil;try AVAudioSession.sharedInstance().setCategory(.playback,mode:.default);try AVAudioSession.sharedInstance().setActive(true);starting=true;player.playImmediately(atRate:speed)}
         catch {starting=false;message="Sound couldn’t start. Check the audio output and try again."}
     }
@@ -280,7 +320,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
         }
     }
 }
-@MainActor final class NativeAssistantSpeaker:NSObject,ObservableObject {
+@MainActor final class NativeAssistantSpeaker:NSObject,ObservableObject,AVAudioPlayerDelegate {
     @Published var speaking=false
     @Published var preparing=false
     @Published var voiceNote:String?
@@ -306,6 +346,9 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     private var interruptionRequest:SFSpeechAudioBufferRecognitionRequest?
     private var interruptionTask:SFSpeechRecognitionTask?
     private var inputTapInstalled=false
+    private var recordedPlayer:AVAudioPlayer?
+    private var recordedQueue:[URL]=[]
+    private var recordedMeter:Task<Void,Never>?
     override init(){super.init();engine.attach(node)}
     func say(_ text:String,token:String?=nil,natural:Bool=true,voice:String="Aoede") {
         stop();voiceNote=nil
@@ -355,11 +398,18 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     }
     func playRecorded(_ urls:[URL],voice:String){
         stop();voiceNote=nil;guard !urls.isEmpty else{voiceNote="This guide recording couldn’t be found. Try reopening the guide.";return}
-        do{
-            for url in urls{let file=try AVAudioFile(forReading:url);guard let buffer=AVAudioPCMBuffer(pcmFormat:file.processingFormat,frameCapacity:AVAudioFrameCount(file.length)) else{throw URLError(.cannotDecodeContentData)};try file.read(into:buffer);try queue(buffer)}
-            voiceNote="Recorded natural voice · "+voice;ended=true;completeIfDrained()
-        }catch{stop();voiceNote="The guide recording couldn’t play. Try replaying this step."}
+        recordedQueue=urls
+        do{try NativeAudioSession.activate(audioID,category:.playback,mode:.spokenAudio);try nextRecording();voiceNote="Recorded natural voice · "+voice}
+        catch{stop();voiceNote="The guide recording couldn’t play: "+error.localizedDescription}
     }
+    private func nextRecording() throws {
+        guard !recordedQueue.isEmpty else{recordedMeter?.cancel();recordedMeter=nil;recordedPlayer=nil;speaking=false;level=0;NativeAudioSession.release(audioID);finished?();return}
+        let next=try AVAudioPlayer(contentsOf:recordedQueue.removeFirst());next.delegate=self;next.isMeteringEnabled=true;next.volume=1;next.prepareToPlay();recordedPlayer=next
+        guard next.play() else{throw URLError(.cannotDecodeContentData)}
+        speaking=true;preparing=false;recordedMeter?.cancel()
+        recordedMeter=Task{@MainActor in while !Task.isCancelled,self.recordedPlayer===next{next.updateMeters();self.level=CGFloat(AudioMeter.level(decibels:next.averagePower(forChannel:0)));self.refreshOutput();try? await Task.sleep(for:.milliseconds(50))}}
+    }
+    nonisolated func audioPlayerDidFinishPlaying(_ player:AVAudioPlayer,successfully flag:Bool){Task{@MainActor in guard self.recordedPlayer===player else{return};do{guard flag else{throw URLError(.cannotDecodeContentData)};try self.nextRecording()}catch{self.stop();self.voiceNote="The guide was interrupted. Replay this step."}}}
     private func queuePCM(_ bytes:Data) throws {
         guard !bytes.isEmpty,bytes.count%2==0,let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:AVAudioFrameCount(bytes.count/2)),let samples=buffer.floatChannelData?[0] else{throw URLError(.cannotDecodeContentData)}
         buffer.frameLength=buffer.frameCapacity
@@ -425,7 +475,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     func refreshOutput(){let session=AVAudioSession.sharedInstance();output=session.currentRoute.outputs.map(\.portName).joined(separator:", ");muted=session.outputVolume<0.01}
     private func monitorOutput(){meter?.cancel();meter=Task{@MainActor in while !Task.isCancelled{refreshOutput();try? await Task.sleep(for:.milliseconds(100))}}}
     private func resetPlayback(){playbackID=UUID();interruptionTask?.cancel();interruptionTask=nil;interruptionRequest?.endAudio();interruptionRequest=nil;if inputTapInstalled{engine.inputNode.removeTap(onBus:0);inputTapInstalled=false};meter?.cancel();meter=nil;node.stop();if tapInstalled{engine.mainMixerNode.removeTap(onBus:0);tapInstalled=false};engine.stop();try? engine.inputNode.setVoiceProcessingEnabled(false);pending=0;ended=false;preparing=false;speaking=false;level=0;NativeAudioSession.release(audioID)}
-    func stop(){generation?.cancel();generation=nil;resetPlayback();utterance=nil;synthesizer.stopSpeaking(at:.immediate)}
+    func stop(){recordedMeter?.cancel();recordedMeter=nil;recordedPlayer?.stop();recordedPlayer=nil;recordedQueue=[];generation?.cancel();generation=nil;resetPlayback();utterance=nil;synthesizer.stopSpeaking(at:.immediate)}
 }
 private struct CallScrollOffset:PreferenceKey {static let defaultValue:CGFloat=0;static func reduce(value:inout CGFloat,nextValue:()->CGFloat){value=nextValue()}}
 struct NativeAssistantVoicePanel:View {
@@ -435,6 +485,7 @@ struct NativeAssistantVoicePanel:View {
     @State private var settings=false
     @State private var captions=false
     @State private var resultScroll:CGFloat=0
+    @State private var showingResults=true
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @ObservedObject var speech:NativeSpeech
     @ObservedObject var speaker:NativeAssistantSpeaker
@@ -442,7 +493,7 @@ struct NativeAssistantVoicePanel:View {
     let entry:ConversationEntry?
     var reply:String{entry?.text ?? ""}
     var linkedRecords:[EdizCore.Record]{(entry?.records ?? []).compactMap{linked in store.records.first{$0.id == linked.id}}}
-    var hasResults:Bool{!(entry?.cards ?? []).isEmpty || !(entry?.actions ?? []).isEmpty || !linkedRecords.isEmpty || !(entry?.sources ?? []).isEmpty}
+    var hasResults:Bool{entry?.musicPreview != nil || !(entry?.cards ?? []).isEmpty || !(entry?.actions ?? []).isEmpty || !linkedRecords.isEmpty || !(entry?.sources ?? []).isEmpty}
     @State private var proposal:GeminiProposal?
     @State private var recordPreview:EdizCore.Record?
     @State private var began=false
@@ -468,15 +519,16 @@ struct NativeAssistantVoicePanel:View {
                     Spacer(minLength:0)
                     Button{pause();settings=true}label:{Image(systemName:"slider.horizontal.3").font(.body).frame(width:44,height:44).contentShape(Rectangle())}.accessibilityLabel("Voice settings").accessibilityIdentifier("voice-settings")
                 }.padding(.horizontal,16).padding(.top,4).padding(.bottom,12)
-                if hasResults,let entry{
+                if hasResults,showingResults,let entry{
                     HStack(spacing:16){
-                        VStack(alignment:.leading,spacing:6){Text(status).font(.subheadline.weight(.medium));Text(speech.listening && !speech.transcript.isEmpty ? speech.transcript:"Your results stay here while we talk.").font(.caption).foregroundStyle(Design.muted).lineLimit(2)}
+                        VStack(alignment:.leading,spacing:6){Button{withAnimation(reducedMotion ? nil:.easeOut(duration:0.2)){showingResults=false}}label:{Label("Back to voice",systemImage:"waveform")}.font(.caption);Text(status).font(.subheadline.weight(.medium));Text(speech.listening && !speech.transcript.isEmpty ? speech.transcript:"Your results stay here while we talk.").font(.caption).foregroundStyle(Design.muted).lineLimit(2)}
                         Spacer(minLength:0)
                         activity.frame(width:64,height:64).opacity(max(0.4,1-Double(resultScroll)/240))
                     }.padding(.horizontal,24).padding(.bottom,8)
                     ScrollView{
                         VStack(alignment:.leading,spacing:16){
                             GeometryReader{proxy in Color.clear.preference(key:CallScrollOffset.self,value:proxy.frame(in:.named("call-results")).minY)}.frame(height:0)
+                            if let preview=entry.musicPreview{NativeSongPreview(preview:preview,beforePlayback:pause,autoPlay:true)}
                             ForEach(entry.cards ?? []){AssistantResultCard(card:$0,scope:scope,onOpen:pause)}
                             if !linkedRecords.isEmpty{VStack(alignment:.leading,spacing:12){Text("Saved items").font(.caption.weight(.medium)).foregroundStyle(Design.muted);ForEach(linkedRecords){record in Button{pause();recordPreview=record}label:{HStack{VStack(alignment:.leading,spacing:5){Text(record.title).font(.headline);Text(Catalog.space(record.space).name).font(.caption).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.up.right.square")}.padding(16).foregroundStyle(Design.ink).background(Design.surface,in:RoundedRectangle(cornerRadius:16))}.accessibilityIdentifier("voice-record-"+record.id)}}}
                             if !entry.actions.isEmpty{Text("Changes to review · nothing saved yet").font(.caption).foregroundStyle(Design.muted)}
@@ -485,9 +537,10 @@ struct NativeAssistantVoicePanel:View {
                             if !entry.sources.isEmpty{Text("Web sources").font(.caption.weight(.medium)).foregroundStyle(Design.muted);ForEach(entry.sources,id:\.url){source in if let url=URL(string:source.url),url.scheme == "https"{Link(source.title,destination:url).font(.subheadline)}}}
                             if let html=entry.searchSuggestions,!html.isEmpty{NativeSearchSuggestions(html:html).frame(height:110)}
                         }.padding(.horizontal,20).padding(.vertical,8)
-                    }.coordinateSpace(name:"call-results").onPreferenceChange(CallScrollOffset.self){resultScroll=max(0,-$0)}.frame(maxWidth:.infinity,maxHeight:.infinity).accessibilityIdentifier("voice-results")
+                    }.safeAreaPadding(.vertical,18).coordinateSpace(name:"call-results").onPreferenceChange(CallScrollOffset.self){resultScroll=max(0,-$0)}.frame(maxWidth:.infinity,maxHeight:.infinity).accessibilityIdentifier("voice-results")
                 }else{
                     Spacer(minLength:8)
+                    if hasResults{Button{withAnimation(reducedMotion ? nil:.easeOut(duration:0.2)){showingResults=true}}label:{Label("View shared result",systemImage:"rectangle.on.rectangle")}.font(.subheadline)}
                     activity.frame(maxWidth:.infinity).frame(height:max(180,min(geometry.size.height*0.4,330)))
                     Text(status).font(.title3.weight(.medium)).padding(.top,10)
                     Text(speech.listening ? "I’m listening. Pause when you’re ready.":"A little room to think out loud.").font(.subheadline).foregroundStyle(Design.muted).padding(.top,8)
@@ -506,6 +559,7 @@ struct NativeAssistantVoicePanel:View {
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
         }.background(AppBackdrop(scope:scope)).foregroundStyle(Design.ink).preferredColorScheme(.dark)
         .animation(reducedMotion ? nil:.easeInOut(duration:0.28),value:hasResults)
+        .onChange(of:entry?.id){_,_ in showingResults=true}
         .onAppear{naturalVoice=true;speaker.refreshOutput();if !began{began=true;listen()}}
         .sheet(item:$proposal){NativeAssistantReview(action:$0,inCall:true)}
         .sheet(item:$recordPreview){record in NavigationStack{NativeEditor(record:record)}}
@@ -522,21 +576,52 @@ struct NativeAssistantVoicePanel:View {
     var activity:some View{NativeVoiceVisual(level:active ? level:0,thinking:busy || speaker.preparing,color:activityColor,reducedMotion:reducedMotion || settings).accessibilityElement(children:.ignore).accessibilityLabel("Voice activity · "+status).accessibilityValue("Audio level "+String(Int(level*100))).accessibilityIdentifier("voice-activity")}
 
 }
+struct CaptureListeningVisual:View {
+    let level:CGFloat
+    let reducedMotion:Bool
+    var body:some View {
+        TimelineView(.animation(minimumInterval:1.0/30,paused:reducedMotion)){timeline in
+            let time=reducedMotion ? 0:timeline.date.timeIntervalSinceReferenceDate
+            let energy=min(max(level,0),1)
+            ZStack {
+                ForEach(0..<3){layer in
+                    let wave=sin(time*1.4+Double(layer)*1.8)
+                    Ellipse().fill(Design.accent.opacity(0.08+Double(layer)*0.035))
+                        .frame(width:155+CGFloat(layer)*20,height:150+CGFloat(layer)*14)
+                        .rotationEffect(.degrees(wave*12+Double(layer)*60))
+                        .scaleEffect(reducedMotion ? 1:1+energy*0.22+CGFloat(wave)*0.025)
+                }
+                Circle().fill(RadialGradient(colors:[Design.ink.opacity(0.22),Design.accent.opacity(0.28),Design.accent.opacity(0.07)],center:.init(x:0.35,y:0.3),startRadius:0,endRadius:80)).frame(width:145,height:145)
+                    .scaleEffect(reducedMotion ? 1:1+energy*0.12)
+                Circle().stroke(Design.ink.opacity(0.14),lineWidth:1).frame(width:145,height:145)
+            }.frame(maxWidth:.infinity,maxHeight:.infinity)
+        }.accessibilityHidden(true)
+    }
+}
+
 struct NativeVoiceVisual:View {
     let level:CGFloat
     let thinking:Bool
     let color:Color
     let reducedMotion:Bool
     var body:some View {
-        GeometryReader{geometry in
-            let diameter=min(geometry.size.width,geometry.size.height)*0.72
-            ZStack{
-                OrbView(configuration:OrbConfiguration(backgroundColors:[color.opacity(0.8),Design.ink.opacity(0.65),color.opacity(0.35)],glowColor:color,coreGlowIntensity:0.45,showParticles:false,showShadow:false,speed:thinking ? 16:25))
-                    .environment(\.orbMotionEnabled,!reducedMotion && (thinking || level>0.001))
-
-            }.frame(width:diameter,height:diameter).scaleEffect(reducedMotion ? 1:1+min(level,0.7)*0.12)
-                .animation(reducedMotion ? nil:.easeOut(duration:0.1),value:level)
-                .frame(maxWidth:.infinity,maxHeight:.infinity)
+        TimelineView(.animation(minimumInterval:1.0/30,paused:reducedMotion || (!thinking && level<0.001))){timeline in
+            GeometryReader{geometry in
+                let size=min(geometry.size.width,geometry.size.height)*0.74
+                let time=reducedMotion ? 0:timeline.date.timeIntervalSinceReferenceDate
+                ZStack{
+                    Circle().fill(color.opacity(0.1)).blur(radius:size*0.08).padding(-size*0.03)
+                    ForEach(0..<4){layer in
+                        let wave=sin(time*(thinking ? 0.9:1.6)+Double(layer)*1.2)
+                        Circle().stroke(AngularGradient(colors:[color.opacity(0.1),color.opacity(0.72),Design.ink.opacity(0.35),color.opacity(0.1)],center:.center,angle:.degrees(Double(layer)*45+wave*12)),lineWidth:CGFloat(2+layer))
+                            .padding(CGFloat(layer)*size*0.055)
+                            .scaleEffect(1+CGFloat(wave)*min(level,0.6)*0.055)
+                    }
+                    Circle().fill(RadialGradient(colors:[color.opacity(0.24),color.opacity(0.06),.clear],center:.init(x:0.4,y:0.35),startRadius:0,endRadius:size*0.42)).padding(size*0.14)
+                    Circle().stroke(Design.ink.opacity(0.16),lineWidth:1).padding(size*0.17)
+                    Ellipse().fill(Design.ink.opacity(0.06)).frame(width:size*0.48,height:size*0.23).blur(radius:12).offset(x:-size*0.06,y:-size*0.1)
+                }.frame(width:size,height:size).frame(maxWidth:.infinity,maxHeight:.infinity)
+            }
         }.accessibilityHidden(true)
     }
 }
@@ -635,5 +720,39 @@ struct NativeMemoSheet:View {
                 Spacer(minLength:0)
             }.padding(24).background(AppBackdrop(scope:scope)).navigationTitle("Voice memo").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.cancellationAction){Button("Cancel"){dismiss()}}}
         }.preferredColorScheme(.dark).onDisappear{recorder.discard()}.onChange(of:scenePhase){_,phase in if phase == .background{recorder.finish();recorder.stopPreview()}}
+    }
+}
+
+struct SongPreview:Codable,Identifiable {
+    let id:String
+    let title:String
+    let artist:String
+    let audioURL:String
+    let storeURL:String
+}
+struct NativeSongPreview:View {
+    let preview:SongPreview
+    var beforePlayback:()->Void={}
+    var autoPlay=false
+    @State private var player:PracticePlayer?
+    @State private var started=false
+    var body:some View {
+        VStack(alignment:.leading,spacing:12){
+            Label("Music preview",systemImage:"music.note").font(.caption).foregroundStyle(Design.muted)
+            Text(preview.title).font(.title3.weight(.semibold)).fixedSize(horizontal:false,vertical:true)
+            Text(preview.artist).font(.subheadline).foregroundStyle(Design.muted)
+            if let player{SongPreviewTransport(player:player,beforePlayback:beforePlayback)}
+            if let url=URL(string:preview.storeURL),url.scheme=="https"{Link("Open in Apple Music",destination:url).font(.footnote)}
+        }.padding(18).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:18))
+        .onAppear{guard !started,let url=URL(string:preview.audioURL),url.scheme=="https" else{return};started=true;let playback=PracticePlayer(url:url);player=playback;if autoPlay{beforePlayback();playback.toggle()}}
+        .onDisappear{player?.player.pause()}
+    }
+}
+struct SongPreviewTransport:View {
+    @ObservedObject var player:PracticePlayer
+    let beforePlayback:()->Void
+    var body:some View {
+        HStack{Button{beforePlayback();player.toggle()}label:{Label(player.playing || player.starting ? "Pause preview":"Play preview",systemImage:player.playing || player.starting ? "pause.fill":"play.fill")}.buttonStyle(ActionStyle());Spacer();Text("\(Int(player.seconds)) / \(Int(player.duration)) sec").font(.caption.monospacedDigit()).foregroundStyle(Design.muted)}
+        if let message=player.message{Text(message).font(.footnote).foregroundStyle(Design.muted)}
     }
 }

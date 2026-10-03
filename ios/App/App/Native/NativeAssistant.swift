@@ -16,6 +16,7 @@ struct ConversationEntry:Identifiable,Codable {
     var attachments:[AssistantAttachmentInfo]?
     var cards:[AssistantCard]?
     var spokenText:String?
+    var musicPreview:SongPreview?
     var contextText:String{text+(cards ?? []).map{card in "\n"+card.title+"\n"+card.items.map{[$0.title,$0.detail,$0.meta].compactMap{$0}.joined(separator:" · ")}.joined(separator:"\n")}.joined()}
 }
 enum LocalAssistant {
@@ -145,6 +146,10 @@ struct NativeAssistantChat:View {
     var contextTitle:String {switch scope{case "ejj":return "Business context";case "band":return "Band notes";case "moshia":return "Story context";case "school":return "Study notes";case "personal":return "Your saved notes";default:return "Across your spaces"}}
     var opening:String {switch scope{case "ejj":return "What are we building?";case "band":return "What are we rehearsing?";case "moshia":return "Where does the story go next?";case "school":return "What needs your attention?";case "personal":return "What would you like to keep?";default:return "What’s on your mind, Ediz?"}}
     var scopedRecords:[EdizCore.Record]{store.records.filter{scope == "all" || $0.space == scope}}
+    @State private var readingEntry:UUID?
+    @State private var copiedEntry:UUID?
+    @State private var latestPreviewID:UUID?
+    @State private var chatAppeared=false
     @State private var busy=false
     @State private var failedQuestion:String?
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
@@ -152,7 +157,7 @@ struct NativeAssistantChat:View {
     @FocusState private var typing:Bool
     var body:some View {
         ScrollViewReader{reader in
-            ScrollView{conversation}.mask{VStack(spacing:0){LinearGradient(colors:[.clear,.black],startPoint:.top,endPoint:.bottom).frame(height:14);Rectangle().fill(.black);LinearGradient(colors:[.black,.clear],startPoint:.top,endPoint:.bottom).frame(height:22)}}
+            ScrollView{conversation}.safeAreaPadding(.vertical,18)
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of:entries.count){_,_ in scrollToBottom(reader)}
                 .onChange(of:busy){_,_ in scrollToBottom(reader)}
@@ -172,10 +177,10 @@ struct NativeAssistantChat:View {
             .fileImporter(isPresented:$importingFiles,allowedContentTypes:[.image,.movie,.audio,.pdf,.plainText,.text,.json,.commaSeparatedText],allowsMultipleSelection:true){result in switch result{case .success(let urls):for url in urls{prepareAttachment(url)};case .failure(let error):if (error as NSError).code != NSUserCancelledError{mediaError="That file couldn’t be opened. Try choosing it again."}}}
             .fullScreenCover(isPresented:$voiceOpen,onDismiss:{endVoice()}){NativeAssistantVoicePanel(speech:speech,speaker:speaker,busy:busy,entry:callReply,error:message,scope:scope,listen:{beginListening()},pause:{pauseVoice()},send:{sendVoice()},read:{voiceAuto=false;speech.stop();readCallReply()},end:{endVoice()})}
             .onChange(of:speech.transcript){_,value in scheduleVoice(value)}
-            .onChange(of:entries.count){_,_ in if voiceWanted && voiceAuto,let last=entries.last,last.role == "assistant"{speech.stop();speaker.say(last.spokenText ?? last.text,token:store.assistantToken,natural:true,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}}
+            .onChange(of:entries.count){_,_ in if voiceWanted && voiceAuto,let last=entries.last,last.role == "assistant"{if last.musicPreview != nil{pauseVoice();return};speech.stop();speaker.say(last.spokenText ?? last.text,token:store.assistantToken,natural:true,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}}
             .onDisappear{dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false;if !voiceOpen{voiceAuto=false;voiceWanted=false;voiceTurn?.cancel();speech.stop();speaker.stop()}}
             .onChange(of:scenePhase){_,phase in if phase == .background{endVoice();dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
-            .onAppear{if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
+            .onAppear{withAnimation(reducedMotion ? nil:.spring(response:0.3,dampingFraction:0.85)){chatAppeared=true};if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
             .toolbar { ToolbarItem(placement:.topBarTrailing) { HStack(spacing:18){Button{historyOpen=true}label:{Image(systemName:"bubble.left.and.bubble.right")}.accessibilityLabel("Chats").accessibilityIdentifier("workspace-chats");Menu {
                 Picker("Assistant",selection:$mode) {
                     if store.assistantToken != nil { Text(WorkspaceBot.name(scope)).tag("cloud") }
@@ -191,7 +196,7 @@ struct NativeAssistantChat:View {
     }
     var conversation:some View {
         VStack(alignment:.leading,spacing:compact ? 12:22){
-            NativeChatHeader(scope:scope)
+            NativeChatHeader(scope:scope).opacity(chatAppeared ? 1:0).offset(y:reducedMotion || chatAppeared ? 0:10)
             if entries.isEmpty {
                 Text(opening).font(scope == "moshia" ? .system(.title2,design:.serif):.title3.weight(.medium)).padding(.top,4)
                 Surface {
@@ -210,8 +215,8 @@ struct NativeAssistantChat:View {
                     if let last=prompts.last{forPrompt(last)}
                 } else {VStack(spacing:8){ForEach(prompts,id:\.self){forPrompt($0)}}}
             }
-            ForEach(entries){entry in entryView(entry).id(entry.id)}
-            if busy{HStack(spacing:9){ProgressView();Text("Thinking through your context…").font(.subheadline).foregroundStyle(Design.muted)}}
+            ForEach(entries){entry in entryView(entry).id(entry.id).transition(.opacity.combined(with:.offset(y:reducedMotion ? 0:8)))}
+            if busy{ThinkingCompanion(color:accent,reducedMotion:reducedMotion)}
             if let message {
                 Surface {VStack(alignment:.leading,spacing:10) {
                     Label("Couldn’t get a reply",systemImage:"exclamationmark.bubble").font(.subheadline.weight(.medium))
@@ -224,7 +229,7 @@ struct NativeAssistantChat:View {
                 }}
             }
             Color.clear.frame(height:1).id("conversation-bottom")
-        }.padding(20)
+        }.padding(20).animation(reducedMotion ? nil:.easeOut(duration:0.22),value:entries.count).animation(reducedMotion ? nil:.easeOut(duration:0.18),value:busy)
     }
     @ViewBuilder func entryView(_ entry:ConversationEntry)->some View {
         VStack(alignment:entry.role == "user" ? .trailing:.leading,spacing:10){
@@ -238,6 +243,7 @@ struct NativeAssistantChat:View {
                 }.padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:corners)).frame(maxWidth:.infinity,alignment:.trailing)
             } else {
                 VStack(alignment:.leading,spacing:10){if let provider=entry.provider{Text(provider == "Gemini" ? WorkspaceBot.name(scope):provider).font(.caption.weight(.medium)).foregroundStyle(accent)};Text(entry.text).font(Design.font(16,weight:"Regular")).lineSpacing(5).fixedSize(horizontal:false,vertical:true).textSelection(.enabled)
+                    if let preview=entry.musicPreview{NativeSongPreview(preview:preview,autoPlay:entry.id==latestPreviewID)}
                     ForEach(entry.cards ?? []){AssistantResultCard(card:$0,scope:scope)}
                     ForEach(entry.records.compactMap{linked in store.records.first{$0.id == linked.id}}){RecordRow(record:$0)}
                     ForEach(entry.actions){action in Button("Review: "+action.title){proposal=action}.buttonStyle(ActionStyle())}
@@ -245,6 +251,11 @@ struct NativeAssistantChat:View {
                         if let url=URL(string:source.url),url.scheme == "https" { Link(source.title,destination:url).font(.footnote) }
                     }
                     if let html=entry.searchSuggestions,!html.isEmpty { NativeSearchSuggestions(html:html).frame(height:110) }
+                    HStack(spacing:18){
+                        Button{if readingEntry==entry.id && (speaker.speaking || speaker.preparing){speaker.stop();readingEntry=nil}else{endVoice();readingEntry=entry.id;speaker.say(entry.spokenText ?? entry.contextText,token:store.assistantToken,natural:true,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}}label:{Label(readingEntry==entry.id && (speaker.speaking || speaker.preparing) ? "Stop":"Read aloud",systemImage:readingEntry==entry.id && speaker.speaking ? "stop.fill":"speaker.wave.2")}.accessibilityIdentifier("reply-read-"+entry.id.uuidString)
+                        Button{UIPasteboard.general.string=entry.contextText;copiedEntry=entry.id;UIImpactFeedbackGenerator(style:.light).impactOccurred();Task{@MainActor in try? await Task.sleep(for:.seconds(2));if copiedEntry==entry.id{copiedEntry=nil}}}label:{Label(copiedEntry==entry.id ? "Copied":"Copy",systemImage:copiedEntry==entry.id ? "checkmark":"doc.on.doc")}.accessibilityIdentifier("reply-copy-"+entry.id.uuidString)
+                    }.font(.caption.weight(.medium)).foregroundStyle(Design.muted).buttonStyle(.plain).padding(.top,6)
+                    if readingEntry==entry.id,let note=speaker.voiceNote,!note.hasPrefix("Natural voice"){Text(note).font(.footnote).foregroundStyle(Design.muted)}
                     if let draft=entry.draft{Button("Review reminder"){store.captureRequest=draft}.buttonStyle(ActionStyle())}
                 }.padding((entry.cards ?? []).isEmpty ? 15:0).frame(maxWidth:.infinity,alignment:.leading).background{if(entry.cards ?? []).isEmpty{WorkspacePanel(scope:scope).clipShape(RoundedRectangle(cornerRadius:corners))}}
             }
@@ -347,7 +358,7 @@ struct NativeAssistantChat:View {
         voiceTurn?.cancel();guard voiceWanted,speech.listening,!busy,!speaker.speaking,!value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{return}
         voiceTurn=Task{@MainActor in do{try await Task.sleep(for:.seconds(1.6));guard !Task.isCancelled,voiceWanted else{return};sendVoice()}catch{}}
     }
-    var callReply:ConversationEntry?{entries.dropFirst(min(callEntryStart,entries.count)).last{$0.role == "assistant"}}
+    var callReply:ConversationEntry?{guard !busy,entries.last?.role == "assistant" else{return nil};return entries.dropFirst(min(callEntryStart,entries.count)).last{$0.role == "assistant"}}
     func readCallReply(){speaker.say(callReply?.spokenText ?? callReply?.text ?? "Hi Ediz. I’m listening. What would you like to work on?",token:store.assistantToken,natural:true,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}
     func sendVoice(){
         guard voiceWanted,!busy,!speech.transcript.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{return}
@@ -380,7 +391,7 @@ struct NativeAssistantChat:View {
         let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity.filter{scope == "all" || Set(scopedRecords.map(\.id)).contains($0.entityId)},focus:scope,previous:prior)
         let conversation=entries;callEnded=nil;entries.append(ConversationEntry(role:"user",text:q,attachments:outgoing.isEmpty ? nil:outgoingInfo));question="";typing=false;message=nil;failedQuestion=nil
         if mode == "cloud",let token=store.assistantToken{
-            busy=true;let context=scopedRecords;let inCall=voiceWanted;callRequest=inCall;let requestID=UUID();activeRequest=requestID
+            busy=true;let context=scopedRecords+((scope == "moshia" || scope == "all") ? store.originalManuscript:[]);let inCall=voiceWanted;callRequest=inCall;let requestID=UUID();activeRequest=requestID
             responseTask=Task{@MainActor in
                 defer{if activeRequest==requestID{busy=false;callRequest=false}}
                 do{
@@ -388,7 +399,7 @@ struct NativeAssistantChat:View {
                     let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing,voiceMode:inCall,memories:Array(memories.prefix(12)))
                     guard !Task.isCancelled,(!inCall || voiceWanted) else{return}
                     attachments.removeAll{file in outgoing.contains{$0.id == file.id}}
-                    entries.append(ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:WorkspaceBot.name(scope),cards:answer.cards,spokenText:answer.spokenText))
+                    let newReply=ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:WorkspaceBot.name(scope),cards:answer.cards,spokenText:answer.spokenText,musicPreview:answer.musicPreview);latestPreviewID=newReply.id;entries.append(newReply)
                 }catch{guard !Task.isCancelled else{return};message=error.localizedDescription;failedQuestion=q}
             };return
         }
@@ -459,7 +470,7 @@ struct GeminiProposal:Codable,Identifiable {
 }
 struct GeminiFields:Codable {var space:String?;var kind:String?;var title:String?;var body:String?;var status:String?;var due:String?;var duration:Int?;var importance:Int?;var data:[String:String]?}
 struct AssistantSource:Codable {let url:String;let title:String}
-struct GeminiResponse:Codable {let text:String;let recordIds:[String];let actions:[GeminiProposal];var sources:[AssistantSource]?;var searchSuggestions:String?;var cards:[AssistantCard]?;var spokenText:String?}
+struct GeminiResponse:Codable {let text:String;let recordIds:[String];let actions:[GeminiProposal];var sources:[AssistantSource]?;var searchSuggestions:String?;var cards:[AssistantCard]?;var spokenText:String?;var musicPreview:SongPreview?}
 struct NativeSearchSuggestions:UIViewRepresentable {
     let html:String
     func makeUIView(context:Context)->WKWebView {
@@ -496,4 +507,20 @@ struct NativeAssistantReview:View {
     var existing:EdizCore.Record?{store.records.first{$0.id == action.entityId}}
     var draft:EdizCore.Record {var record=existing ?? EdizCore.Record(space:action.fields?.space ?? "personal",kind:action.fields?.kind ?? "task",title:action.fields?.title ?? "");if let f=action.fields{if let value=f.title{record.title=value};if let value=f.body{record.body=value};if let value=f.space{record.space=value};if let value=f.kind{record.kind=value};if let value=f.status{record.status=value};if let value=f.due{record.due=value};if let value=f.duration{record.duration=value};if let value=f.importance{record.importance=value};if let value=f.data{record.data.merge(value){_,new in new}}};if !Catalog.states(kind:record.kind,space:record.space).contains(record.status){record.status=Catalog.states(kind:record.kind,space:record.space)[0]};return record}
     var body:some View {NavigationStack{ScrollView{VStack(alignment:.leading,spacing:18){Text(action.title).font(Design.font(23));Text(action.type == "delete" ? "This permanently deletes the item and attachments.":draft.status == "CANON" ? "Confirming this establishes canon in Moshia.":"Nothing changes until you confirm.").foregroundStyle(Design.muted);if action.type != "delete"{Surface{VStack(alignment:.leading,spacing:12){Text(draft.title);Text(draft.body);Text(draft.status);if let due=draft.due{Text(due)};ForEach(draft.data.keys.sorted(),id:\.self){key in Text(key+": "+(draft.data[key] ?? ""))}}}};Button(action.type == "create" ? "Review new item":action.type == "delete" ? "Confirm deletion":"Confirm changes"){if action.type == "create"{var record=draft;record.data["_creation"]="1";if inCall{createdID=record.id;creation=record}else{dismiss();DispatchQueue.main.asyncAfter(deadline:.now()+0.35){store.captureRequest=record}}}else if let existing{if action.type == "delete"{if store.remove(existing){dismiss()}}else if store.save(draft){dismiss()}}}.buttonStyle(ActionStyle())}.padding(20)}}.sheet(item:$creation,onDismiss:{if let createdID,store.records.contains(where:{$0.id == createdID}){dismiss()}}){NativeCreation(seed:$0)}.background(AppBackdrop()).navigationTitle("Review suggestion").toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}}
+}
+
+struct ThinkingCompanion:View {
+    let color:Color
+    let reducedMotion:Bool
+    var body:some View {
+        HStack(spacing:12){
+            TimelineView(.animation(minimumInterval:1.0/20,paused:reducedMotion)){timeline in
+                HStack(spacing:5){ForEach(0..<3){index in
+                    let phase=sin(timeline.date.timeIntervalSinceReferenceDate*5-Double(index)*0.8)
+                    Circle().fill(color).frame(width:6,height:6).opacity(reducedMotion ? 0.7:0.45+max(0,phase)*0.55).offset(y:reducedMotion ? 0:-max(0,phase)*5)
+                }}.frame(width:38,height:28)
+            }
+            Text("Thinking through your context…").font(.subheadline).foregroundStyle(Design.muted)
+        }.padding(.vertical,12).accessibilityElement(children:.combine).accessibilityIdentifier("assistant-thinking")
+    }
 }
