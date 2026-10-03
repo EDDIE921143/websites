@@ -69,8 +69,14 @@ import EdizCore
             let database = try Database(url:root.appendingPathComponent("ediz.sqlite"))
             self.database = database
             try reload()
+            for scope in ["all"]+Catalog.spaces.map(\.id) where chatShelf(scope).threads.isEmpty && !conversation(scope).isEmpty{_=openThread(scope:scope)}
             try database.snapshot(directory:root.appendingPathComponent("Snapshots"))
             try? FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],ofItemAtPath:root.path)
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-call-results"){
+                let id=openThread(scope:"band");let card=AssistantCard(type:"songs",title:"Friday practice ideas",subtitle:"Suggestions to try together",items:[AssistantCardItem(title:"Everlong",detail:"Foo Fighters · Work on steady dynamics"),AssistantCardItem(title:"Seven Nation Army",detail:"The White Stripes · Keep the riff locked in"),AssistantCardItem(title:"Come As You Are",detail:"Nirvana · Listen to the guitar phrasing")]);saveThread([ConversationEntry(role:"user",text:"Suggest rock songs for Friday"),ConversationEntry(role:"assistant",text:"Here are three ideas to try together.",provider:"CLEARANCE 19 Bot",cards:[card],spokenText:"I’ve put three ideas on your screen. Which would you like to start with?")],id:id,scope:"band");nameThread(id,scope:"band",title:"Friday practice ideas")
+            }
+            #endif
             ready = true
             assistantConnected = assistantToken != nil
             loadContext()

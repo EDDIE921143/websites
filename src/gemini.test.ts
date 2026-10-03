@@ -38,12 +38,12 @@ it('streams PCM immediately, keeps voice choice and reuses completed speech',asy
  expect(JSON.parse(fetcher.mock.calls[0][1].body).generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Puck');
  for await(const _ of speechChunks('A unique streamed greeting','test-key','Puck')){};expect(fetcher).toHaveBeenCalledTimes(1);
 });
-it('retries an empty speech response once and never retries provider quota rejection',async()=>{
+it('retries empty speech once and tries alternate models once on quota rejection',async()=>{
  const good='data: '+JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'audio/l16',data:'AQACAA=='}}]},finishReason:'STOP'}]})+'\n\n';
  const fetcher=vi.fn().mockResolvedValueOnce(new Response('data: {}\n\n')).mockResolvedValueOnce(new Response(good));vi.stubGlobal('fetch',fetcher);
  const parts=[];for await(const b of speechChunks('Retry this empty response','test-key'))parts.push(b);expect(parts).toHaveLength(1);expect(fetcher).toHaveBeenCalledTimes(2);
  clearSpeechCache();fetcher.mockReset().mockResolvedValue(new Response('{}',{status:429}));
- await expect((async()=>{for await(const _ of speechChunks('Quota rejected','test-key')){}})()).rejects.toThrow('quota');expect(fetcher).toHaveBeenCalledTimes(1);
+ await expect((async()=>{for await(const _ of speechChunks('Quota rejected','test-key')){}})()).rejects.toThrow('quota');expect(fetcher).toHaveBeenCalledTimes(4);expect(new Set(fetcher.mock.calls.map(call=>call[0])).size).toBe(4);
 });
 it('refuses truncated audio and keeps private speech caches isolated by credential',async()=>{
  const event=(finish:string)=>'data: '+JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'audio/l16',data:'AQACAA=='}}]},finishReason:finish}]})+'\n\n';

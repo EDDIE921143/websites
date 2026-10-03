@@ -1,12 +1,19 @@
 import SwiftUI
 import EdizCore
 
+enum RecordedGuide {
+    static var voices:[String]{["Aoede","Puck","Kore"].filter{voice in
+        let clips=Set(["welcome","complete","intro-chapters-after-capture"]+WalkthroughKind.allCases.map{"intro-"+$0.id}+WalkthroughKind.allCases.flatMap{$0.steps.map(\.event)})
+        return clips.allSatisfy{Bundle.main.url(forResource:$0,withExtension:"m4a",subdirectory:"GuideAudio/"+voice) != nil}
+    }}
+}
 struct NativeSettings:View {
     @EnvironmentObject var store:NativeStore
     @State private var file:FilePreview?
     @State private var testing=false
     @State private var modelStatus="Not tested. No records are sent by a connection test."
     @State private var checkedEndpoint=""
+    @AppStorage("tutorial-natural-voice-name",store:NativeVoicePreferences.defaults) private var tutorialVoice="Aoede"
     var body:some View {
         Form {
             Section("Look & feel"){Picker("Density",selection:Binding(get:{store.preferences.density},set:{var next=store.preferences;next.density=$0;store.setPreferences(next)})){Text("Comfortable").tag("comfortable");Text("Compact").tag("compact")}.pickerStyle(.segmented).walkthroughTarget("density",session:store.walkthrough);Text("Comfortable gives cards room to breathe. Compact uses shorter rows and smaller panels. Touch targets stay easy to reach.").font(.footnote).foregroundStyle(Design.muted)}
@@ -42,7 +49,11 @@ struct NativeSettings:View {
                     Text("Connect a model you run on your local network. Records are sent only when you switch on ‘Use my local model’ in Assistant and ask a question. No paid key is required.").font(.footnote).foregroundStyle(Design.muted)
                 }
             }
-            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.15 · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Guide voice"){
+                Picker("Recorded natural voice",selection:$tutorialVoice){ForEach(RecordedGuide.voices,id:\.self){Text($0).tag($0)}}.disabled(RecordedGuide.voices.count<2).accessibilityIdentifier("tutorial-voice-choice")
+                Text("Aoede’s complete guide plays directly from your app, including offline. More recorded narrators need provider capacity; your call offers three natural voices.").font(.footnote).foregroundStyle(Design.muted)
+            }
+            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.16 · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
             Section {
                 NavigationLink { NativeTutorial() } label: {
                     HStack(spacing:14) {
@@ -52,7 +63,7 @@ struct NativeSettings:View {
                     }.padding(.vertical,8)
                 }.accessibilityIdentifier("settings-tutorial").disabled(store.isPractice)
             } header:{Text("Getting started")}
-        }.onAppear{store.walkthrough?.event("settings-open")}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Settings")
+        }.onAppear{if !RecordedGuide.voices.contains(tutorialVoice){tutorialVoice="Aoede"};store.walkthrough?.event("settings-open")}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Settings")
             .sheet(item:$file){shared in NativeShare(url:shared.url){completed in if completed && shared.url.lastPathComponent.hasPrefix("ediz-os-"){store.markBackupShared()}}}
     }
 }
@@ -104,7 +115,7 @@ struct NativeHistory:View {
 }
 struct NativeHealth:View {
     @EnvironmentObject var store:NativeStore
-    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:"0.3.15");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
+    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:"0.3.16");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
 }
 
 struct NativeFocusChoice:View {
@@ -152,7 +163,6 @@ enum WalkthroughKind:String,CaseIterable,Identifiable {
     var title:String{switch self{case .capture:return "Capture a thought";case .chapters:return "Create a chapter";case .assistant:return "Explore a chat";case .search:return "Find your work";case .appearance:return "Change the look";case .focus:return "Focus on a space"}}
     var symbol:String{switch self{case .capture:return "plus.circle.fill";case .chapters:return "book.closed.fill";case .assistant:return "text.bubble.fill";case .search:return "magnifyingglass";case .appearance:return "slider.horizontal.3";case .focus:return "scope"}}
     var summary:String{switch self{case .capture:return "Type, preview, and save a thought.";case .chapters:return "Try the chapter title and context fields.";case .assistant:return "Open a workspace and send a practice message.";case .search:return "Search and open a real practice result.";case .appearance:return "Switch layouts and see the change immediately.";case .focus:return "Give Moshia the main space on Today."}}
-    var welcome:String {"Hey Ediz, thanks for using Ediz OS. "+(self == .chapters ? "I'll show you how to save a chapter and keep the context that matters. ":"I'll show you around this part of your app. ")+"We can try it together in a practice workspace, so your own work stays safe. "}
     var steps:[WalkthroughStep]{switch self{
     case .capture:return [
         .init(title:"Open Capture",instruction:"Tap Capture, the + in the bottom bar.",event:"tab-2",target:""),
@@ -205,16 +215,23 @@ enum WalkthroughKind:String,CaseIterable,Identifiable {
         _=practice.save(brief,action:"Practice example")
         practice.walkthrough=self
     }
-    func event(_ value:String){guard step?.event == value else{return};index+=1;UISelectionFeedbackGenerator().selectionChanged();readStep()}
+    func event(_ value:String){guard step?.event == value else{return};index+=1;if finished{NativeVoicePreferences.defaults.set(true,forKey:"guide-completed-"+kind.id)};UISelectionFeedbackGenerator().selectionChanged();readStep()}
     func startGuidance(){guard !guidanceStarted else{return};guidanceStarted=true;readStep(welcome:true)}
     func toggleNarration(){narrationEnabled.toggle();if narrationEnabled{readStep()}else{narrator.stop()}}
     func muteForRecording(){narrationEnabled=false;narrator.stop()}
     func readStep(welcome:Bool=false){
         narrator.stop();guard narrationEnabled,guidanceStarted else{return}
-        let text=(welcome ? kind.welcome:"")+(step?.spoken ?? "Nice, you’ve tried it yourself. That is yours to use whenever you need it. You can explore a little more here, or head back to your app when you’re ready.")
         let defaults=NativeVoicePreferences.defaults
-        let voice=defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede"
-        narrator.say(text,token:narrationToken,natural:true,voice:voice)
+        let voice=defaults.string(forKey:"tutorial-natural-voice-name") ?? "Aoede"
+        var clips:[String]=[]
+        if welcome{
+            if !defaults.bool(forKey:"guide-welcomed"){clips.append("welcome");defaults.set(true,forKey:"guide-welcomed")}
+            clips.append(kind == .chapters && defaults.bool(forKey:"guide-completed-capture") ? "intro-chapters-after-capture":"intro-"+kind.id)
+        }
+        clips.append(step?.event ?? "complete")
+        let urls=clips.compactMap{Bundle.main.url(forResource:$0,withExtension:"m4a",subdirectory:"GuideAudio/"+voice)}
+        guard urls.count==clips.count else{narrator.voiceNote="This recorded guide isn’t available yet. Your interactive steps are ready.";return}
+        narrator.playRecorded(urls,voice:voice)
     }
     func close(){narrator.stop();onExit?()}
 }
@@ -240,7 +257,7 @@ struct WalkthroughCoach:View {
                 Button{session.toggleNarration()}label:{Label(session.narrationEnabled ? "Mute guide":"Read aloud",systemImage:session.narrationEnabled ? "speaker.wave.2.fill":"speaker.slash.fill").font(.caption.weight(.medium)).frame(minHeight:44)}.buttonStyle(.plain).accessibilityIdentifier("walkthrough-voice-toggle")
                 Spacer()
                 if session.narrationEnabled {
-                    Text(narrator.preparing ? "Getting ready…":narrator.voiceNote?.hasPrefix("Natural voice") == true ? "Natural voice":narrator.speaking ? "Offline voice":"Guide on").font(.caption).foregroundStyle(Design.muted).accessibilityIdentifier("tutorial-voice-source")
+                    Text(narrator.preparing ? "Getting ready…":narrator.voiceNote?.hasPrefix("Recorded natural voice") == true ? "Natural voice":"Guide on").font(.caption).foregroundStyle(Design.muted).accessibilityIdentifier("tutorial-voice-source")
                     Button{session.readStep()}label:{Image(systemName:"arrow.counterclockwise").frame(width:44,height:44)}.buttonStyle(.plain).accessibilityLabel("Replay instruction").accessibilityIdentifier("walkthrough-voice-replay")
                 }
             }.accessibilityElement(children:.contain).accessibilityIdentifier("tutorial-voice-activity").accessibilityValue("Audio level \(Int(narrator.level*100))")
@@ -265,16 +282,16 @@ struct NativeTutorial:View {
     @State private var practiceStore:NativeStore?
     var body:some View {
         ScrollView{VStack(alignment:.leading,spacing:22){
-            Image(systemName:"hand.tap.fill").font(.system(size:38)).foregroundStyle(Design.ink)
+            HStack{Image(systemName:"hand.tap.fill").font(.system(size:38)).foregroundStyle(Design.ink);Spacer();Text("YOUR APP, TOGETHER").font(.caption2.weight(.semibold)).tracking(1.5).foregroundStyle(Design.muted)}
             Text("Learn by doing.").font(.largeTitle.weight(.semibold))
             Text("Choose something to try. We’ll take you through the real screens, highlight the next control, and move on when you use it.").font(.body).foregroundStyle(Design.muted)
             Label("A separate practice workspace keeps your own records and settings safe.",systemImage:"checkmark.shield.fill").font(.subheadline).foregroundStyle(Design.muted)
             Surface {VStack(alignment:.leading,spacing:8){
                 Toggle(isOn:$spokenGuide){Label("Spoken guidance",systemImage:"speaker.wave.2.fill").font(.headline)}.accessibilityIdentifier("tutorial-spoken-guide")
-                Text("A friendly walkthrough in your natural voice. Mute or replay anytime. An offline voice keeps the guide available without a connection.").font(.subheadline).foregroundStyle(Design.muted)
+                Text("A recorded natural voice guides you through each step. Choose your narrator in Settings. Mute or replay anytime, even offline.").font(.subheadline).foregroundStyle(Design.muted)
             }}
             ForEach(WalkthroughKind.allCases){kind in
-                Button{let next=WalkthroughSession(kind:kind,narration:spokenGuide,token:store.assistantToken);practiceStore=next.practice;session=next}label:{HStack(alignment:.top,spacing:16){Image(systemName:kind.symbol).font(.title2).frame(width:34);VStack(alignment:.leading,spacing:7){Text(kind.title).font(.headline);Text(kind.summary).font(.subheadline).foregroundStyle(Design.muted);Text("\(kind.steps.count) hands-on steps").font(.caption).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.right").font(.subheadline)}.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}.buttonStyle(.plain).accessibilityIdentifier("tutorial-start-"+kind.id)
+                Button{let next=WalkthroughSession(kind:kind,narration:spokenGuide,token:store.assistantToken);practiceStore=next.practice;session=next}label:{HStack(alignment:.top,spacing:16){Image(systemName:kind.symbol).font(.title2).frame(width:34);VStack(alignment:.leading,spacing:7){Text(kind.title).font(.headline);Text(kind.summary).font(.subheadline).foregroundStyle(Design.muted);Label(NativeVoicePreferences.defaults.bool(forKey:"guide-completed-"+kind.id) ? "Explored · Try again":"\(kind.steps.count) hands-on steps",systemImage:NativeVoicePreferences.defaults.bool(forKey:"guide-completed-"+kind.id) ? "checkmark.circle.fill":"hand.point.up.left").font(.caption).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.right").font(.subheadline)}.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}.buttonStyle(.plain).accessibilityIdentifier("tutorial-start-"+kind.id)
             }
         }.padding(22)}.background(AppBackdrop()).navigationTitle("Your guide").navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar)
             .fullScreenCover(item:$session,onDismiss:{practiceStore?.discardPractice();practiceStore=nil}){active in NativeRoot(store:active.practice).onAppear{active.onExit={session=nil};active.startGuidance()}.onDisappear{active.narrator.stop()}}

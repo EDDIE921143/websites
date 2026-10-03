@@ -1,4 +1,5 @@
 import {timingSafeEqual,createHash} from 'node:crypto';
+import {presentationReply} from './app-features.js';
 export function authorized(provided, expected) {
  if(typeof provided!=='string'||typeof expected!=='string'||expected.length<32)return false;
  const a=Buffer.from(provided),b=Buffer.from(expected);return a.length===b.length&&timingSafeEqual(a,b);
@@ -26,7 +27,7 @@ export function validateReply(value,records=[]) {
   if(fields.data&&typeof fields.data==='object'&&!Array.isArray(fields.data))safe.data=Object.fromEntries(Object.entries(fields.data).filter(([k,v])=>typeof v==='string'&&k.length<80&&k!=='__proto__').slice(0,30).map(([k,v])=>[k,v.slice(0,4000)]));
   return [{type:a.type,entityId:a.entityId,title:a.title.slice(0,200),fields:safe}];
  });
- return {text:value.text.slice(0,20000),actions,recordIds:(Array.isArray(value.recordIds)?value.recordIds:[]).filter(id=>ids.has(id)).slice(0,12)};
+ return {...presentationReply(value,ids),text:value.text.slice(0,20000),actions,recordIds:(Array.isArray(value.recordIds)?value.recordIds:[]).filter(id=>ids.has(id)).slice(0,12)};
 }
 export function groundedSources(metadata) {
  const seen=new Set();return (metadata?.groundingChunks||[]).flatMap(chunk=>{
@@ -79,7 +80,8 @@ export async function* speechChunks(text,apiKey,voice='Aoede',signal) {
  voice=['Aoede','Puck','Kore'].includes(voice)?voice:'Aoede';
  const key=speechKey(text,apiKey,voice),cached=speechCache.get(key);
  if(cached?.until>Date.now()){yield cached.bytes;return}
- const models=[...new Set([process.env.GEMINI_SPEECH_MODEL||'gemini-3.8-flash-lite-tts','gemini-3.1-flash-tts-preview'])];
+ const quota=[];
+ const models=[...new Set([process.env.GEMINI_SPEECH_MODEL||'gemini-3.8-flash-lite-tts','gemini-3.1-flash-tts-preview','gemini-2.5-flash-preview-tts','gemini-2.5-pro-preview-tts'])];
  for(const model of models){
   for(let attempt=0;attempt<2;attempt++){
    let started=false,total=0,finishReason;const collected=[];
@@ -87,7 +89,7 @@ export async function* speechChunks(text,apiKey,voice='Aoede',signal) {
     const requestSignal=signal?AbortSignal.any([signal,AbortSignal.timeout(22000)]):AbortSignal.timeout(22000);
     const part=model.includes('3.8')?{text,speech_metadata:{style:'warm, natural conversational voice'}}:{text:'Synthesize speech in the language of the transcript. Speak only the transcript, in a warm conversational voice.\nTRANSCRIPT:\n'+text};
     const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},signal:requestSignal,body:JSON.stringify({contents:[{role:'user',parts:[part]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voice}}}}})});
-    if(response.status===429){const error=new Error('Natural speech has reached the provider quota.');error.status=429;throw error}
+    if(response.status===429){const detail=await response.json().catch(()=>({}));for(const item of detail.error?.details||[])for(const limit of item.violations||[])quota.push({model,quotaId:String(limit.quotaId||'').slice(0,180),limit:String(limit.quotaValue||'').slice(0,20)});const error=new Error('Natural speech has reached the provider quota.');error.status=429;error.quota=quota;throw error}
     if([400,404].includes(response.status))break;
     if(!response.ok)throw new Error('The speech connection was interrupted.');
     const reader=response.body.getReader(),decoder=new TextDecoder();let pending='';
@@ -116,7 +118,8 @@ export async function* speechChunks(text,apiKey,voice='Aoede',signal) {
     if(!started)throw new Error('No speech audio was returned.');
     rememberSpeech(key,Buffer.concat(collected));return;
    }catch(error){
-    if(started||error.status===429||signal?.aborted)throw error;
+    if(started||signal?.aborted)throw error;
+    if(error.status===429){if(model===models.at(-1))throw error;break;}
     if(attempt===1&&model===models.at(-1))throw error;
    }
   }
@@ -131,12 +134,12 @@ export async function generatedSpeech(text,apiKey,voice='Aoede') {
 export function botDirections(scope='all',voice=false) {
  const profiles={
   ejj:['EJJ Digital Bot','Be a practical business partner: prioritize actionable client work, leads and clear next steps. Keep the saved €299 website offer consistent. Avoid sales hype.'],
-  band:['CLEARANCE 19 Bot','Be a collaborative bandmate: use saved songs, rehearsal plans and musical preferences. Suggest concrete practice steps without inventing a setlist or band history.'],
+  band:['CLEARANCE 19 Bot','Be a collaborative bandmate: use saved songs, rehearsal plans and musical preferences. Suggest concrete practice steps without inventing a setlist or band history. Organize song suggestions and rehearsal plans into clean structured cards with meaningful headings, artist names and specific practice goals. Never fill unknown tempos or tunings with guesses.'],
   moshia:['Moshia Bot','Be a thoughtful story editor. Reference supplied chapters and distinguish canon from possible ideas. Ask before drafting prose; preserve continuity and Ediz’s creative choices.'],
   school:['School Bot','Be a patient study partner. Explain clearly, help Ediz learn, and build realistic plans from saved assignments and deadlines.'],
   personal:['Personal Bot','Be warm and grounded. Help Ediz think through everyday concerns without assuming feelings or private facts.'],
   all:['Everyday Bot','Be a warm, capable personal assistant. Connect relevant context across spaces and answer ordinary questions directly.']
  };
  const [name,direction]=profiles[scope]||profiles.all;
- return `Your name in this workspace is ${name}. ${direction} Match Ediz’s language and tone; ask at most one useful question when needed. ${voice?'This is a spoken conversation: prefer one to three short sentences unless Ediz requests detail. Avoid reading lists or formatting aloud.':'Prefer a direct concise answer; add detail when it helps.'}`;
+ return `Your name in this workspace is ${name}. ${direction} Match Ediz’s language and tone; ask at most one useful question when needed. ${voice?'You are currently in a live voice call with Ediz, not a typed chat. Respond as a bandmate or personal assistant speaking aloud: prefer one to three short sentences unless Ediz requests detail. Put your spoken answer in spokenText, separate from the visual text and cards. When asked to show a list or plan, include a structured card that appears directly inside the call, and briefly explain what you’ve prepared. Avoid reading every list item or formatting aloud. Do not tell Ediz to leave the call to see your output. Keep the conversation flowing with at most one natural follow-up question. All saved changes still require review; say you have prepared them, not saved them.':'Prefer a direct concise answer; add detail when it helps.'}`;
 }

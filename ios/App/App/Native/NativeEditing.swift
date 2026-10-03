@@ -8,6 +8,11 @@ struct NativeCapture:View {
     @State private var draft:EdizCore.Record
     @State private var automatic:Bool
     @State private var voicePrefix=""
+    @State private var voiceOpen=false
+    @State private var voiceFinishing=false
+    @State private var voiceStarted=Date()
+    @State private var voiceJob:Task<Void,Never>?
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @State private var explicitDate=false
     @State private var date=Date()
     @StateObject private var speech=NativeSpeech()
@@ -32,8 +37,7 @@ struct NativeCapture:View {
                         VStack(alignment:.leading,spacing:14){
                             TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...8).font(.title3).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
                             Divider().overlay(Design.muted.opacity(0.15))
-                            HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{if !speech.listening{store.walkthrough?.muteForRecording();voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
-                            if speech.listening{AudioWaveform(levels:speech.levels,color:Design.accent)}
+                            HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{typing=false;store.walkthrough?.muteForRecording();voicePrefix=draft.title;voiceStarted=Date();voiceOpen=true;speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
                             if let error=speech.message{Text(error).font(.footnote).foregroundStyle(Design.muted)}
                         }
                     }
@@ -60,9 +64,33 @@ struct NativeCapture:View {
                 .onChange(of:date){_,value in draft.due=explicitDate ? Time.string(value):nil}
                 .onChange(of:explicitDate){_,value in draft.due=value ? Time.string(date):nil}
                 .onChange(of:speech.transcript){_,value in if !value.isEmpty{draft.title=voicePrefix+(voicePrefix.isEmpty ? "":" ")+value} }
-                .onDisappear{speech.stop()}
+                .onDisappear{if !voiceOpen{voiceJob?.cancel();speech.stop()}}
+                .sheet(isPresented:$voiceOpen,onDismiss:{if speech.listening{finishCaptureVoice()}else{speech.stop()}}){
+                    VStack(alignment:.leading,spacing:22){
+                        HStack{Label("Voice capture",systemImage:"waveform").font(.subheadline.weight(.semibold));Spacer();Button{voiceJob?.cancel();speech.stop();draft.title=voicePrefix;voiceFinishing=false;voiceOpen=false}label:{Image(systemName:"xmark").frame(width:44,height:44)}.accessibilityLabel("Cancel voice capture")}
+                        Text("Say what’s\non your mind.").font(.system(.largeTitle,design:.rounded).weight(.medium)).fixedSize(horizontal:false,vertical:true)
+                        HStack(spacing:8){Circle().fill(voiceFinishing ? Design.muted:Color(red:0.84,green:0.47,blue:0.38)).frame(width:7,height:7);Text(speech.requesting ? "Starting…":voiceFinishing ? "Keeping your last words…":"Listening to you").font(.subheadline);Spacer();TimelineView(.periodic(from:voiceStarted,by:1)){time in let elapsed=Int(max(0,time.date.timeIntervalSince(voiceStarted)));Text(String(format:"%d:%02d",elapsed/60,elapsed%60)).font(.subheadline.monospacedDigit()).foregroundStyle(Design.muted)}}
+                        AudioWaveform(levels:speech.levels.isEmpty ? Array(repeating:CGFloat(0.035),count:48):speech.levels,color:Design.accent,height:64).padding(16).background(Design.accent.opacity(0.08),in:RoundedRectangle(cornerRadius:18)).accessibilityIdentifier("capture-waveform")
+                        ScrollView{
+                            Text(speech.transcript.isEmpty ? "Your words will appear here…":speech.transcript).font(speech.transcript.isEmpty ? .body:.title3).foregroundStyle(speech.transcript.isEmpty ? Design.muted:Design.ink).lineSpacing(6).frame(maxWidth:.infinity,alignment:.leading).textSelection(.enabled)
+                        }.frame(maxWidth:.infinity,maxHeight:.infinity).accessibilityIdentifier("capture-live-transcript")
+                        if let message=speech.message{Text(message).font(.footnote).foregroundStyle(Design.muted)}
+                        VStack(spacing:12){Button{finishCaptureVoice()}label:{Label(voiceFinishing ? "Finishing…":"Stop and keep",systemImage:"stop.fill").font(.headline).frame(maxWidth:.infinity,minHeight:54)}.buttonStyle(ActionStyle()).disabled(speech.requesting || voiceFinishing).accessibilityIdentifier("capture-voice-stop");Text("Your words stay editable before you save.").font(.caption).foregroundStyle(Design.muted).frame(maxWidth:.infinity)}
+                    }.padding(.horizontal,24).padding(.top,16).padding(.bottom,24).frame(maxWidth:.infinity,maxHeight:.infinity).background(Design.background).presentationDetents([.large]).presentationDragIndicator(.visible)
+                }
+
         }.tint(Design.accent).preferredColorScheme(.dark)
     }
+    func finishCaptureVoice(){
+        guard !voiceFinishing else{return};voiceFinishing=true
+        voiceJob=Task{@MainActor in
+            let text=await speech.finish().trimmingCharacters(in:.whitespacesAndNewlines)
+            guard !Task.isCancelled else{return}
+            if !text.isEmpty{draft.title=voicePrefix+(voicePrefix.isEmpty ? "":" ")+text}
+            voiceFinishing=false;voiceOpen=false;typing=false
+        }
+    }
+
 }
 struct NativeEditor:View {
     @EnvironmentObject var store:NativeStore

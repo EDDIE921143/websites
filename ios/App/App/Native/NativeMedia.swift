@@ -43,6 +43,9 @@ import Accelerate
     private var tapInstalled=false
     private var finalText:CheckedContinuation<String,Never>?
     func toggle(){
+        #if targetEnvironment(simulator)
+        message="Voice input is available on your iPhone. You can type here.";return
+        #endif
         if listening || requesting{stop();return};requesting=true;message=nil
         if SFSpeechRecognizer.authorizationStatus() == .authorized{requestMicrophone();return}
         SFSpeechRecognizer.requestAuthorization{status in Task{@MainActor in
@@ -310,7 +313,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
             var completeAudio=Data()
             do {
                 var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!)
-                request.httpMethod="POST";request.timeoutInterval=8
+                request.httpMethod="POST";request.timeoutInterval=25
                 request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
                 request.httpBody=try JSONSerialization.data(withJSONObject:["mode":"speech-stream","text":text,"voice":voice])
                 let (bytes,response)=try await URLSession.shared.bytes(for:request)
@@ -335,6 +338,13 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
                 else{voiceNote="Speech was interrupted. Tap Listen to replay the reply.";ended=true;completeIfDrained()}
             }
         }
+    }
+    func playRecorded(_ urls:[URL],voice:String){
+        stop();voiceNote=nil;guard !urls.isEmpty else{voiceNote="This guide recording couldn’t be found. Try reopening the guide.";return}
+        do{
+            for url in urls{let file=try AVAudioFile(forReading:url);guard let buffer=AVAudioPCMBuffer(pcmFormat:file.processingFormat,frameCapacity:AVAudioFrameCount(file.length)) else{throw URLError(.cannotDecodeContentData)};try file.read(into:buffer);try queue(buffer)}
+            voiceNote="Recorded natural voice · "+voice;ended=true;completeIfDrained()
+        }catch{stop();voiceNote="The guide recording couldn’t play. Try replaying this step."}
     }
     private func queuePCM(_ bytes:Data) throws {
         guard !bytes.isEmpty,bytes.count%2==0,let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:AVAudioFrameCount(bytes.count/2)),let samples=buffer.floatChannelData?[0] else{throw URLError(.cannotDecodeContentData)}
@@ -361,9 +371,12 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
         preparing=true;let id=playbackID
         let utterance=AVSpeechUtterance(string:text);let recognizer=NLLanguageRecognizer();recognizer.processString(text)
         let language=recognizer.dominantLanguage?.rawValue ?? Locale.current.language.languageCode?.identifier ?? "en"
-        let voices=AVSpeechSynthesisVoice.speechVoices().filter{$0.language.hasPrefix(language)}
-        utterance.voice=voices.max{$0.quality.rawValue<$1.quality.rawValue} ?? AVSpeechSynthesisVoice(language:language)
-        utterance.rate=AVSpeechUtteranceDefaultSpeechRate * 0.98;utterance.pitchMultiplier=1;self.utterance=utterance
+        let voices=AVSpeechSynthesisVoice.speechVoices().filter{$0.language.hasPrefix(language) && !$0.identifier.lowercased().contains("novelty")}
+        let preferred=["Ava","Serena","Evan","Tom","Fiona","Alex","Zoe","Anna"]
+        func score(_ voice:AVSpeechSynthesisVoice)->Int{voice.quality.rawValue*100+(preferred.firstIndex(of:voice.name).map{30-$0} ?? 0)}
+        utterance.voice=voices.max{score($0)<score($1)} ?? AVSpeechSynthesisVoice(language:language)
+        voiceNote="Offline backup · "+(utterance.voice?.name ?? "System")+(utterance.voice?.quality == .default ? "":" · Enhanced")
+        utterance.rate=AVSpeechUtteranceDefaultSpeechRate * 0.94;utterance.pitchMultiplier=1;self.utterance=utterance
         if voiceNote==nil{voiceNote="Device voice"}
         synthesizer.write(utterance){[weak self] audio in
             guard let buffer=audio as? AVAudioPCMBuffer else{return}
@@ -389,7 +402,11 @@ struct NativeAssistantVoicePanel:View {
     @ObservedObject var speech:NativeSpeech
     @ObservedObject var speaker:NativeAssistantSpeaker
     let busy:Bool
-    let reply:String
+    let entry:ConversationEntry?
+    var reply:String{entry?.text ?? ""}
+    var hasResults:Bool{!(entry?.cards ?? []).isEmpty || !(entry?.actions ?? []).isEmpty}
+    @State private var proposal:GeminiProposal?
+    @State private var began=false
     let error:String?
     let scope:String
     let listen:()->Void
@@ -403,43 +420,59 @@ struct NativeAssistantVoicePanel:View {
     var body:some View {
         GeometryReader { geometry in
             VStack(spacing:0){
-                HStack {
-                    Button(action:end){Image(systemName:"xmark").frame(width:44,height:44).background(.white.opacity(0.06),in:Circle())}.accessibilityLabel("End conversation").accessibilityIdentifier("voice-done")
-                    Spacer()
-                    VStack(spacing:4){Text(WorkspaceBot.name(scope)).font(.subheadline.weight(.medium));Text("VOICE").font(.system(size:10,weight:.semibold)).tracking(2).foregroundStyle(Design.muted)}
-                    Spacer()
-                    Button{settings=true}label:{Image(systemName:"slider.horizontal.3").frame(width:44,height:44).background(.white.opacity(0.06),in:Circle())}.accessibilityLabel("Voice settings").accessibilityIdentifier("voice-settings")
-                }.padding(.horizontal,20).padding(.top,8)
-                Spacer(minLength:12)
-                NativeVoiceVisual(level:level,thinking:busy || speaker.preparing,color:accent,reducedMotion:reducedMotion || settings)
-                    .frame(maxWidth:.infinity).frame(height:max(170,min(geometry.size.height*0.47,390)))
-                    .accessibilityElement(children:.ignore).accessibilityLabel("Voice activity").accessibilityValue("Audio level "+String(Int(level*100))).accessibilityIdentifier("voice-activity")
-                Text(status).font(.title3.weight(.medium)).padding(.top,14)
-                Text(speech.listening ? "Pause for a moment to send your thought.":"Speak naturally. Take your time.").font(.subheadline).foregroundStyle(Design.muted).padding(.top,8)
-                Spacer(minLength:16)
-                if captions, !reply.isEmpty || !speech.transcript.isEmpty {
-                    ScrollView{Text(speech.listening || busy ? speech.transcript:reply).font(.subheadline).lineSpacing(4).frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:120).padding(.horizontal,28).padding(.bottom,14)
+                HStack(spacing:12){
+                    Button(action:end){Image(systemName:"xmark").font(.body.weight(.medium)).frame(width:44,height:44).contentShape(Rectangle())}.accessibilityLabel("End conversation").accessibilityIdentifier("voice-done")
+                    Spacer(minLength:0)
+                    VStack(spacing:4){Text(WorkspaceBot.name(scope)).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8);Text("Voice conversation").font(.caption).foregroundStyle(Design.muted)}
+                    Spacer(minLength:0)
+                    Button{settings=true}label:{Image(systemName:"slider.horizontal.3").font(.body).frame(width:44,height:44).contentShape(Rectangle())}.accessibilityLabel("Voice settings").accessibilityIdentifier("voice-settings")
+                }.padding(.horizontal,16).padding(.top,4).padding(.bottom,12)
+                if hasResults,let entry{
+                    HStack(spacing:16){
+                        VStack(alignment:.leading,spacing:6){Text(status).font(.subheadline.weight(.medium));Text(speech.listening && !speech.transcript.isEmpty ? speech.transcript:"Your results stay here while we talk.").font(.caption).foregroundStyle(Design.muted).lineLimit(2)}
+                        Spacer(minLength:0)
+                        activity.frame(width:64,height:64)
+                    }.padding(.horizontal,24).padding(.bottom,8)
+                    ScrollView{
+                        VStack(alignment:.leading,spacing:16){
+                            ForEach(entry.cards ?? []){AssistantResultCard(card:$0,scope:scope)}
+                            ForEach(entry.actions){action in Button("Review: "+action.title){pause();proposal=action}.buttonStyle(ActionStyle())}
+                            if captions,!reply.isEmpty{Text(reply).font(.subheadline).lineSpacing(4).foregroundStyle(Design.muted).textSelection(.enabled)}
+                        }.padding(.horizontal,20).padding(.vertical,8)
+                    }.frame(maxWidth:.infinity,maxHeight:.infinity).accessibilityIdentifier("voice-results")
+                }else{
+                    Spacer(minLength:8)
+                    activity.frame(maxWidth:.infinity).frame(height:max(180,min(geometry.size.height*0.4,330)))
+                    Text(status).font(.title3.weight(.medium)).padding(.top,10)
+                    Text(speech.listening ? "I’m listening. Pause when you’re ready.":"A little room to think out loud.").font(.subheadline).foregroundStyle(Design.muted).padding(.top,8)
+                    Text(speech.listening && !speech.transcript.isEmpty ? speech.transcript:captions ? reply:"").font(.subheadline).lineSpacing(4).lineLimit(4).frame(maxWidth:.infinity,minHeight:76,alignment:.center).padding(.horizontal,28).padding(.top,16)
+                    Spacer(minLength:8)
                 }
-                if let message=error ?? speech.message{Text(message).font(.footnote).foregroundStyle(Design.muted).padding(.horizontal,24)}
+                if let message=error ?? speech.message{Text(message).font(.footnote).foregroundStyle(Design.muted).padding(.horizontal,24).padding(.top,8)}
                 if let note=speaker.voiceNote{Text(note).font(.caption).foregroundStyle(Design.muted).padding(.top,6)}
-                HStack(spacing:24){
-                    Button{captions.toggle()}label:{Image(systemName:captions ? "captions.bubble.fill":"captions.bubble").frame(width:48,height:48)}.accessibilityLabel("Toggle transcript")
-                    Button{if speech.listening || speaker.speaking{pause()}else{listen()}}label:{Image(systemName:speech.listening || speaker.speaking ? "pause.fill":"mic.fill").font(.title2).frame(width:72,height:72).foregroundStyle(Design.background).background(accent,in:Circle())}.disabled(busy || speaker.preparing).accessibilityLabel(speech.listening || speaker.speaking ? "Pause":"Speak").accessibilityIdentifier("voice-listen")
-                    Button(action:read){Image(systemName:"speaker.wave.2").frame(width:48,height:48)}.disabled(busy || speaker.preparing).accessibilityLabel(reply.isEmpty ? "Try the voice":"Listen to reply").accessibilityIdentifier("voice-read-reply")
-                }.padding(.top,18).padding(.bottom,10)
-                if speech.listening{Button("Send now",action:send).disabled(speech.transcript.isEmpty).font(.subheadline).padding(.bottom,12)}
-                Text(naturalVoice ? voiceName+" · Natural voice":"Device voice").font(.caption).foregroundStyle(Design.muted).padding(.bottom,18)
-            }
-        }.background(WorkspaceTheme.base(scope).gradient).foregroundStyle(Design.ink).preferredColorScheme(.dark).onAppear{speaker.refreshOutput()}
+                HStack(spacing:28){
+                    Button{withAnimation(reducedMotion ? nil:.easeInOut(duration:0.2)){captions.toggle()}}label:{Image(systemName:captions ? "captions.bubble.fill":"captions.bubble").font(.title3).frame(width:48,height:48)}.accessibilityLabel("Toggle transcript")
+                    Button{if speech.listening || speaker.speaking || busy || speaker.preparing{pause()}else{listen()}}label:{Image(systemName:speech.listening || speaker.speaking || busy || speaker.preparing ? "pause.fill":"mic.fill").font(.title2).frame(width:64,height:64).foregroundStyle(Design.background).background(accent,in:Circle())}.accessibilityLabel(speech.listening || speaker.speaking || busy || speaker.preparing ? "Pause":"Speak").accessibilityIdentifier("voice-listen")
+                    Button(action:read){Image(systemName:"speaker.wave.2").font(.title3).frame(width:48,height:48)}.disabled(busy || speaker.preparing).accessibilityLabel(reply.isEmpty ? "Try the voice":"Listen to reply").accessibilityIdentifier("voice-read-reply")
+                }.padding(.top,12).padding(.bottom,8)
+                if speech.listening{Button("Send now",action:send).disabled(speech.transcript.isEmpty).font(.subheadline).frame(height:32)}
+                if speaker.voiceNote?.hasPrefix("Offline backup") != true{Text(voiceName+" · Natural voice").font(.caption).foregroundStyle(Design.muted).padding(.bottom,16)}
+            }.frame(maxWidth:.infinity,maxHeight:.infinity)
+        }.background(WorkspaceTheme.base(scope)).foregroundStyle(Design.ink).preferredColorScheme(.dark)
+        .animation(reducedMotion ? nil:.easeInOut(duration:0.28),value:hasResults)
+        .onAppear{naturalVoice=true;speaker.refreshOutput();if !began{began=true;listen()}}
+        .sheet(item:$proposal){NativeAssistantReview(action:$0,inCall:true)}
         .sheet(isPresented:$settings){NavigationStack{Form{
-            Section("Voice"){Picker("Voice source",selection:$naturalVoice){Text("Natural").tag(true);Text("Device · faster").tag(false)}
-                if naturalVoice{Picker("Natural voice",selection:$voiceName){Text("Aoede · Relaxed").tag("Aoede");Text("Puck · Upbeat").tag("Puck");Text("Kore · Clear").tag("Kore")}.pickerStyle(.navigationLink).accessibilityIdentifier("voice-choice")}
+            Section("Natural voice"){
+                Picker("Voice",selection:$voiceName){Text("Aoede · Relaxed").tag("Aoede");Text("Puck · Upbeat").tag("Puck");Text("Kore · Clear").tag("Kore")}.pickerStyle(.navigationLink).accessibilityIdentifier("voice-choice")
                 Button("Try the voice"){pause();read()}.accessibilityIdentifier("voice-preview")
+                Text("Natural is always preferred. If the connection can’t produce audio, the best installed offline voice keeps your conversation audible.").font(.footnote).foregroundStyle(Design.muted)
             }
             Section("Sound"){HStack{Text(speaker.output.isEmpty ? "Audio output":speaker.output);Spacer();NativeOutputPicker().frame(width:32,height:32)};NativeVolumeControls().frame(height:32);if speaker.muted{Text("Raise the volume to hear your assistant.").font(.footnote)}}
-            Section{Text("Natural speech uses your connected AI. Device speech starts without a separate voice request.").font(.footnote).foregroundStyle(Design.muted)}
         }.navigationTitle("Voice settings").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){settings=false}.accessibilityIdentifier("voice-settings-done")}}}.presentationDetents([.large]).presentationDragIndicator(.visible)}
     }
+    var activity:some View{NativeVoiceVisual(level:level,thinking:busy || speaker.preparing,color:accent,reducedMotion:reducedMotion || settings).accessibilityElement(children:.ignore).accessibilityLabel("Voice activity").accessibilityValue("Audio level "+String(Int(level*100))).accessibilityIdentifier("voice-activity")}
+
 }
 struct NativeVoiceVisual:View {
     let level:CGFloat

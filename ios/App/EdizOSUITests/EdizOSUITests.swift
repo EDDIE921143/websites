@@ -239,10 +239,10 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.navigationBars["Your guide"].waitForExistence(timeout:5))
     }
     func testSpokenTutorialCanReadMuteReplayAndAdvance(){
-        app.buttons["Settings and backup"].tap()
+        app.swipeDown();let settings=app.buttons["Settings and backup"];XCTAssertTrue(settings.waitForExistence(timeout:5));settings.tap()
         let guide=app.buttons["settings-tutorial"]
-        for _ in 0..<6{if guide.isHittable{break};app.swipeUp()}
-        guide.tap()
+        for _ in 0..<12{if guide.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(guide.waitForExistence(timeout:5));guide.tap()
         let spoken=app.switches["tutorial-spoken-guide"]
         XCTAssertTrue(spoken.waitForExistence(timeout:5));if spoken.value as? String == "0"{spoken.tap()}
         app.buttons["tutorial-start-capture"].tap()
@@ -261,10 +261,13 @@ final class EdizOSUITests:XCTestCase {
         expectation(for:audible,evaluatedWith:activity);waitForExpectations(timeout:8)
         #if !targetEnvironment(simulator)
         app.buttons["Speak"].tap()
-        XCTAssertTrue(app.buttons["Stop"].waitForExistence(timeout:8))
+        XCTAssertTrue(app.buttons["capture-voice-stop"].waitForExistence(timeout:8))
+        XCTAssertTrue(app.staticTexts["Listening to you"].waitForExistence(timeout:8))
+        snapshot("Capture voice pane with real audio and live transcript")
+        app.buttons["capture-voice-stop"].tap()
+        XCTAssertTrue(app.buttons["walkthrough-voice-toggle"].waitForExistence(timeout:5))
         XCTAssertTrue(app.buttons["walkthrough-voice-toggle"].label.contains("Read aloud"))
         XCTAssertFalse(app.buttons["walkthrough-voice-replay"].exists)
-        app.buttons["Stop"].tap()
         app.buttons["walkthrough-voice-toggle"].tap()
         XCTAssertTrue(app.buttons["walkthrough-voice-replay"].waitForExistence(timeout:5))
         #endif
@@ -407,7 +410,7 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.buttons["dictation-stop"].waitForExistence(timeout:8))
         XCTAssertTrue(app.buttons["dictation-send"].exists)
         XCTAssertFalse(app.navigationBars["Voice memo"].exists)
-        Thread.sleep(forTimeInterval:1.5);snapshot("Inline recording bar with stop and transcribe-send controls")
+        let initialBar=app.buttons["dictation-stop"].frame;Thread.sleep(forTimeInterval:1.5);XCTAssertEqual(initialBar.minY,app.buttons["dictation-stop"].frame.minY,accuracy:1);snapshot("Inline recording bar with stop and transcribe-send controls")
         app.buttons["dictation-stop"].tap()
         XCTAssertTrue(app.buttons["assistant-memo"].waitForExistence(timeout:6))
         XCTAssertTrue((input.value as? String)?.contains("Keep my draft") == true)
@@ -416,6 +419,57 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.buttons["dictation-cancel"].waitForExistence(timeout:8));app.buttons["dictation-cancel"].tap()
         XCTAssertTrue(app.buttons["assistant-memo"].waitForExistence(timeout:5))
         XCTAssertTrue((input.value as? String)?.contains("Keep my draft") == true)
+    }
+    func testCaptureVoiceHasLiveRecorderAndKeepsEditableText() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Live transcription is verified on the paired iPhone.")
+        #endif
+        app.tabBars.buttons["Capture"].tap();let input=app.descendants(matching:.any).matching(identifier:"capture-text").firstMatch;XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText("Keep this thought");app.buttons["Speak"].tap()
+        XCTAssertTrue(app.buttons["capture-voice-stop"].waitForExistence(timeout:8));XCTAssertTrue(app.staticTexts["Listening to you"].waitForExistence(timeout:8));XCTAssertTrue(app.otherElements["capture-live-transcript"].exists || app.scrollViews["capture-live-transcript"].exists)
+        snapshot("Refined voice Capture with waveform and editable live words");app.buttons["capture-voice-stop"].tap();XCTAssertTrue(input.waitForExistence(timeout:5));XCTAssertTrue((input.value as? String)?.contains("Keep this thought") == true)
+        app.buttons["capture-save"].tap();XCTAssertTrue(app.staticTexts.matching(NSPredicate(format:"label BEGINSWITH %@","Keep this thought")).firstMatch.waitForExistence(timeout:5))
+    }
+    func testSavedChatsReopenAndPersistWithoutMerging(){
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
+        ask("Find my saved music plans")
+        app.buttons["workspace-chats"].tap()
+        let rows=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","chat-thread-"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout:5));let original=rows.firstMatch.identifier
+        app.buttons["chat-new"].tap()
+        XCTAssertTrue(app.buttons["assistant-memo"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Find my saved music plans"].exists)
+        ask("Help with tomorrow’s homework")
+        app.buttons["workspace-chats"].tap();XCTAssertEqual(rows.count,2);snapshot("Separate saved conversations for one workspace")
+        app.buttons[original].tap();XCTAssertTrue(app.staticTexts["Find my saved music plans"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Help with tomorrow’s homework"].exists)
+        app.terminate();app.launchArguments=["-ui-testing"];app.launch()
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
+        XCTAssertTrue(app.staticTexts["Find my saved music plans"].waitForExistence(timeout:5));app.buttons["workspace-chats"].tap();XCTAssertEqual(rows.count,2)
+    }
+    func testDeletingOpenChatKeepsNewMessagesSaved(){
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap();ask("Our old rehearsal discussion")
+        app.buttons["workspace-chats"].tap()
+        let rows=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","chat-thread-"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout:5));rows.firstMatch.swipeLeft();app.buttons["Delete"].firstMatch.tap()
+        let confirmation=app.alerts["Delete this conversation?"];XCTAssertTrue(confirmation.waitForExistence(timeout:5));confirmation.buttons["Delete chat"].tap()
+        XCTAssertTrue(app.buttons["assistant-memo"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Our old rehearsal discussion"].exists)
+        ask("Our fresh rehearsal discussion")
+        app.terminate();app.launchArguments=["-ui-testing"];app.launch();app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
+        XCTAssertTrue(app.staticTexts["Our fresh rehearsal discussion"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Our old rehearsal discussion"].exists)
+        app.buttons["workspace-chats"].tap();XCTAssertEqual(rows.count,1)
+    }
+    func testSavedChatsAppearInSearch(){
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-band"].tap();ask("Our acoustic bridge needs a slower run-through")
+        app.tabBars.buttons["Search"].tap();let field=app.textFields["search-query"];XCTAssertTrue(field.waitForExistence(timeout:5));field.tap();field.typeText("acoustic bridge\n")
+        let chat=app.staticTexts["New conversation"];XCTAssertTrue(chat.waitForExistence(timeout:5));chat.tap()
+        XCTAssertTrue(app.staticTexts["Our acoustic bridge needs a slower run-through"].waitForExistence(timeout:5))
+        snapshot("Search returns and reopens a remembered conversation")
+    }
+    func testCallShowsDesignedResultsAndEnds(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-call-results"];app.launch()
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-band"].tap();app.buttons["assistant-voice"].tap()
+        XCTAssertTrue(app.staticTexts["CLEARANCE 19 Bot"].waitForExistence(timeout:5))
+        XCTAssertTrue(app.staticTexts["Friday practice ideas"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Everlong"].exists);XCTAssertTrue(app.buttons["voice-listen"].exists)
+        snapshot("Structured song suggestions inside the voice conversation")
+        app.buttons["voice-done"].tap();XCTAssertTrue(app.staticTexts["call-ended"].waitForExistence(timeout:5));XCTAssertTrue(app.buttons["assistant-voice"].exists)
     }
     func testImmersiveVoiceSettings(){
         app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-ejj"].tap()
@@ -457,7 +511,8 @@ final class EdizOSUITests:XCTestCase {
         app.terminate();app.launchArguments.append("-test-voice-fallback");app.launch()
         app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
         app.buttons["assistant-voice"].tap();app.buttons["voice-read-reply"].tap()
-        XCTAssertTrue(app.staticTexts["Device voice · keeping the conversation going"].waitForExistence(timeout:10))
+        let backupVoice=app.staticTexts.matching(NSPredicate(format:"label BEGINSWITH %@","Offline backup · ")).firstMatch
+        XCTAssertTrue(backupVoice.waitForExistence(timeout:10))
         let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
         expectation(for:audible,evaluatedWith:app.otherElements["voice-activity"]);waitForExpectations(timeout:8)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format:"label CONTAINS[c] %@","unavailable")).firstMatch.exists)
@@ -468,13 +523,17 @@ final class EdizOSUITests:XCTestCase {
         snapshot("Refined iOS home with contour background")
         app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
         app.buttons["assistant-attach"].tap();app.buttons["Choose a file"].tap()
-        let dismissPicker=app.descendants(matching:.any).matching(NSPredicate(format:"label IN %@",["Cancel","Close"])).firstMatch;XCTAssertTrue(dismissPicker.waitForExistence(timeout:10));dismissPicker.tap()
-        app.buttons["assistant-attach"].tap();app.buttons["Photo or video"].tap()
+        let dismissPicker=app.buttons.matching(NSPredicate(format:"label IN %@",["Cancel","Close","Done"])).firstMatch;XCTAssertTrue(dismissPicker.waitForExistence(timeout:10));dismissPicker.tap()
+        XCTAssertTrue(app.buttons["assistant-attach"].waitForExistence(timeout:5));app.buttons["assistant-attach"].tap();XCTAssertTrue(app.buttons["Photo or video"].waitForExistence(timeout:5));app.buttons["Photo or video"].tap()
         XCTAssertTrue(dismissPicker.waitForExistence(timeout:10));dismissPicker.tap()
         let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
         input.tap();input.typeText("Hello");app.buttons["Send question"].tap()
         app.buttons["assistant-voice"].tap()
+        #if targetEnvironment(simulator)
         XCTAssertTrue(app.staticTexts["Ready when you are"].waitForExistence(timeout:5))
+        #else
+        XCTAssertTrue(app.staticTexts["Listening to you"].waitForExistence(timeout:8))
+        #endif
         snapshot("Voice conversation with explicit microphone control")
         app.buttons["voice-read-reply"].tap()
         XCTAssertTrue(app.staticTexts["Your assistant is speaking"].waitForExistence(timeout:5))
