@@ -2,6 +2,9 @@ import UIKit
 
 @main final class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing"){application.isIdleTimerDisabled=true}
+        #endif
         let appearance=UINavigationBarAppearance()
         appearance.configureWithDefaultBackground()
         appearance.shadowColor = .clear

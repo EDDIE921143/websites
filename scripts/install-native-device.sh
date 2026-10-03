@@ -11,7 +11,25 @@ EDIZ_DEVICE_BUILD="${TMPDIR:-/tmp}/ediz-device-build"
 EDIZ_DEVICE_LIST="$(mktemp)"
 trap 'rm -f "$EDIZ_DEVICE_LIST"' EXIT
 if [[ -z "${EDIZ_TEAM_ID:-}" ]]; then
-  EDIZ_TEAM_ID="$(security find-identity -v -p codesigning | python3 -c 'import re,sys; teams=sorted(set(re.findall(r"Apple Development:.*?\(([A-Z0-9]{10})\)",sys.stdin.read()))); print(teams[0] if len(teams)==1 else "")')"
+  # The suffix in an identity's display name identifies the certificate, not
+  # the development team. The actual team is its subject Organizational Unit.
+  EDIZ_TEAM_ID="$(python3 - <<'PY'
+import re, subprocess
+identities = subprocess.check_output(['security', 'find-identity', '-v', '-p', 'codesigning'], text=True)
+teams = set()
+for name in re.findall(r'"(Apple Development:[^"]+)"', identities):
+    certificate = subprocess.run(['security', 'find-certificate', '-c', name, '-p'], capture_output=True)
+    if certificate.returncode:
+        continue
+    subject = subprocess.run(['openssl', 'x509', '-noout', '-subject', '-nameopt', 'sep_multiline'], input=certificate.stdout, capture_output=True)
+    if subject.returncode:
+        continue
+    team = re.search(r'^\s*OU\s*=\s*([A-Z0-9]{10})\s*$', subject.stdout.decode(), re.M)
+    if team:
+        teams.add(team.group(1))
+print(next(iter(teams)) if len(teams) == 1 else '')
+PY
+)"
 fi
 if [[ -z "$EDIZ_TEAM_ID" ]]; then
   echo 'Authorize the owner Apple ID in Xcode first. An existing development identity is needed; no password is stored by this script.' >&2

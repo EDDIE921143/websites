@@ -7,16 +7,19 @@ struct NativeSpace:View {
     @State private var kind=""
     @State private var filter="all"
     @State private var rehearsal=false
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     var space:SpaceDefinition{Catalog.space(route.id)}
     var creationNoun:String {kind == "thread" ? "plot thread":kind == "assignment" ? "homework":kind == "note" && route.id == "moshia" ? "research":kind}
-    var records:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind && (filter == "all" || $0.status == filter)}.sorted{kind == "chapter" ? ($0.created == $1.created ? $0.id<$1.id:$0.created<$1.created):$0.updated>$1.updated}}
+    var orderedRecords:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind}.sorted{kind == "chapter" ? chapterBefore($0,$1):$0.updated>$1.updated}}
+    var records:[EdizCore.Record]{orderedRecords.filter{filter == "all" || $0.status == filter}}
     var songs:[EdizCore.Record]{store.records.filter{$0.space == "band" && $0.kind == "song" && $0.status != "archived"}.sorted{$0.created<$1.created}}
     var body:some View {
+        ScrollViewReader { proxy in
         List {
-            Section {
-                Picker("Area",selection:$kind){ForEach(space.modules){Text($0.label).tag($0.kind)}}
-                if kind == "lead"{Picker("Pipeline",selection:$filter){Text("All leads").tag("all");ForEach(Catalog.states(kind:"lead",space:"ejj"),id:\.self){Text($0).tag($0)}}}
-                if route.id == "moshia"{Picker("Story state",selection:$filter){Text("All states").tag("all");ForEach(Catalog.states(kind:kind,space:"moshia"),id:\.self){Text($0).tag($0)}}}
+            Section { workspaceHeader.listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden) }
+
+            if route.id == "moshia" {
+                Section {NavigationLink{NativeStoryDesk()}label:{HStack(spacing:14){Image(systemName:"book.pages.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("moshia"));VStack(alignment:.leading,spacing:5){Text("Continuity desk").font(.headline);Text("Chapters, open threads and established canon").font(.subheadline).foregroundStyle(Design.muted)}}.padding(.vertical,8)}.accessibilityIdentifier("story-desk-open")}
             }
             if kind == "lead" {
                 Section("Pipeline"){
@@ -24,25 +27,86 @@ struct NativeSpace:View {
                     HStack{metric("Leads",leads.filter{$0.status != "Client" && $0.status != "Lost"}.count);Spacer();metric("Interested",leads.filter{$0.status == "Interested"}.count);Spacer();metric("Clients",leads.filter{$0.status == "Client"}.count)}
                 }
             }
-            if route.id == "band" && kind == "song"{Section{Button("Rehearsal mode"){rehearsal=true};if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
+            if route.id == "band" && kind == "song"{Section("Rehearsal desk"){HStack{metric("Setlist",songs.count);Spacer();metric("Ready",songs.filter{$0.status == "Ready"}.count);Spacer();metric("Learning",songs.filter{$0.status == "Learning"}.count)};Button{rehearsal=true}label:{Label("Rehearsal mode",systemImage:"play.circle.fill").font(.headline).frame(minHeight:44)};if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
             if route.id == "school" && kind == "grade"{NativeGradeProjection()}
             if route.id == "school" && ["assignment","exam"].contains(kind){NativeWorkload()}
+            if kind == "chapter" && !records.isEmpty {
+                ForEach(records) { record in
+                    Section(chapterLabel(record)) {
+                        NavigationLink(value: record) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(record.title).font(Design.font(21)).foregroundStyle(Design.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if !record.body.isEmpty {
+                                    Text(record.body).font(Design.font(15, weight: "Regular"))
+                                        .foregroundStyle(Design.muted).lineLimit(2)
+                                }
+                                let details = [record.data["POV"], record.data["purpose"], record.data["location"], record.data["wordCount"].map { "\($0) words" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                                if !details.isEmpty { Text(details).font(.subheadline).foregroundStyle(Design.muted) }
+                                Text(record.status).font(.caption.weight(.medium))
+                                    .foregroundStyle(WorkspaceTheme.accent(space.id))
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Design.raised, in: Capsule())
+                            }.padding(.vertical, store.preferences.density == "compact" ? 8 : 14)
+                        }.accessibilityIdentifier("chapter-card-" + record.id)
+                            .listRowBackground(Design.surface).listRowSeparator(.hidden).id(record.id)
+                    }
+                }
+            } else {
             Section(space.modules.first{$0.kind == kind}?.label ?? "Records") {
                 if records.isEmpty{QuietEmpty(title:"Ready for your \(kind == "assignment" ? "homework":kind == "lead" ? "leads":kind == "chapter" ? "chapters":"work").",message:"Add your own material or bring in an existing file.");Button("Add \(creationNoun)"){store.capture(space:route.id,kind:kind)}}
                 ForEach(records){record in
                     VStack(alignment:.leading,spacing:10){if record.kind == "chapter"{Text("Chapter \((records.firstIndex(where:{$0.id == record.id}) ?? 0)+1)").font(Design.font(13)).foregroundStyle(Design.muted)};RecordRow(record:record)
-                        if route.id == "moshia"{Text(record.status).font(.caption.weight(.medium)).foregroundStyle(Design.color(space.color))}
+                        if route.id == "moshia"{Text(record.status).font(.caption.weight(.medium)).foregroundStyle(WorkspaceTheme.accent(space.id))}
                         if record.kind == "song"{Text([record.data["artist"],record.data["BPM"].map{"\($0) BPM"},record.data["tuning"],record.status].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}
                         if record.kind == "chapter"{Text([record.data["POV"],record.data["wordCount"].map{"\($0) words"},record.data["location"]].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}
-                    }.listRowSeparator(.hidden).swipeActions(edge:.trailing,allowsFullSwipe:true){if record.actionable{Button{store.complete(record)}label:{Label("Done",systemImage:"checkmark")}.tint(.green)}}
+                    }.id(record.id).listRowSeparator(.hidden).swipeActions(edge:.trailing,allowsFullSwipe:true){if record.actionable{Button{store.complete(record)}label:{Label("Done",systemImage:"checkmark")}.tint(.green)}}
                 }
             }
+            }
             if route.id == "moshia" && kind == "event"{NativeTimeline()}
-        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Design.background).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
-            .toolbar{ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add")}}
-            .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind}}
+        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).modifier(WorkspaceEntrance()).modifier(BrandedRefresh()).background(AppBackdrop(scope:route.id)).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
+            .toolbar{ToolbarItem(placement:.topBarTrailing){NavigationLink{NativeChatHistory(scope:route.id)}label:{Image(systemName:"bubble.left.and.bubble.right")}.accessibilityLabel("Chats").accessibilityIdentifier("space-chats")};ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add").walkthroughTarget("add-chapter",session:store.walkthrough)}}
+            .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind};if route.id == "moshia" && kind == "chapter"{store.walkthrough?.event("chapters-open")}}
             .onChange(of:kind){_,_ in filter="all"}
             .fullScreenCover(isPresented:$rehearsal){NativeRehearsal(songs:songs)}
+            .safeAreaInset(edge:.top){moduleControls.padding(.horizontal,20).padding(.vertical,8).background(WorkspaceTheme.base(route.id))}
+            .onChange(of:store.lastCreatedRecordID){_,id in
+                guard let id,records.contains(where:{$0.id == id}) else{return}
+                DispatchQueue.main.asyncAfter(deadline:.now()+0.2){withAnimation(reducedMotion ? nil:.easeOut(duration:0.25)){proxy.scrollTo(id,anchor:.center)}}
+            }
+        }
+    }
+    var moduleControls:some View {
+                HStack(spacing:12){
+                    Picker("Area",selection:$kind){ForEach(space.modules){Text($0.label).tag($0.kind)}}.labelsHidden().pickerStyle(.menu).font(.headline).tint(WorkspaceTheme.accent(route.id)).accessibilityIdentifier("module-picker")
+                    Spacer(minLength:0)
+                    if kind == "lead"{Picker("Pipeline",selection:$filter){Text("All leads").tag("all");ForEach(Catalog.states(kind:"lead",space:"ejj"),id:\.self){Text($0).tag($0)}}.labelsHidden().pickerStyle(.menu).font(.caption)}
+                    if route.id == "moshia"{Picker("Story state",selection:$filter){Text("All states").tag("all");ForEach(Catalog.states(kind:kind,space:"moshia"),id:\.self){Text($0).tag($0)}}.labelsHidden().pickerStyle(.menu).font(.caption)}
+                }.frame(minHeight:48).padding(.horizontal,16).background(Design.surface,in:Capsule())
+
+    }
+    var workspaceHeader:some View {
+        let count=store.records.filter{$0.space == route.id && $0.status != "archived"}.count
+        return VStack(alignment:.leading,spacing:16){
+            HStack{Text("YOUR WORKSPACE").font(.caption2.weight(.semibold)).tracking(1.4);Spacer();SpaceMark(space:space).scaleEffect(1.2)}.foregroundStyle(WorkspaceTheme.accent(route.id))
+            Text(workspaceHeading).font(.system(.title,design:route.id == "moshia" ? .serif:.rounded).weight(.semibold)).fixedSize(horizontal:false,vertical:true)
+            Text(space.summary).font(.subheadline).foregroundStyle(Design.muted)
+            HStack(spacing:8){Circle().fill(WorkspaceTheme.accent(route.id)).frame(width:6,height:6);Text("\(count) saved items · \(space.modules.count) areas").font(.caption).foregroundStyle(Design.muted)}
+        }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background{WorkspacePanel(scope:route.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(route.id).opacity(0.22),lineWidth:1)}.accessibilityElement(children:.contain).accessibilityIdentifier("workspace-header-"+route.id)
+    }
+    var workspaceHeading:String {
+        switch route.id{case "moshia":return "Your story, taking shape.";case "band":return "Make room for the music.";case "ejj":return "Keep good work moving.";case "school":return "One step ahead.";default:return "A little room for you."}
+    }
+    func chapterBefore(_ a:EdizCore.Record,_ b:EdizCore.Record)->Bool {
+        let first=WorkspaceContext.chapterNumber(a),second=WorkspaceContext.chapterNumber(b)
+        if first != second {return (first ?? Int.max)<(second ?? Int.max)}
+        return a.created == b.created ? a.id<b.id:a.created<b.created
+    }
+    func chapterLabel(_ record:EdizCore.Record)->String {
+        if let number=WorkspaceContext.chapterNumber(record){return number == 0 ? "Prologue":"Chapter \(number)"}
+        let offset=orderedRecords.contains{WorkspaceContext.chapterNumber($0) == 0} ? 0:1
+        return "Chapter \((orderedRecords.firstIndex(where:{$0.id == record.id}) ?? 0)+offset)"
     }
     func metric(_ title:String,_ count:Int)->some View{VStack(alignment:.leading,spacing:5){Text(count,format:.number).font(.title2.weight(.medium));Text(title).font(.caption).foregroundStyle(Design.muted)}}
 }
@@ -59,6 +123,28 @@ struct NativeWorkload:View {
         }
     }
 }
+struct NativeStoryDesk:View {
+    @EnvironmentObject var store:NativeStore
+    var material:[EdizCore.Record]{store.records.filter{$0.space == "moshia" && $0.status != "REJECTED"}}
+    var chapters:[EdizCore.Record]{material.filter{$0.kind == "chapter"}.sorted{a,b in let first=WorkspaceContext.chapterNumber(a) ?? Int.max,second=WorkspaceContext.chapterNumber(b) ?? Int.max;return first == second ? a.created<b.created:first<second}}
+    var threads:[EdizCore.Record]{material.filter{$0.kind == "thread"}.sorted{$0.updated>$1.updated}}
+    var canon:[EdizCore.Record]{material.filter{$0.status == "CANON"}.sorted{$0.title.localizedStandardCompare($1.title) == .orderedAscending}}
+    var latest:EdizCore.Record?{chapters.max{$0.updated<$1.updated}}
+    var body:some View {
+        List {
+            Section {VStack(alignment:.leading,spacing:12){Text("A clear view of your story.").font(.title2.weight(.medium));Text("Work from your saved material. Possibilities stay separate from established canon.").font(.subheadline).foregroundStyle(Design.muted);HStack{deskCount("Chapters",chapters.count);Spacer();deskCount("Threads",threads.count);Spacer();deskCount("Canon",canon.count)}}.padding(.vertical,12)}
+            if let latest{Section("Continue writing"){NavigationLink{NativeEditor(record:latest)}label:{VStack(alignment:.leading,spacing:8){Text(latest.title).font(.headline);if !latest.body.isEmpty{Text(latest.body).font(.subheadline).foregroundStyle(Design.muted).lineLimit(3)};Text(latest.status).font(.caption).foregroundStyle(WorkspaceTheme.accent("moshia"))}}.accessibilityIdentifier("story-desk-continue")}}
+            Section("Open plot threads"){if threads.isEmpty{Text("Keep a question or unresolved thread in Plot threads.").foregroundStyle(Design.muted)};ForEach(threads){record in NavigationLink{NativeEditor(record:record)}label:{VStack(alignment:.leading,spacing:6){Text(record.title);Text(record.status).font(.caption).foregroundStyle(Design.muted)}}}}
+            Section("Canon ledger"){if canon.isEmpty{Text("Your confirmed story facts will appear here. Mark material CANON after reviewing it.").foregroundStyle(Design.muted)};ForEach(canon){record in NavigationLink{NativeEditor(record:record)}label:{VStack(alignment:.leading,spacing:5){Text(record.title);Text(record.kind.capitalized).font(.caption).foregroundStyle(Design.muted)}}}}
+            Section("Chapter outline"){if chapters.isEmpty{Text("Add a chapter to begin your outline.").foregroundStyle(Design.muted)};ForEach(chapters){record in NavigationLink{NativeEditor(record:record)}label:{HStack(alignment:.top,spacing:14){Text(WorkspaceContext.chapterNumber(record).map{String($0)} ?? "—").font(.title3.monospacedDigit()).foregroundStyle(WorkspaceTheme.accent("moshia")).frame(width:28);VStack(alignment:.leading,spacing:6){Text(record.title);Text([record.data["POV"],record.data["purpose"]].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.caption).foregroundStyle(Design.muted)}}}}}
+            Section {NavigationLink("Browse characters"){NativeSpace(route:SpaceRoute(id:"moshia",kind:"character"))};NavigationLink("Browse locations"){NativeSpace(route:SpaceRoute(id:"moshia",kind:"location"))};NavigationLink("Story chronology"){NativeSpace(route:SpaceRoute(id:"moshia",kind:"event"))}}
+        }.scrollContentBackground(.hidden).background(AppBackdrop(scope:"moshia")).navigationTitle("Continuity desk").navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for:EdizCore.Record.self){NativeEditor(record:$0)}
+        .navigationDestination(for:SpaceRoute.self){NativeSpace(route:$0)}
+    }
+    func deskCount(_ title:String,_ count:Int)->some View{VStack(alignment:.leading,spacing:5){Text(String(count)).font(.title2.monospacedDigit());Text(title).font(.caption).foregroundStyle(Design.muted)}}
+}
+
 struct NativeGradeProjection:View {
     @EnvironmentObject var store:NativeStore
     @State private var subject=""
@@ -74,7 +160,7 @@ struct NativeGradeProjection:View {
                 if let value=Grades.project(store.records,subject:subject,next:next,weight:weight){Text(value,format:.number.precision(.fractionLength(2))).font(.title2.weight(.medium))}
                 Text("A weighted estimate from your records, not an official grade.").font(.footnote).foregroundStyle(Design.muted)
             }
-        }.onAppear{if subject.isEmpty{subject=subjects.first ?? ""}}
+        }.onAppear{if !subjects.contains(subject){subject=subjects.first ?? ""}}.onChange(of:subjects){_,values in if !values.contains(subject){subject=values.first ?? ""}}
     }
 }
 struct NativeTimeline:View {
@@ -111,7 +197,7 @@ struct NativeFocus:View {
                     }.padding(.top,4)
                 }
                 }.frame(maxWidth:.infinity).padding(24)
-            }.background(Design.background).navigationTitle("Focus").navigationBarTitleDisplayMode(.inline)
+            }.background(AppBackdrop()).navigationTitle("Focus").navigationBarTitleDisplayMode(.inline)
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}
         }.preferredColorScheme(.dark).tint(Design.accent)
     }
@@ -126,6 +212,6 @@ struct NativeReview:View {
         NavigationStack{List{Section("Progress"){Text("\(events.filter{$0.action == "Completed"}.count) completed \(weekly ? "this week":"today")").font(.body.weight(.medium))}
             Section("Next steps"){ForEach(Array(store.priorities.prefix(5))){p in VStack(alignment:.leading,spacing:8){Text(p.record.title);Text(p.reasons.first ?? "").font(.subheadline).foregroundStyle(Design.muted);if let due=Time.date(p.record.due),due<Date(){Button("Move to tomorrow"){var record=p.record;record.due=Time.string(Calendar.current.date(byAdding:.day,value:1,to:Date()) ?? Date());_ = store.save(record,action:"Rescheduled")}}}}}
             Section("What changed"){if events.isEmpty{Text("Your history starts with your first saved item.").foregroundStyle(Design.muted)};ForEach(events){event in VStack(alignment:.leading,spacing:5){Text(event.title);Text(event.action).font(.caption).foregroundStyle(Design.muted)}}}
-        }.scrollContentBackground(.hidden).background(Design.background).navigationTitle(weekly ? "This week":"Today’s review").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}}}}
+        }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle(weekly ? "This week":"Today’s review").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}}}}
     }
 }

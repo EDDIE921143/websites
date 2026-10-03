@@ -1,6 +1,6 @@
 import {statuses,spaces,moduleKinds,type Entity} from './core';
 export interface AssistantAction {type:'create'|'update'|'delete';title:string;entityId?:string;fields?:Partial<Entity>}
-export interface CloudAnswer {text:string;recordIds:string[];actions:AssistantAction[]}
+export interface CloudAnswer {text:string;recordIds:string[];actions:AssistantAction[];sources?:{url:string;title:string}[];searchSuggestions?:string|null}
 export async function askGemini(question:string,items:Entity[],conversation:{role:string;text:string}[],token:string,scope='all'):Promise<CloudAnswer>{
  const response=await fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},signal:AbortSignal.timeout(55000),body:JSON.stringify({question,scope,records:items.slice(0,500),conversation:conversation.slice(-8),localDate:new Date().toLocaleString('sv-SE'),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
  const result=await response.json();if(!response.ok)throw new Error(result.error||'Gemini is unavailable.');return result;
