@@ -15,9 +15,12 @@ struct NativeSpace:View {
     var body:some View {
         List {
             Section {
-                Picker("Area",selection:$kind){ForEach(space.modules){Text($0.label).tag($0.kind)}}
+                Picker("Area",selection:$kind){ForEach(space.modules){Text($0.label).tag($0.kind)}}.accessibilityIdentifier("module-picker")
                 if kind == "lead"{Picker("Pipeline",selection:$filter){Text("All leads").tag("all");ForEach(Catalog.states(kind:"lead",space:"ejj"),id:\.self){Text($0).tag($0)}}}
                 if route.id == "moshia"{Picker("Story state",selection:$filter){Text("All states").tag("all");ForEach(Catalog.states(kind:kind,space:"moshia"),id:\.self){Text($0).tag($0)}}}
+            }
+            if route.id == "moshia" {
+                Section {NavigationLink{NativeStoryDesk()}label:{HStack(spacing:14){Image(systemName:"book.pages.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("moshia"));VStack(alignment:.leading,spacing:5){Text("Continuity desk").font(.headline);Text("Chapters, open threads and established canon").font(.subheadline).foregroundStyle(Design.muted)}}.padding(.vertical,8)}.accessibilityIdentifier("story-desk-open")}
             }
             if kind == "lead" {
                 Section("Pipeline"){
@@ -25,7 +28,7 @@ struct NativeSpace:View {
                     HStack{metric("Leads",leads.filter{$0.status != "Client" && $0.status != "Lost"}.count);Spacer();metric("Interested",leads.filter{$0.status == "Interested"}.count);Spacer();metric("Clients",leads.filter{$0.status == "Client"}.count)}
                 }
             }
-            if route.id == "band" && kind == "song"{Section{Button("Rehearsal mode"){rehearsal=true};if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
+            if route.id == "band" && kind == "song"{Section("Rehearsal desk"){HStack{metric("Setlist",songs.count);Spacer();metric("Ready",songs.filter{$0.status == "Ready"}.count);Spacer();metric("Learning",songs.filter{$0.status == "Learning"}.count)};Button{rehearsal=true}label:{Label("Rehearsal mode",systemImage:"play.circle.fill").font(.headline).frame(minHeight:44)};if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
             if route.id == "school" && kind == "grade"{NativeGradeProjection()}
             if route.id == "school" && ["assignment","exam"].contains(kind){NativeWorkload()}
             if kind == "chapter" && !records.isEmpty {
@@ -94,6 +97,28 @@ struct NativeWorkload:View {
         }
     }
 }
+struct NativeStoryDesk:View {
+    @EnvironmentObject var store:NativeStore
+    var material:[EdizCore.Record]{store.records.filter{$0.space == "moshia" && $0.status != "REJECTED"}}
+    var chapters:[EdizCore.Record]{material.filter{$0.kind == "chapter"}.sorted{a,b in let first=WorkspaceContext.chapterNumber(a) ?? Int.max,second=WorkspaceContext.chapterNumber(b) ?? Int.max;return first == second ? a.created<b.created:first<second}}
+    var threads:[EdizCore.Record]{material.filter{$0.kind == "thread"}.sorted{$0.updated>$1.updated}}
+    var canon:[EdizCore.Record]{material.filter{$0.status == "CANON"}.sorted{$0.title.localizedStandardCompare($1.title) == .orderedAscending}}
+    var latest:EdizCore.Record?{chapters.max{$0.updated<$1.updated}}
+    var body:some View {
+        List {
+            Section {VStack(alignment:.leading,spacing:12){Text("A clear view of your story.").font(.title2.weight(.medium));Text("Work from your saved material. Possibilities stay separate from established canon.").font(.subheadline).foregroundStyle(Design.muted);HStack{deskCount("Chapters",chapters.count);Spacer();deskCount("Threads",threads.count);Spacer();deskCount("Canon",canon.count)}}.padding(.vertical,12)}
+            if let latest{Section("Continue writing"){NavigationLink{NativeEditor(record:latest)}label:{VStack(alignment:.leading,spacing:8){Text(latest.title).font(.headline);if !latest.body.isEmpty{Text(latest.body).font(.subheadline).foregroundStyle(Design.muted).lineLimit(3)};Text(latest.status).font(.caption).foregroundStyle(WorkspaceTheme.accent("moshia"))}}.accessibilityIdentifier("story-desk-continue")}}
+            Section("Open plot threads"){if threads.isEmpty{Text("Keep a question or unresolved thread in Plot threads.").foregroundStyle(Design.muted)};ForEach(threads){record in NavigationLink{NativeEditor(record:record)}label:{VStack(alignment:.leading,spacing:6){Text(record.title);Text(record.status).font(.caption).foregroundStyle(Design.muted)}}}}
+            Section("Canon ledger"){if canon.isEmpty{Text("Your confirmed story facts will appear here. Mark material CANON after reviewing it.").foregroundStyle(Design.muted)};ForEach(canon){record in NavigationLink{NativeEditor(record:record)}label:{VStack(alignment:.leading,spacing:5){Text(record.title);Text(record.kind.capitalized).font(.caption).foregroundStyle(Design.muted)}}}}
+            Section("Chapter outline"){if chapters.isEmpty{Text("Add a chapter to begin your outline.").foregroundStyle(Design.muted)};ForEach(chapters){record in NavigationLink{NativeEditor(record:record)}label:{HStack(alignment:.top,spacing:14){Text(WorkspaceContext.chapterNumber(record).map{String($0)} ?? "—").font(.title3.monospacedDigit()).foregroundStyle(WorkspaceTheme.accent("moshia")).frame(width:28);VStack(alignment:.leading,spacing:6){Text(record.title);Text([record.data["POV"],record.data["purpose"]].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.caption).foregroundStyle(Design.muted)}}}}}
+            Section {NavigationLink("Browse characters"){NativeSpace(route:SpaceRoute(id:"moshia",kind:"character"))};NavigationLink("Browse locations"){NativeSpace(route:SpaceRoute(id:"moshia",kind:"location"))};NavigationLink("Story chronology"){NativeSpace(route:SpaceRoute(id:"moshia",kind:"event"))}}
+        }.scrollContentBackground(.hidden).background(AppBackdrop(scope:"moshia")).navigationTitle("Continuity desk").navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for:EdizCore.Record.self){NativeEditor(record:$0)}
+        .navigationDestination(for:SpaceRoute.self){NativeSpace(route:$0)}
+    }
+    func deskCount(_ title:String,_ count:Int)->some View{VStack(alignment:.leading,spacing:5){Text(String(count)).font(.title2.monospacedDigit());Text(title).font(.caption).foregroundStyle(Design.muted)}}
+}
+
 struct NativeGradeProjection:View {
     @EnvironmentObject var store:NativeStore
     @State private var subject=""
@@ -109,7 +134,7 @@ struct NativeGradeProjection:View {
                 if let value=Grades.project(store.records,subject:subject,next:next,weight:weight){Text(value,format:.number.precision(.fractionLength(2))).font(.title2.weight(.medium))}
                 Text("A weighted estimate from your records, not an official grade.").font(.footnote).foregroundStyle(Design.muted)
             }
-        }.onAppear{if subject.isEmpty{subject=subjects.first ?? ""}}
+        }.onAppear{if !subjects.contains(subject){subject=subjects.first ?? ""}}.onChange(of:subjects){_,values in if !values.contains(subject){subject=values.first ?? ""}}
     }
 }
 struct NativeTimeline:View {

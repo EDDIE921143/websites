@@ -33,7 +33,7 @@ struct NativeCapture:View {
                             TextField("What’s on your mind?",text:$draft.title,axis:.vertical).lineLimit(4...8).font(.title3).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
                             Divider().overlay(Design.muted.opacity(0.15))
                             HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{if !speech.listening{voicePrefix=draft.title};speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
-                            if speech.listening{AudioWaveform(levels:(0..<48).map{max(0.03,speech.level*(0.4+0.6*abs(sin(CGFloat($0)*0.42))))},color:Design.accent)}
+                            if speech.listening{AudioWaveform(levels:speech.levels,color:Design.accent)}
                             if let error=speech.message{Text(error).font(.footnote).foregroundStyle(Design.muted)}
                         }
                     }
@@ -69,6 +69,7 @@ struct NativeEditor:View {
     @Environment(\.dismiss) private var dismiss
     @State var record:EdizCore.Record
     @State private var deletion=false
+    @State private var confirmCanon=false
     @State private var addingFile=false
     @State private var files:[Attachment]=[]
     @State private var preview:FilePreview?
@@ -81,7 +82,7 @@ struct NativeEditor:View {
                 TextField("Title",text:$record.title,axis:.vertical).font(.body.weight(.medium)).accessibilityIdentifier("record-title")
             }
             Section("State & schedule") {
-                Picker("State",selection:$record.status){ForEach(Array(Set([record.status]+Catalog.states(kind:record.kind,space:record.space))).sorted(),id:\.self){Text($0).tag($0)}}
+                Picker("State",selection:$record.status){ForEach(Array(Set([record.status]+Catalog.states(kind:record.kind,space:record.space))).sorted(),id:\.self){Text($0).tag($0)}}.accessibilityIdentifier("record-state")
                 Toggle("Scheduled",isOn:$hasDate)
                 if hasDate{DatePicker("Date",selection:$date)}
             }
@@ -90,7 +91,7 @@ struct NativeEditor:View {
                     Picker("Importance",selection:Binding(get:{record.importance ?? 2},set:{record.importance=$0})){Text("Low").tag(1);Text("Normal").tag(2);Text("Important").tag(4);Text("Essential").tag(5)}
                     TextField("Minutes needed",value:$record.duration,format:.number).keyboardType(.numberPad)
                     Toggle("Blocked",isOn:Binding(get:{record.blocked ?? false},set:{record.blocked=$0}))
-                    Button("Start focus"){store.focusRequest=record}
+                    Button("Start focus"){store.focusRequest=record}.disabled(record != store.records.first(where:{$0.id == record.id}))
                 }
             }
             Section(record.kind == "chapter" ? "Context worth keeping":"Notes"){TextField("Add context or notes",text:$record.body,axis:.vertical).lineLimit(4...15).accessibilityIdentifier("record-context")}
@@ -102,7 +103,7 @@ struct NativeEditor:View {
             }
             Section { Button("Delete item",role:.destructive){deletion=true} }
         }.scrollContentBackground(.hidden).background(AppBackdrop()).onAppear{store.walkthrough?.event("result-open")}.navigationTitle(Catalog.space(record.space).name).navigationBarTitleDisplayMode(.inline)
-            .toolbar{ToolbarItem(placement:.confirmationAction){Button("Save"){record.due=hasDate ? Time.string(date):nil;if store.save(record){dismiss()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-save")}}
+            .toolbar{ToolbarItem(placement:.confirmationAction){Button("Save"){if record.space == "moshia" && record.status == "CANON" && store.records.first(where:{$0.id == record.id})?.status != "CANON"{confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-save")}}
             .task{store.remember(record);do{if let draft=try store.database?.editDraft(recordID:record.id){record=draft};files=try store.database?.attachments(recordID:record.id) ?? []}catch{store.error=error.localizedDescription};hasDate=record.due != nil;date=Time.date(record.due) ?? Date()}
             .onChange(of:record){_,value in store.editDraft(value)}
             .onChange(of:date){_,value in record.due=hasDate ? Time.string(value):nil}
@@ -110,11 +111,13 @@ struct NativeEditor:View {
             .onChange(of:store.focusRequest){previous,current in
                 if previous?.id == record.id,current == nil,let saved=store.records.first(where:{$0.id == record.id}){record.status=saved.status}
             }
-            .confirmationDialog("Delete “\(record.title)”?",isPresented:$deletion,titleVisibility:.visible){Button("Delete item",role:.destructive){if store.remove(record){dismiss()}};Button("Keep it",role:.cancel){}}
+            .alert("Make this established canon?",isPresented:$confirmCanon){Button("Confirm canon"){save()};Button("Keep editing",role:.cancel){}}
+            .alert("Delete “\(record.title)”?",isPresented:$deletion){Button("Delete item",role:.destructive){if store.remove(record){dismiss()}};Button("Keep it",role:.cancel){}}
             .fileImporter(isPresented:$addingFile,allowedContentTypes:[.item]){result in
-                do{let url=try result.get();let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0;guard size<=32*1024*1024 else{store.error="Choose a file smaller than 32 MB.";return};let bytes=try Data(contentsOf:url);let type=UTType(filenameExtension:url.pathExtension)?.preferredMIMEType ?? "application/octet-stream";try store.database?.attach(Attachment(recordID:record.id,name:url.lastPathComponent,type:type,bytes:bytes));files=try store.database?.attachments(recordID:record.id) ?? []}catch{store.error="That file could not be saved. Your record is unchanged."}
+                do{let url=try result.get();let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0;guard size<=32*1024*1024 else{store.error="Choose a file smaller than 32 MB.";return};let bytes=try Data(contentsOf:url);let type=UTType(filenameExtension:url.pathExtension)?.preferredMIMEType ?? "application/octet-stream";try store.database?.attach(Attachment(recordID:record.id,name:url.lastPathComponent,type:type,bytes:bytes));files=try store.database?.attachments(recordID:record.id) ?? []}catch{if (error as NSError).code != NSUserCancelledError{store.error="That file could not be saved. Your record is unchanged."}}
             }.sheet(item:$preview){NativeFilePreview(url:$0.url)}.sheet(item:$audio){NativeAudioPractice(url:$0.url)}
     }
+    func save(){record.due=hasDate ? Time.string(date):nil;if store.save(record){dismiss()}}
     func friendly(_ key:String)->String { key.replacingOccurrences(of:"([a-z])([A-Z])",with:"$1 $2",options:.regularExpression).prefix(1).uppercased()+key.replacingOccurrences(of:"([a-z])([A-Z])",with:"$1 $2",options:.regularExpression).dropFirst() }
 }
 struct NativeImport:View {
@@ -125,22 +128,42 @@ struct NativeImport:View {
     @State private var items:[EdizCore.Record]=[]
     @State private var raw:Data?
     @State private var backup=false
+    @State private var profile:Preferences?
     @State private var confirm=false
     @State private var message=""
+    func importRow(_ record:EdizCore.Record)->some View {
+        let caption=Catalog.space(record.space).name+" · "+record.kind+" · "+record.status
+        return VStack(alignment:.leading,spacing:5){Text(record.title);Text(caption).font(.caption).foregroundStyle(Design.muted)}
+    }
+    @ViewBuilder var importActions:some View {
+        Button("Import records") {
+            if store.merge(items){message="Records imported. Title duplicates were skipped.";items=[]}
+        }.disabled(items.isEmpty)
+        if backup {
+            Text("Merge imports records only. Complete restore also includes files, history and preferences.").font(.footnote).foregroundStyle(Design.muted)
+            Button("Restore this backup completely",role:.destructive){confirm=true}
+        }
+    }
     var body:some View {
         Form {
             Section("Destination"){Picker("Space",selection:$space){ForEach(Catalog.spaces){Text($0.name).tag($0.id)}}}
             Section("From a file"){Button("Choose CSV, JSON, Markdown or calendar"){choose=true};Text("Files are read locally. Existing records are kept unless you confirm a complete restore.").font(.footnote).foregroundStyle(Design.muted)}
-            Section("From text"){TextField("Paste tasks, notes or lead information",text:$paste,axis:.vertical).lineLimit(4...8);Button("Review text"){items=paste.components(separatedBy:.newlines).filter{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}.map{var r=CaptureParser.parse($0);r.space=space;r.status=Catalog.states(kind:r.kind,space:space)[0];return r};raw=nil;backup=false}.disabled(paste.isEmpty)}
-            if !items.isEmpty {
-                Section("Review · \(items.count) records"){ForEach(Array(items.prefix(30))){r in VStack(alignment:.leading,spacing:5){Text(r.title);Text("\(Catalog.space(r.space).name) · \(r.kind) · \(r.status)").font(.caption).foregroundStyle(Design.muted)}}}
-                Section{Button("Import records"){if store.merge(items){message="Records imported. Title duplicates were skipped.";items=[]}};if backup{Text("Merge imports records only. Complete restore also includes files, history and preferences.").font(.footnote).foregroundStyle(Design.muted);Button("Restore this backup completely",role:.destructive){confirm=true}}}
+            Section("From text"){TextField("Paste tasks, notes or lead information",text:$paste,axis:.vertical).lineLimit(4...8);Button("Review text"){items=paste.components(separatedBy:.newlines).filter{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}.map{var r=CaptureParser.parse($0);r.space=space;r.status=Catalog.states(kind:r.kind,space:space)[0];return r};raw=nil;backup=false;profile=nil}.disabled(paste.isEmpty)}
+            if let profile {
+                Section("Review profile") {
+                    Text("Restore your layout and focus preferences. Your records and conversations stay on this device.")
+                    Button("Restore profile") {var next=store.preferences;next.theme=profile.theme;next.density=profile.density;next.focus=profile.focus;store.setPreferences(next);self.profile=nil;message="Profile restored."}
+                }
+            }
+            if !items.isEmpty || backup {
+                Section("Review · \(items.count) records"){ForEach(Array(items.prefix(30))){record in importRow(record)}}
+                Section {importActions}
             }
             if !message.isEmpty{Section{Text(message).font(.subheadline)}}
         }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Import")
             .fileImporter(isPresented:$choose,allowedContentTypes:[.json,.commaSeparatedText,.plainText,.text,UTType(filenameExtension:"ics") ?? .data]){result in
-                do{let url=try result.get();let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0;guard size<=32*1024*1024 else{store.error="Choose a file smaller than 32 MB.";return};let data=try Data(contentsOf:url);items=try ImportParser.records(data:data,filename:url.lastPathComponent,space:space);raw=data;backup=(try? JSONDecoder().decode(Backup.self,from:data)) != nil;message=""}catch{store.error="That import could not be read. Your current records are unchanged."}
-            }.confirmationDialog("Replace all current records, files, history and preferences?",isPresented:$confirm,titleVisibility:.visible){Button("Replace current data & restore",role:.destructive){if let raw,store.restore(raw){items=[];message="Backup restored."}};Button("Keep current data",role:.cancel){}}
+                do{let url=try result.get();let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0;guard size<=32*1024*1024 else{store.error="Choose a file smaller than 32 MB.";return};let data=try Data(contentsOf:url);if let imported=try? JSONDecoder().decode(Profile.self,from:data){profile=try imported.validatedPreferences();items=[];raw=nil;backup=false;message="";return};profile=nil;items=try ImportParser.records(data:data,filename:url.lastPathComponent,space:space);raw=data;backup=(try? JSONDecoder().decode(Backup.self,from:data)) != nil;message=""}catch{if (error as NSError).code != NSUserCancelledError{store.error="That import could not be read. Your current records are unchanged."}}
+            }.alert("Replace all current records, files, history and preferences?",isPresented:$confirm){Button("Replace current data & restore",role:.destructive){if let raw,store.restore(raw){items=[];backup=false;self.raw=nil;message="Backup restored."}};Button("Keep current data",role:.cancel){}}
     }
 }
 
@@ -188,7 +211,7 @@ struct NativeCreation:View {
                 .onChange(of:record){_,value in keepDraft();if !value.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("chapter-titled")};if !value.body.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("chapter-context")}}
                 .onChange(of:date){_,value in record.due=scheduled ? Time.string(value):nil}
                 .onChange(of:scheduled){_,value in record.due=value ? Time.string(date):nil}
-                .confirmationDialog("Add this to canon?",isPresented:$confirmCanon,titleVisibility:.visible){Button("Add to canon"){save()};Button("Cancel",role:.cancel){}}message:{Text("This marks the material as established in Moshia.")}
+                .alert("Add this to canon?",isPresented:$confirmCanon){Button("Add to canon"){save()};Button("Cancel",role:.cancel){}}message:{Text("This marks the material as established in Moshia.")}
         }
         }.onAppear{store.walkthrough?.event("creation-open")}.preferredColorScheme(.dark).tint(Design.accent)
     }

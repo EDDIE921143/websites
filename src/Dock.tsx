@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type CSSProperties} from 'react';
 import {House,Plus,Layers,Search,MessageCircle} from 'lucide-react';
-const tabs=[{id:'today',label:'Today',icon:House},{id:'spaces',label:'Spaces',icon:Layers},{id:'capture',label:'Capture',icon:Plus},{id:'search',label:'Search',icon:Search},{id:'assistant',label:'Assistant',icon:MessageCircle}];
+const tabs=[{id:'today',label:'Today',icon:House},{id:'assistant',label:'Assistant',icon:MessageCircle},{id:'capture',label:'Capture',icon:Plus},{id:'search',label:'Search',icon:Search},{id:'spaces',label:'Spaces',icon:Layers}];
 type Drag={origin:number;x:number;index:number;moved:boolean;left:number;step:number;pointer:number};
 export function Dock({page,isSpace,go}:{page:string;isSpace:boolean;go:(page:string)=>void}){
  const current=Math.max(0,tabs.findIndex(t=>t.id===(isSpace?'spaces':page)));const [scrubbing,setScrubbing]=useState(false);

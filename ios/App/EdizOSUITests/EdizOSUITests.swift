@@ -71,6 +71,66 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["creation-save"].tap()
         XCTAssertTrue(app.staticTexts["Character for test"].waitForExistence(timeout:5))
     }
+    func testEveryWorkspaceModuleCreatesAndReopensItsRecord(){
+        let spaces:[(String,[String])]=[("ejj",["Leads","Websites","Tasks","Notes","Ideas"]),("band",["Songs","Rehearsals","Practice","Notes","Ideas"]),("moshia",["Chapters","Characters","Plot threads","Locations","Organizations","Timeline","Research","Ideas"]),("school",["Homework","Tests","Subjects","Grades","Timetable","Materials"]),("personal",["Tasks","Appointments","Notes","Ideas"])]
+        app.tabBars.buttons["Spaces"].tap()
+        for (scope,modules) in spaces {
+            let space=app.buttons["space-"+scope]
+            for _ in 0..<6{if space.isHittable{break};app.swipeUp()}
+            XCTAssertTrue(space.isHittable);space.tap()
+            for module in modules {
+                app.buttons["module-picker"].tap();app.buttons[module].firstMatch.tap()
+                app.buttons["module-add"].tap()
+                let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch
+                XCTAssertTrue(title.waitForExistence(timeout:5));title.tap();title.typeText(scope+" "+module+" sweep")
+                app.buttons["creation-save"].tap()
+                let record=app.staticTexts[scope+" "+module+" sweep"].firstMatch
+                XCTAssertTrue(record.waitForExistence(timeout:5));record.tap()
+                XCTAssertTrue(app.buttons["record-save"].waitForExistence(timeout:5))
+                let edit=app.descendants(matching:.any).matching(identifier:"record-title").firstMatch
+                XCTAssertEqual(edit.value as? String,scope+" "+module+" sweep")
+                app.buttons["record-save"].tap()
+                XCTAssertTrue(record.waitForExistence(timeout:5))
+            }
+            app.navigationBars.buttons.firstMatch.tap()
+        }
+        snapshot("Every workspace module created and reopened its typed record")
+    }
+    func testContinuityDeskOpensSavedChapter(){
+        app.tabBars.buttons["Spaces"].tap();app.buttons["Chapters"].tap();app.buttons["module-add"].tap()
+        let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch;title.tap();title.typeText("Chapter 1: A saved beginning");app.buttons["creation-save"].tap()
+        app.buttons["story-desk-open"].tap();XCTAssertTrue(app.navigationBars["Continuity desk"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Canon ledger"].exists)
+        snapshot("Moshia continuity desk with saved chapter and separate canon")
+        app.buttons["story-desk-continue"].tap();XCTAssertTrue(app.buttons["record-save"].waitForExistence(timeout:5));XCTAssertEqual(app.descendants(matching:.any).matching(identifier:"record-title").firstMatch.value as? String,"Chapter 1: A saved beginning")
+    }
+    func testStoryCanonRequiresConfirmationAndDeletionCanBeCancelled(){
+        app.tabBars.buttons["Spaces"].tap();app.buttons["Chapters"].tap();app.buttons["module-add"].tap()
+        let title=app.descendants(matching:.any).matching(identifier:"creation-title").firstMatch
+        title.tap();title.typeText("Canon confirmation check");app.buttons["creation-save"].tap()
+        app.staticTexts["Canon confirmation check"].tap();app.buttons["record-state"].tap();app.buttons["CANON"].firstMatch.tap();app.buttons["record-save"].tap()
+        XCTAssertTrue(app.buttons["Confirm canon"].waitForExistence(timeout:5));app.buttons["Keep editing"].tap()
+        XCTAssertTrue(app.buttons["record-save"].exists);app.buttons["record-save"].tap();app.buttons["Confirm canon"].tap()
+        XCTAssertTrue(app.staticTexts["CANON"].waitForExistence(timeout:5))
+        app.staticTexts["Canon confirmation check"].tap()
+        for _ in 0..<6{if app.buttons["Delete item"].isHittable{break};app.swipeUp()}
+        app.buttons["Delete item"].tap();XCTAssertTrue(app.buttons["Keep it"].waitForExistence(timeout:5));app.buttons["Keep it"].tap()
+        XCTAssertTrue(app.buttons["record-save"].exists)
+        app.buttons["Delete item"].tap();app.alerts.buttons["Delete item"].tap()
+        XCTAssertTrue(app.buttons["module-add"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Canon confirmation check"].exists)
+    }
+    func testSettingsHistoryHealthAndTextImport(){
+        app.buttons["Settings and backup"].tap();app.buttons["Import & restore"].tap()
+        let text=app.textFields["Paste tasks, notes or lead information"]
+        XCTAssertTrue(text.waitForExistence(timeout:5));text.tap();text.typeText("A sweep import note")
+        app.buttons["Review text"].tap();app.buttons["Import records"].tap()
+        XCTAssertTrue(app.staticTexts["Records imported. Title duplicates were skipped."].waitForExistence(timeout:5))
+        app.navigationBars.buttons.firstMatch.tap();app.buttons["History"].tap()
+        XCTAssertTrue(app.staticTexts["A sweep import note"].waitForExistence(timeout:5))
+        app.navigationBars.buttons.firstMatch.tap()
+        for _ in 0..<6{if app.buttons["System health"].isHittable{break};app.swipeUp()}
+        app.buttons["System health"].tap();XCTAssertTrue(app.staticTexts["Database, SQLite · WAL"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Version, 0.3.14"].exists)
+        snapshot("System health after a real text import")
+    }
     func testChapterCreationKeepsItsOwnDraftAndFields(){
         app.tabBars.buttons["Spaces"].tap();app.buttons["Chapters"].tap()
         app.buttons["Add chapter"].firstMatch.tap()
@@ -95,20 +155,24 @@ final class EdizOSUITests:XCTestCase {
             app.buttons["creation-save"].tap();XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout:5))
         }
         app.buttons["Rehearsal mode"].tap()
-        app.buttons["Select Second audio song"].tap();XCTAssertTrue(app.staticTexts["144"].waitForExistence(timeout:5))
-        app.buttons["Select Audio test song"].tap();XCTAssertTrue(app.staticTexts["120"].waitForExistence(timeout:5))
+        app.buttons["Select Second audio song"].tap();XCTAssertTrue(app.textFields["metronome-bpm"].waitForExistence(timeout:5));XCTAssertEqual(app.textFields["metronome-bpm"].value as? String,"144")
+        app.buttons["Select Audio test song"].tap();XCTAssertEqual(app.textFields["metronome-bpm"].value as? String,"120")
+        let tempo=app.textFields["metronome-bpm"];tempo.tap();tempo.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:3)+"132");app.buttons["Apply tempo"].tap()
+        XCTAssertEqual(tempo.value as? String,"132");app.buttons["Increase tempo"].tap();XCTAssertEqual(tempo.value as? String,"133");app.buttons["Decrease tempo"].tap();XCTAssertEqual(tempo.value as? String,"132")
+        app.buttons["Tap tempo"].tap();app.buttons["Tap tempo"].tap();XCTAssertTrue(Int(tempo.value as? String ?? "0").map{(30...240).contains($0)} == true)
+        snapshot("Direct BPM entry and tempo adjustment controls")
         app.buttons["Start metronome"].tap()
         XCTAssertTrue(app.buttons["Stop metronome"].waitForExistence(timeout:5));snapshot("Rehearsal with running native audio")
         app.buttons["Stop metronome"].tap();XCTAssertTrue(app.buttons["Start metronome"].waitForExistence(timeout:5))
     }
     func testNativeWorkspaceFocusActuallyChangesToday(){
         app.buttons["Change focus"].tap();app.buttons["Moshia"].tap()
-        XCTAssertTrue(app.buttons["Focused on Moshia"].waitForExistence(timeout:5))
+        XCTAssertTrue(app.descendants(matching:.any).matching(identifier:"focused-workspace").firstMatch.waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["YOUR FOCUS"].exists);XCTAssertEqual(app.descendants(matching:.any).matching(identifier:"focus-logo").firstMatch.value as? String,"Moshia")
         let hero=app.descendants(matching:.any).matching(identifier:"focused-workspace").firstMatch
         XCTAssertTrue(hero.exists);XCTAssertGreaterThan(hero.frame.height,250)
         snapshot("Moshia is the dominant Today workspace")
         app.terminate();app.launchArguments=["-ui-testing"];app.launch()
-        XCTAssertTrue(app.buttons["Focused on Moshia"].waitForExistence(timeout:5))
+        XCTAssertTrue(app.descendants(matching:.any).matching(identifier:"focused-workspace").firstMatch.waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["YOUR FOCUS"].exists)
     }
     func ask(_ question:String){
         let input=app.descendants(matching:.any).matching(identifier:"assistant-question").firstMatch
@@ -289,19 +353,34 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["voice-settings"].tap();app.buttons["voice-choice"].tap();app.buttons["Aoede · Relaxed"].tap();app.buttons["voice-settings-done"].tap()
         app.buttons["voice-done"].tap()
     }
-    func testConnectedNaturalVoiceReadOnly(){
+    func testConnectedNaturalVoiceReadOnly() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Connected cloud voice uses the paired device credential.")
+        #endif
         app.terminate();app.launchArguments=[];app.launchEnvironment=[:];app.launch()
         snapshot("Installed home with visible contour background")
         app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
         app.buttons["assistant-voice"].tap()
         XCTAssertTrue(app.buttons["voice-read-reply"].waitForExistence(timeout:5))
         app.buttons["voice-read-reply"].tap()
-        XCTAssertTrue(app.staticTexts["Natural voice · Aoede"].waitForExistence(timeout:18))
+        let voice=app.staticTexts.matching(NSPredicate(format:"label BEGINSWITH %@","Natural voice · ")).firstMatch
+        XCTAssertTrue(voice.waitForExistence(timeout:18))
         XCTAssertTrue(app.staticTexts["Your assistant is speaking"].exists)
         let activity=app.otherElements["voice-activity"]
         let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
         expectation(for:audible,evaluatedWith:activity);waitForExpectations(timeout:5)
         snapshot("Natural speech with a measured audio signal and output route")
+        app.buttons["voice-done"].tap()
+    }
+    func testRejectedCloudVoiceFallsBackToAudibleDeviceSpeech(){
+        app.terminate();app.launchArguments.append("-test-voice-fallback");app.launch()
+        app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-all"].tap()
+        app.buttons["assistant-voice"].tap();app.buttons["voice-read-reply"].tap()
+        XCTAssertTrue(app.staticTexts["Device voice · keeping the conversation going"].waitForExistence(timeout:10))
+        let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
+        expectation(for:audible,evaluatedWith:app.otherElements["voice-activity"]);waitForExpectations(timeout:8)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format:"label CONTAINS[c] %@","unavailable")).firstMatch.exists)
+        snapshot("Cloud voice rejection continues with measured device audio")
         app.buttons["voice-done"].tap()
     }
     func testAssistantAttachmentPickersAndSpokenReply(){

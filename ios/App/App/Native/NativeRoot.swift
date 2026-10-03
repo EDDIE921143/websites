@@ -14,10 +14,10 @@ struct NativeRoot:View {
             if store.ready {
                 TabView(selection:$selected) {
                     OSNavigation{NativeToday()}.tabItem{Label("Today",systemImage:"house.fill")}.tag(0)
-                    OSNavigation{NativeSpaces()}.tabItem{Label("Spaces",systemImage:"square.stack.3d.up.fill")}.tag(1)
+                    OSNavigation{NativeAssistant()}.tabItem{Label("Assistant",systemImage:"text.bubble.fill")}.tag(1)
                     NativeCaptureTab { selected=previous }.tabItem{Label("Capture",systemImage:"plus.circle.fill")}.tag(2)
                     OSNavigation{NativeSearch()}.tabItem{Label("Search",systemImage:"magnifyingglass")}.tag(3)
-                    OSNavigation{NativeAssistant()}.tabItem{Label("Assistant",systemImage:"text.bubble.fill")}.tag(4)
+                    OSNavigation{NativeSpaces()}.tabItem{Label("Spaces",systemImage:"square.stack.3d.up.fill")}.tag(4)
                 }.tint(Design.accent)
                     .background(NativeTabScrubber(selection:$selected))
                     .onChange(of:selected){_,next in if next != 2 {previous=next};store.walkthrough?.event("tab-\(next)") }
@@ -28,13 +28,15 @@ struct NativeRoot:View {
                 VStack(spacing:20){Text("Ediz OS").font(.title2.weight(.medium));Text("Your local data couldn’t be opened.").foregroundStyle(Design.muted);Button("Try again"){store.open()}.buttonStyle(ActionStyle())}.padding(24)
             }
         }
-        }.onOpenURL{url in store.connectAssistant(url);if url.host == "assistant"{selected=4}}.environmentObject(store).preferredColorScheme(.dark).background(AppBackdrop())
+        }.onOpenURL{url in store.connectAssistant(url);if url.host == "assistant"{selected=1}}.environmentObject(store).preferredColorScheme(.dark).background(AppBackdrop())
             .environment(\.edizCompact,store.preferences.density == "compact")
+            .environment(\.edizWorkspaceFocus,store.preferences.focus)
+            .animation(reducedMotion ? nil:.easeInOut(duration:0.3),value:store.preferences.focus)
             .environment(\.defaultMinListRowHeight,store.preferences.density == "compact" ? 44:60)
             .listSectionSpacing(.custom(store.preferences.density == "compact" ? 12:28))
             .font(store.preferences.density == "compact" ? .callout:.body)
             .animation(reducedMotion ? nil:.easeInOut(duration:0.18),value:store.preferences.density)
-            .onChange(of:store.assistantConnected){_,connected in if connected { selected=4 } }
+            .onChange(of:store.assistantConnected){_,connected in if connected { selected=1 } }
             .alert("Ediz OS",isPresented:Binding(get:{store.error != nil},set:{if !$0{store.error=nil}})){Button("OK"){store.error=nil}}message:{Text(store.error ?? "")}
     }
 }
@@ -86,14 +88,14 @@ struct NativeToday:View {
     }
     var welcomeHero:some View {
         VStack(alignment:.leading,spacing:18){
-            HStack(spacing:12){Image("EdizLogo").resizable().scaledToFit().frame(width:38,height:38).clipShape(RoundedRectangle(cornerRadius:10));Text("YOUR DAY").font(.caption.weight(.semibold)).tracking(1.5).foregroundStyle(Design.muted);Spacer();Text(Date.now,format:.dateTime.weekday(.abbreviated).day().month(.abbreviated)).font(.caption).foregroundStyle(Design.muted)}
+            HStack(spacing:12){FocusLogo(scope:store.preferences.focus).frame(width:46,height:46).clipShape(RoundedRectangle(cornerRadius:10));Text("YOUR DAY").font(.caption.weight(.semibold)).tracking(1.5).foregroundStyle(Design.muted);Spacer();Text(Date.now,format:.dateTime.weekday(.abbreviated).day().month(.abbreviated)).font(.caption).foregroundStyle(Design.muted)}
             if store.preferences.focus == "all" {
                 Text(greeting+",\nEdiz.").font(.system(.largeTitle,design:.rounded).weight(.semibold)).fixedSize(horizontal:false,vertical:true)
                 Text("A little space for your plans, stories, and ideas.").font(.subheadline).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)
                 Button{store.capture()}label:{HStack{Text("Capture a thought").font(.subheadline.weight(.semibold));Image(systemName:"plus").font(.subheadline.weight(.semibold))}.padding(.horizontal,18).frame(minHeight:46).foregroundStyle(Design.background).background(Design.ink,in:Capsule())}.buttonStyle(.plain).accessibilityIdentifier("capture-from-today")
             } else {Text("A little room to focus.").font(.title2.weight(.medium))}
         }.padding(store.preferences.density == "compact" ? 18:24).frame(maxWidth:.infinity,alignment:.leading)
-            .background{RoundedRectangle(cornerRadius:28).fill(LinearGradient(colors:[Color(red:0.25,green:0.20,blue:0.15),Design.surface],startPoint:.topLeading,endPoint:.bottomTrailing))}.overlay{RoundedRectangle(cornerRadius:28).strokeBorder(Design.ink.opacity(0.07),lineWidth:1)}
+            .background{RoundedRectangle(cornerRadius:28).fill(LinearGradient(colors:[store.preferences.focus == "all" ? Color(red:0.25,green:0.20,blue:0.15):WorkspaceTheme.accent(store.preferences.focus).opacity(0.22),Design.surface],startPoint:.topLeading,endPoint:.bottomTrailing))}.overlay{RoundedRectangle(cornerRadius:28).strokeBorder(Design.ink.opacity(0.07),lineWidth:1)}
     }
     var focusedWorkspace:some View {
         let space=Catalog.space(store.preferences.focus)
@@ -113,7 +115,7 @@ struct NativeToday:View {
             }
         }.padding(store.preferences.density == "compact" ? 18:26)
             .frame(maxWidth:.infinity,minHeight:store.preferences.density == "compact" ? 240:300,alignment:.topLeading)
-            .background(Design.surface,in:RoundedRectangle(cornerRadius:26))
+            .background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:26))}
             .accessibilityElement(children:.contain).accessibilityIdentifier("focused-workspace")
     }
 }
@@ -134,7 +136,7 @@ struct NativeSpaces:View {
         ScrollView { VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:24) {
             Text("Five spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
             ForEach(Catalog.spaces){space in
-                VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain)
+                VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain).accessibilityIdentifier("space-"+space.id)
                     HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44).walkthroughTarget(module.kind == "chapter" ? "chapters":"",session:store.walkthrough)}}}}
                 }.padding(store.preferences.density == "compact" ? 12:24).background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(space.id).opacity(0.18),lineWidth:1)}
             }

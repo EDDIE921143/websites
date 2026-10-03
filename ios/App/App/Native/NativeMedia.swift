@@ -9,6 +9,7 @@ import ImageIO
 import NaturalLanguage
 import MediaPlayer
 import AVKit
+import Accelerate
 
 @MainActor enum NativeAudioSession {
     private static var owner:UUID?
@@ -19,11 +20,20 @@ import AVKit
     }
     static func release(_ id:UUID){guard owner==id else{return};owner=nil;try? AVAudioSession.sharedInstance().setActive(false,options:.notifyOthersOnDeactivation)}
 }
+@MainActor enum NativeVoicePreferences {
+    static let defaults:UserDefaults = {
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing"),let id=ProcessInfo.processInfo.environment["EDIZ_UI_TEST_ID"] {
+            return UserDefaults(suiteName:"com.ediz.os.testvoice."+id) ?? .standard
+        }
+        return .standard
+    }()
+}
 @MainActor final class NativeSpeech:ObservableObject {
     @Published var listening=false
     @Published var requesting=false
     @Published var transcript=""
     @Published var level:CGFloat=0
+    @Published var levels:[CGFloat]=[]
     @Published var message:String?
     private let audioID=UUID()
     private var recognitionID=UUID()
@@ -32,14 +42,28 @@ import AVKit
     private var task:SFSpeechRecognitionTask?
     private var tapInstalled=false
     private var finalText:CheckedContinuation<String,Never>?
-    func toggle(){if listening || requesting{stop();return};requesting=true;message=nil
-        SFSpeechRecognizer.requestAuthorization{status in Task{@MainActor in guard self.requesting else{return};guard status == .authorized else{self.requesting=false;self.message="Speech permission wasn’t granted. You can still type your capture.";return};AVAudioSession.sharedInstance().requestRecordPermission{granted in Task{@MainActor in guard self.requesting else{return};guard granted else{self.requesting=false;self.message="Microphone access wasn’t granted. You can still type.";return};self.start()}}}}
+    func toggle(){
+        if listening || requesting{stop();return};requesting=true;message=nil
+        if SFSpeechRecognizer.authorizationStatus() == .authorized{requestMicrophone();return}
+        SFSpeechRecognizer.requestAuthorization{status in Task{@MainActor in
+            guard self.requesting else{return}
+            guard status == .authorized else{self.requesting=false;self.message="Speech permission wasn’t granted. You can still type.";return}
+            self.requestMicrophone()
+        }}
+    }
+    private func requestMicrophone(){
+        if AVAudioSession.sharedInstance().recordPermission == .granted{start();return}
+        AVAudioSession.sharedInstance().requestRecordPermission{granted in Task{@MainActor in
+            guard self.requesting else{return}
+            guard granted else{self.requesting=false;self.message="Microphone access wasn’t granted. You can still type.";return}
+            self.start()
+        }}
     }
     private func start(){
         guard let recognizer=SFSpeechRecognizer(locale:.current),recognizer.isAvailable,recognizer.supportsOnDeviceRecognition else{requesting=false;message="On-device transcription isn’t available for this language. Use the keyboard or change your speech language.";return}
-        do{stop();transcript="";try NativeAudioSession.activate(audioID,category:.record,mode:.measurement);let recognitionID=UUID();self.recognitionID=recognitionID;let request=SFSpeechAudioBufferRecognitionRequest();request.requiresOnDeviceRecognition=true;request.shouldReportPartialResults=true;self.request=request;let input=engine.inputNode;let format=input.outputFormat(forBus:0);input.installTap(onBus:0,bufferSize:1024,format:format){[weak self] buffer,_ in
+        do{stop();transcript="";levels=[];try NativeAudioSession.activate(audioID,category:.record,mode:.measurement);let recognitionID=UUID();self.recognitionID=recognitionID;let request=SFSpeechAudioBufferRecognitionRequest();request.requiresOnDeviceRecognition=true;request.shouldReportPartialResults=true;self.request=request;let input=engine.inputNode;let format=input.outputFormat(forBus:0);input.installTap(onBus:0,bufferSize:1024,format:format){[weak self] buffer,_ in
             request.append(buffer)
-            if let channel=buffer.floatChannelData?[0]{let count=min(Int(buffer.frameLength),512);var sum:Float=0;for i in 0..<count{sum+=channel[i]*channel[i]};let value=CGFloat(min(1,sqrt(sum/Float(max(1,count)))*4));Task{@MainActor in guard self?.recognitionID==recognitionID else{return};self?.level=value}}
+            if let channel=buffer.floatChannelData?[0]{let count=Int(buffer.frameLength);var rms:Float=0;vDSP_rmsqv(channel,1,&rms,vDSP_Length(count));let value=AudioMeter.level(rms:rms);Task{@MainActor in guard let self,self.recognitionID==recognitionID else{return};self.level=CGFloat(AudioMeter.smooth(previous:Float(self.level),target:value));self.levels.append(self.level);if self.levels.count>48{self.levels.removeFirst(self.levels.count-48)}}}
         };tapInstalled=true;engine.prepare();try engine.start();listening=true;requesting=false;task=recognizer.recognitionTask(with:request){result,error in Task{@MainActor in guard self.recognitionID==recognitionID else{return};if let result{self.transcript=result.bestTranscription.formattedString};if let error,self.listening,result?.isFinal != true{self.message="Transcription stopped: "+error.localizedDescription};if error != nil || result?.isFinal == true{self.stop()}}}}catch{stop();message="The microphone couldn’t start. Your text is still here."}
     }
     func finish() async -> String {
@@ -119,6 +143,13 @@ struct NativeRehearsal:View {
     let songs:[EdizCore.Record]
     @State private var index=0
     @StateObject private var metronome=NativeMetronome()
+    @State private var tempoText="100"
+    @State private var taps:[Date]=[]
+    @FocusState private var editingTempo:Bool
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    func applyTempo(){if let value=Int(tempoText){metronome.bpm=min(240,max(30,value))};tempoText=String(metronome.bpm)}
+    func adjustTempo(_ amount:Int){applyTempo();editingTempo=false;metronome.bpm=min(240,max(30,metronome.bpm+amount));tempoText=String(metronome.bpm)}
+    func tapTempo(){let now=Date();if let last=taps.last,now.timeIntervalSince(last)>3{taps=[]};taps.append(now);taps=Array(taps.suffix(6));guard taps.count>1 else{return};let interval=now.timeIntervalSince(taps[0])/Double(taps.count-1);guard interval>0 else{return};editingTempo=false;metronome.bpm=min(240,max(30,Int((60/interval).rounded())));tempoText=String(metronome.bpm)}
     func applySongTempo(){if songs.indices.contains(index),let bpm=Int(songs[index].data["BPM"] ?? ""),(30...240).contains(bpm){metronome.bpm=bpm}}
     var body:some View {
         ScrollView {
@@ -147,20 +178,30 @@ struct NativeRehearsal:View {
             VStack(spacing:16) {
                 TimelineView(.periodic(from:metronome.startedAt,by:60/Double(metronome.bpm))){context in
                     let beat=Int(max(0,context.date.timeIntervalSince(metronome.startedAt))*Double(metronome.bpm)/60)%4
-                    HStack(spacing:12){ForEach(0..<4,id:\.self){number in Capsule().fill(metronome.playing && beat == number ? Design.ink:Design.raised).frame(width:number == 0 ? 26:12,height:12)}}.frame(maxWidth:.infinity).accessibilityLabel(metronome.playing ? "Beat \(beat+1) of 4":"Metronome stopped")
+                    HStack(spacing:12){ForEach(0..<4,id:\.self){number in Capsule().fill(metronome.playing && beat == number ? Design.ink:Design.raised).frame(width:number == 0 ? 26:12,height:12)}}.frame(maxWidth:.infinity).animation(reducedMotion ? nil:.easeOut(duration:0.12),value:beat).accessibilityLabel(metronome.playing ? "Beat \(beat+1) of 4":"Metronome stopped")
                 }
-                HStack {Text("\(metronome.bpm)").font(Design.font(28)).monospacedDigit();Text("BPM").font(.caption).foregroundStyle(Design.muted);Spacer();Stepper("Tempo",value:$metronome.bpm,in:30...240).labelsHidden().accessibilityLabel("Metronome tempo")}
+                HStack(spacing:12){
+                    Button{adjustTempo(-1)}label:{Image(systemName:"minus").frame(width:44,height:44).background(Design.raised,in:Circle())}.buttonStyle(.plain).disabled(metronome.bpm<=30).accessibilityLabel("Decrease tempo")
+                    TextField("BPM",text:$tempoText).keyboardType(.numberPad).focused($editingTempo).font(.title.monospacedDigit().weight(.medium)).multilineTextAlignment(.center).frame(minWidth:70,maxWidth:100).padding(.vertical,8).background(Design.raised,in:RoundedRectangle(cornerRadius:12)).accessibilityLabel("Metronome BPM").accessibilityIdentifier("metronome-bpm")
+                    Text("BPM").font(.caption).foregroundStyle(Design.muted)
+                    Button{adjustTempo(1)}label:{Image(systemName:"plus").frame(width:44,height:44).background(Design.raised,in:Circle())}.buttonStyle(.plain).disabled(metronome.bpm>=240).accessibilityLabel("Increase tempo")
+                    Spacer(minLength:0)
+                    if editingTempo{Button{applyTempo();editingTempo=false}label:{Image(systemName:"checkmark").frame(width:44,height:44).background(Design.raised,in:Circle())}.buttonStyle(.plain).accessibilityLabel("Apply tempo")}
+                    else{Button{tapTempo()}label:{Text("Tap").font(.subheadline.weight(.medium)).frame(width:54,height:44).background(Design.raised,in:Capsule())}.buttonStyle(.plain).accessibilityLabel("Tap tempo")}
+                }
+                Text("30–240 BPM · Tap the number to type").font(.caption).foregroundStyle(Design.muted)
                 HStack(spacing:12) {
                     if !songs.isEmpty {Button {index=max(0,index-1)} label:{Image(systemName:"backward.end.fill").frame(width:20)}.buttonStyle(ActionStyle()).disabled(index == 0).accessibilityLabel("Previous")}
                     Button(metronome.playing ? "Stop metronome":"Start metronome"){metronome.toggle()}.buttonStyle(ActionStyle()).frame(maxWidth:.infinity)
                     if !songs.isEmpty {Button {index=min(songs.count-1,index+1)} label:{Image(systemName:"forward.end.fill").frame(width:20)}.buttonStyle(ActionStyle()).disabled(index>=songs.count-1).accessibilityLabel("Next")}
                 }
                 if let message=metronome.message {Text(message).font(.footnote).foregroundStyle(Design.muted)}
-            }.padding(20).background(AppBackdrop())
+            }.padding(20).background(AppBackdrop(scope:"band"))
         }
-        .background(AppBackdrop()).foregroundStyle(Design.ink).preferredColorScheme(.dark)
+        .background(AppBackdrop(scope:"band")).foregroundStyle(Design.ink).preferredColorScheme(.dark)
         .simultaneousGesture(DragGesture(minimumDistance:50).onEnded{value in guard abs(value.translation.width)>abs(value.translation.height)*1.5 else{return};index=value.translation.width<0 ? min(max(0,songs.count-1),index+1):max(0,index-1)})
-        .onAppear{applySongTempo()}.onChange(of:index){_,_ in applySongTempo()}.onChange(of:metronome.bpm){_,_ in metronome.changeBPM()}.onDisappear{metronome.stop()}
+        .onAppear{applySongTempo();tempoText=String(metronome.bpm)}.onChange(of:index){_,_ in editingTempo=false;applySongTempo();tempoText=String(metronome.bpm)}.onChange(of:editingTempo){_,editing in if editing{DispatchQueue.main.asyncAfter(deadline:.now()+0.1){if editingTempo{UIApplication.shared.sendAction(NSSelectorFromString("selectAll:"),to:nil,from:nil,for:nil)}}}else{applyTempo()}}.onChange(of:metronome.bpm){_,_ in if !editingTempo{tempoText=String(metronome.bpm)};metronome.changeBPM()}
+        .animation(reducedMotion ? nil:.easeInOut(duration:0.18),value:index).onDisappear{metronome.stop()}
     }
 }
 
@@ -199,10 +240,11 @@ enum AssistantMedia {
             guard let source=CGImageSourceCreateWithData(data as CFData,nil),let image=CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceThumbnailMaxPixelSize:1600,kCGImageSourceCreateThumbnailWithTransform:true] as CFDictionary),let bytes=UIImage(cgImage:image).jpegData(compressionQuality:0.78) else{throw issue("This photo couldn’t be read.")}
             return .init(name:name,mimeType:"image/jpeg",bytes:bytes)
         }
-        if type.conforms(to:.audio),url.pathExtension.lowercased()=="wav"{return .init(name:String(url.lastPathComponent.prefix(180)),mimeType:"audio/wav",bytes:data)}
+        let audioTypes=["wav":"audio/wav","mp3":"audio/mpeg","m4a":"audio/mp4","aac":"audio/aac","aiff":"audio/aiff","aif":"audio/aiff","flac":"audio/flac","ogg":"audio/ogg"]
+        if let mime=audioTypes[url.pathExtension.lowercased()]{return .init(name:String(url.lastPathComponent.prefix(180)),mimeType:mime,bytes:data)}
         if type.conforms(to:.pdf){return .init(name:name,mimeType:"application/pdf",bytes:data)}
         if type.conforms(to:.text)||["txt","md","csv","json"].contains(url.pathExtension.lowercased()),String(data:data,encoding:.utf8) != nil {return .init(name:name,mimeType:"text/plain",bytes:data)}
-        throw issue("Use a photo, short video, PDF, or a text, Markdown, CSV or JSON file.")
+        throw issue("Use a photo, short video, audio recording, PDF, or a text, Markdown, CSV or JSON file.")
     }
     static func issue(_ text:String)->NSError{NSError(domain:"AssistantMedia",code:1,userInfo:[NSLocalizedDescriptionKey:text])}
 }
@@ -235,7 +277,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
         }
     }
 }
-@MainActor final class NativeAssistantSpeaker:NSObject,ObservableObject,AVSpeechSynthesizerDelegate,AVAudioPlayerDelegate {
+@MainActor final class NativeAssistantSpeaker:NSObject,ObservableObject {
     @Published var speaking=false
     @Published var preparing=false
     @Published var voiceNote:String?
@@ -243,65 +285,104 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     @Published var output="iPhone"
     @Published var muted=false
     private let audioID=UUID()
-    private var meter:Task<Void,Never>?
-    private var utterance:AVSpeechUtterance?
-    private var player:AVAudioPlayer?
-    private var generation:Task<Void,Never>?
+    private let engine=AVAudioEngine()
+    private let node=AVAudioPlayerNode()
     private let synthesizer=AVSpeechSynthesizer()
+    private var utterance:AVSpeechUtterance?
+    private var meter:Task<Void,Never>?
+    private var generation:Task<Void,Never>?
+    private var playbackID=UUID()
+    private var tapInstalled=false
+    private var pending=0
+    private var ended=false
+    private var cache:[String:Data]=[:]
+    private let format=AVAudioFormat(standardFormatWithSampleRate:24000,channels:1)!
     var finished:(()->Void)?
-    override init(){super.init();synthesizer.delegate=self}
-    func say(_ text:String,token:String?=nil,natural:Bool=true,voice:String="Aoede"){
+    override init(){super.init();engine.attach(node)}
+    func say(_ text:String,token:String?=nil,natural:Bool=true,voice:String="Aoede") {
         stop();voiceNote=nil
-        guard natural,let token,!text.isEmpty else{deviceSay(text);return}
-        preparing=true
+        let text=String(text.prefix(2000));guard !text.isEmpty else{return}
+        guard natural,let token else{deviceSay(text);return}
+        let key=voice+":"+text
+        if let audio=cache[key]{do{try queuePCM(audio);voiceNote="Natural voice · "+voice;ended=true;completeIfDrained()}catch{deviceSay(text)};return}
+        preparing=true;let id=playbackID
         generation=Task{@MainActor in
+            var completeAudio=Data()
             do {
                 var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!)
-                request.httpMethod="POST";request.timeoutInterval=12
+                request.httpMethod="POST";request.timeoutInterval=8
                 request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
-                request.httpBody=try JSONSerialization.data(withJSONObject:["mode":"speech","text":String(text.prefix(2000)),"voice":voice])
-                let (data,response)=try await URLSession.shared.data(for:request)
-                try Task.checkCancellation()
-                guard let response=response as? HTTPURLResponse,response.statusCode==200,
-                    let json=try JSONSerialization.jsonObject(with:data) as? [String:Any],let encoded=json["audio"] as? String,let audio=Data(base64Encoded:encoded) else{throw URLError(.cannotParseResponse)}
-                try NativeAudioSession.activate(audioID,category:.playback,mode:.spokenAudio)
-                let audioPlayer=try AVAudioPlayer(data:audio);audioPlayer.delegate=self;audioPlayer.volume=1;audioPlayer.isMeteringEnabled=true;audioPlayer.prepareToPlay();player=audioPlayer
-                guard audioPlayer.play() else{throw URLError(.cannotDecodeContentData)}
-                preparing=false;speaking=true;voiceNote="Natural voice · "+voice;monitorOutput()
+                request.httpBody=try JSONSerialization.data(withJSONObject:["mode":"speech-stream","text":text,"voice":voice])
+                let (bytes,response)=try await URLSession.shared.bytes(for:request)
+                guard (response as? HTTPURLResponse)?.statusCode==200 else{throw URLError(.badServerResponse)}
+                var completed=false
+                for try await line in bytes.lines {
+                    try Task.checkCancellation();guard playbackID==id else{return}
+                    guard !line.isEmpty,let data=line.data(using:.utf8),let packet=try JSONSerialization.jsonObject(with:data) as? [String:Any] else{continue}
+                    if packet["error"] != nil{throw URLError(.cannotLoadFromNetwork)}
+                    if let encoded=packet["audio"] as? String,let audio=Data(base64Encoded:encoded){
+                        guard packet["rate"] as? Int==24000,completeAudio.count+audio.count<=4000000 else{throw URLError(.cannotDecodeContentData)}
+                        completeAudio.append(audio);try queuePCM(audio);voiceNote="Natural voice · "+voice
+                    }
+                    if packet["done"] as? Bool==true{completed=true}
+                }
+                guard completed,!completeAudio.isEmpty else{throw URLError(.networkConnectionLost)}
+                if completeAudio.count<=1500000{if cache.count>=3{cache.removeAll()};cache[key]=completeAudio}
+                ended=true;completeIfDrained()
             }catch {
-                guard !Task.isCancelled else{return}
-                preparing=false;voiceNote="Using device voice while natural voice is unavailable.";deviceSay(text)
+                guard !Task.isCancelled,playbackID==id else{return}
+                if completeAudio.isEmpty{resetPlayback();preparing=false;voiceNote="Device voice · keeping the conversation going";deviceSay(text)}
+                else{voiceNote="Speech was interrupted. Tap Listen to replay the reply.";ended=true;completeIfDrained()}
             }
         }
     }
-    private func deviceSay(_ text:String){
-        do{try NativeAudioSession.activate(audioID,category:.playback,mode:.spokenAudio)}catch{voiceNote="Audio couldn’t start. Check your output and try again.";return}
-        let utterance=AVSpeechUtterance(string:String(text.prefix(5000)));let recognizer=NLLanguageRecognizer();recognizer.processString(text)
+    private func queuePCM(_ bytes:Data) throws {
+        guard !bytes.isEmpty,bytes.count%2==0,let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:AVAudioFrameCount(bytes.count/2)),let samples=buffer.floatChannelData?[0] else{throw URLError(.cannotDecodeContentData)}
+        buffer.frameLength=buffer.frameCapacity
+        bytes.withUnsafeBytes{raw in for index in 0..<Int(buffer.frameLength){samples[index]=Float(Int16(littleEndian:raw.loadUnaligned(fromByteOffset:index*2,as:Int16.self)))/32768}}
+        try queue(buffer)
+    }
+    private func queue(_ buffer:AVAudioPCMBuffer) throws {
+        let id=playbackID
+        if !engine.isRunning {
+            try NativeAudioSession.activate(audioID,category:.playback,mode:.spokenAudio)
+            engine.connect(node,to:engine.mainMixerNode,format:buffer.format)
+            engine.mainMixerNode.installTap(onBus:0,bufferSize:1024,format:nil){[weak self] buffer,_ in
+                guard let samples=buffer.floatChannelData?[0] else{return};var rms:Float=0;vDSP_rmsqv(samples,1,&rms,vDSP_Length(buffer.frameLength));let value=AudioMeter.level(rms:rms)
+                Task{@MainActor in guard let self,self.playbackID==id else{return};self.level=CGFloat(AudioMeter.smooth(previous:Float(self.level),target:value))}
+            };tapInstalled=true;engine.prepare();try engine.start();monitorOutput()
+        }
+        pending+=1
+        node.scheduleBuffer(buffer,completionCallbackType:.dataPlayedBack){[weak self] _ in Task{@MainActor in guard let self,self.playbackID==id else{return};self.pending=max(0,self.pending-1);self.completeIfDrained()}}
+        if !node.isPlaying{node.play()}
+        preparing=false;speaking=true
+    }
+    private func deviceSay(_ text:String) {
+        preparing=true;let id=playbackID
+        let utterance=AVSpeechUtterance(string:text);let recognizer=NLLanguageRecognizer();recognizer.processString(text)
         let language=recognizer.dominantLanguage?.rawValue ?? Locale.current.language.languageCode?.identifier ?? "en"
         let voices=AVSpeechSynthesisVoice.speechVoices().filter{$0.language.hasPrefix(language)}
-        utterance.voice=voices.max{left,right in left.quality.rawValue < right.quality.rawValue} ?? AVSpeechSynthesisVoice(language:language)
-        utterance.rate=AVSpeechUtteranceDefaultSpeechRate * 0.94;utterance.pitchMultiplier=1.0;utterance.preUtteranceDelay=0.08
-        self.utterance=utterance;speaking=true;monitorOutput();synthesizer.speak(utterance)
+        utterance.voice=voices.max{$0.quality.rawValue<$1.quality.rawValue} ?? AVSpeechSynthesisVoice(language:language)
+        utterance.rate=AVSpeechUtteranceDefaultSpeechRate * 0.98;utterance.pitchMultiplier=1;self.utterance=utterance
+        if voiceNote==nil{voiceNote="Device voice"}
+        synthesizer.write(utterance){[weak self] audio in
+            guard let buffer=audio as? AVAudioPCMBuffer else{return}
+            Task{@MainActor in
+                guard let self,self.playbackID==id else{return}
+                if buffer.frameLength==0{self.ended=true;self.completeIfDrained();return}
+                do{try self.queue(buffer)}catch{self.stop();self.voiceNote="Audio couldn’t start. Check the output and try again."}
+            }
+        }
     }
+    private func completeIfDrained(){guard ended,pending==0 else{return};resetPlayback();finished?()}
     func refreshOutput(){let session=AVAudioSession.sharedInstance();output=session.currentRoute.outputs.map(\.portName).joined(separator:", ");muted=session.outputVolume<0.01}
-    private func monitorOutput(){
-        meter?.cancel()
-        meter=Task{@MainActor in while !Task.isCancelled,speaking {
-            let session=AVAudioSession.sharedInstance();output=session.currentRoute.outputs.map(\.portName).joined(separator:", ");muted=session.outputVolume<0.01
-            if let player{player.updateMeters();level=CGFloat(max(0,min(1,pow(10,player.averagePower(forChannel:0)/20))))}
-            else{level=0.2}
-            try? await Task.sleep(for:.milliseconds(100))
-        }}
-    }
-    func stop(){generation?.cancel();generation=nil;meter?.cancel();meter=nil;preparing=false;player?.stop();player=nil;utterance=nil;speaking=false;level=0;synthesizer.stopSpeaking(at:.immediate);NativeAudioSession.release(audioID)}
-    nonisolated func audioPlayerDidFinishPlaying(_ player:AVAudioPlayer,successfully flag:Bool){Task{@MainActor in guard self.player===player else{return};self.stop();if !flag{self.voiceNote="Audio was interrupted. Tap Listen to try again."};self.finished?()}}
-    nonisolated func audioPlayerDecodeErrorDidOccur(_ player:AVAudioPlayer,error:Error?){Task{@MainActor in guard self.player===player else{return};self.stop();self.voiceNote="This audio couldn’t be played. Try Device voice."}}
-    nonisolated func speechSynthesizer(_ synthesizer:AVSpeechSynthesizer,didFinish utterance:AVSpeechUtterance){Task{@MainActor in guard self.utterance===utterance else{return};self.stop();self.finished?()}}
-
+    private func monitorOutput(){meter?.cancel();meter=Task{@MainActor in while !Task.isCancelled{refreshOutput();try? await Task.sleep(for:.milliseconds(100))}}}
+    private func resetPlayback(){playbackID=UUID();meter?.cancel();meter=nil;node.stop();if tapInstalled{engine.mainMixerNode.removeTap(onBus:0);tapInstalled=false};engine.stop();pending=0;ended=false;preparing=false;speaking=false;level=0;NativeAudioSession.release(audioID)}
+    func stop(){generation?.cancel();generation=nil;resetPlayback();utterance=nil;synthesizer.stopSpeaking(at:.immediate)}
 }
 struct NativeAssistantVoicePanel:View {
-    @AppStorage("assistant-natural-voice") private var naturalVoice=true
-    @AppStorage("assistant-natural-voice-name") private var voiceName="Aoede"
+    @AppStorage("assistant-natural-voice",store:NativeVoicePreferences.defaults) private var naturalVoice=true
+    @AppStorage("assistant-natural-voice-name",store:NativeVoicePreferences.defaults) private var voiceName="Aoede"
     @State private var settings=false
     @State private var captions=false
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
@@ -330,7 +411,7 @@ struct NativeAssistantVoicePanel:View {
                     Button{settings=true}label:{Image(systemName:"slider.horizontal.3").frame(width:44,height:44).background(.white.opacity(0.06),in:Circle())}.accessibilityLabel("Voice settings").accessibilityIdentifier("voice-settings")
                 }.padding(.horizontal,20).padding(.top,8)
                 Spacer(minLength:12)
-                NativeVoiceVisual(level:level,thinking:busy || speaker.preparing,color:accent,reducedMotion:reducedMotion)
+                NativeVoiceVisual(level:level,thinking:busy || speaker.preparing,color:accent,reducedMotion:reducedMotion || settings)
                     .frame(maxWidth:.infinity).frame(height:max(170,min(geometry.size.height*0.47,390)))
                     .accessibilityElement(children:.ignore).accessibilityLabel("Voice activity").accessibilityValue("Audio level "+String(Int(level*100))).accessibilityIdentifier("voice-activity")
                 Text(status).font(.title3.weight(.medium)).padding(.top,14)
@@ -352,12 +433,12 @@ struct NativeAssistantVoicePanel:View {
         }.background(WorkspaceTheme.base(scope).gradient).foregroundStyle(Design.ink).preferredColorScheme(.dark).onAppear{speaker.refreshOutput()}
         .sheet(isPresented:$settings){NavigationStack{Form{
             Section("Voice"){Picker("Voice source",selection:$naturalVoice){Text("Natural").tag(true);Text("Device · faster").tag(false)}
-                if naturalVoice{Picker("Natural voice",selection:$voiceName){Text("Aoede · Relaxed").tag("Aoede");Text("Puck · Upbeat").tag("Puck");Text("Kore · Clear").tag("Kore")}.accessibilityIdentifier("voice-choice")}
+                if naturalVoice{Picker("Natural voice",selection:$voiceName){Text("Aoede · Relaxed").tag("Aoede");Text("Puck · Upbeat").tag("Puck");Text("Kore · Clear").tag("Kore")}.pickerStyle(.navigationLink).accessibilityIdentifier("voice-choice")}
                 Button("Try the voice"){pause();read()}.accessibilityIdentifier("voice-preview")
             }
             Section("Sound"){HStack{Text(speaker.output.isEmpty ? "Audio output":speaker.output);Spacer();NativeOutputPicker().frame(width:32,height:32)};NativeVolumeControls().frame(height:32);if speaker.muted{Text("Raise the volume to hear your assistant.").font(.footnote)}}
             Section{Text("Natural speech uses your connected AI. Device speech starts without a separate voice request.").font(.footnote).foregroundStyle(Design.muted)}
-        }.navigationTitle("Voice settings").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){settings=false}.accessibilityIdentifier("voice-settings-done")}}}.presentationDetents([.medium,.large]).presentationDragIndicator(.visible)}
+        }.navigationTitle("Voice settings").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){settings=false}.accessibilityIdentifier("voice-settings-done")}}}.presentationDetents([.large]).presentationDragIndicator(.visible)}
     }
 }
 struct NativeVoiceVisual:View {
@@ -365,27 +446,28 @@ struct NativeVoiceVisual:View {
     let thinking:Bool
     let color:Color
     let reducedMotion:Bool
-    var body:some View {
-        TimelineView(.animation(minimumInterval:1.0/30,paused:reducedMotion)){timeline in
+    @ViewBuilder var body:some View {
+        if reducedMotion || (!thinking && level<0.001){visual(at:0)}
+        else{TimelineView(.periodic(from:.distantPast,by:1.0/30)){timeline in visual(at:timeline.date.timeIntervalSinceReferenceDate)}}
+    }
+    private func visual(at t:Double)->some View {
             Canvas{context,size in
-                let t=reducedMotion ? 0:timeline.date.timeIntervalSinceReferenceDate
                 let radius=min(size.width,size.height)*0.32
                 let center=CGPoint(x:size.width/2,y:size.height/2)
                 for layer in 0..<5 {
                     var path=Path()
                     for point in 0...180 {
                         let a=Double(point)/180 * .pi*2
-                        let wave=sin(a*3+t*0.7+Double(layer)*0.8)*0.06+cos(a*5-t*0.4)*0.025
-                        let r=Double(radius)*(1+wave+Double(level)*0.28+Double(layer)*0.035)
+                        let wave=sin(a*3+t*(0.7+Double(level)*1.5)+Double(layer)*0.8)*(0.04+Double(level)*0.12)+cos(a*5-t*0.4)*0.025
+                        let r=Double(radius)*(1+wave+Double(level)*0.38+Double(layer)*0.035)
                         let p=CGPoint(x:center.x+cos(a)*r,y:center.y+sin(a)*r)
                         if point==0{path.move(to:p)}else{path.addLine(to:p)}
                     }
                     path.closeSubpath()
                     context.fill(path,with:.radialGradient(Gradient(colors:[color.opacity(0.18),color.opacity(thinking ? 0.12:0.08),color.opacity(0.02)]),center:center,startRadius:0,endRadius:radius*1.3))
-                    context.stroke(path,with:.color(color.opacity(0.32-Double(layer)*0.045)),lineWidth:1.3)
+                    context.stroke(path,with:.color(color.opacity(0.32+Double(level)*0.32-Double(layer)*0.045)),lineWidth:1.3)
                 }
-            }
-        }.accessibilityHidden(true)
+            }.accessibilityHidden(true)
     }
 }
 
@@ -400,13 +482,14 @@ struct NativeOutputPicker:UIViewRepresentable {
 struct AudioWaveform:View {
     var levels:[CGFloat]
     var color:Color
+    var height:CGFloat=64
     var body:some View {
         GeometryReader{proxy in
             Canvas{context,size in
                 let samples=Array(levels.suffix(48));let count=max(1,samples.count);let step=size.width/48
                 for (index,level) in samples.enumerated(){let height=max(3,min(size.height,level*size.height));let x=CGFloat(48-count+index)*step;let rect=CGRect(x:x,y:(size.height-height)/2,width:max(2,step-3),height:height);context.fill(Path(roundedRect:rect,cornerRadius:2),with:.color(color))}
             }
-        }.frame(height:64).accessibilityHidden(true)
+        }.frame(height:height).accessibilityHidden(true)
     }
 }
 @MainActor final class NativeMemoRecorder:NSObject,ObservableObject,AVAudioPlayerDelegate {

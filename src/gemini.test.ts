@@ -1,6 +1,6 @@
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,vi,afterEach} from 'vitest';
 // @ts-expect-error server module is plain JavaScript
-import {authorized,validateReply,workspaceContext,groundedSources,parseModelText,attachmentParts,wavFromPCM,botDirections} from '../server/gemini.js';
+import {authorized,validateReply,workspaceContext,groundedSources,parseModelText,attachmentParts,wavFromPCM,botDirections,speechChunks,clearSpeechCache} from '../server/gemini.js';
 describe('Gemini boundary',()=>{
  it('keeps natural replies but refuses broken structured output',()=>{expect(parseModelText('A natural answer.').text).toBe('A natural answer.');expect(parseModelText('[Source](https://example.com)').text).toBe('[Source](https://example.com)');expect(parseModelText('```json\n{"text":"Ready","actions":[]}\n```').text).toBe('Ready');expect(()=>parseModelText('{"text":"An unfinished')).toThrow('Incomplete structured reply');});
  it('includes imported chapter context only in its own workspace',()=>{const profile=JSON.stringify({items:[{space:'moshia',kind:'chapter',body:'Saved summary'},{space:'band',kind:'note',body:'Band context'}]});expect(workspaceContext(profile,'moshia')).toHaveLength(1);expect(workspaceContext(profile,'band').map((e:{kind:string})=>e.kind)).toEqual(['note']);});
@@ -28,3 +28,31 @@ it('wraps mono PCM voice output in a playable WAV header',()=>{const wav=wavFrom
 it('passes recorded voice memos as audio to Gemini without changing their bytes',()=>{expect(attachmentParts([{name:'Voice memo.wav',mimeType:'audio/wav',data:'UklGRg=='}])[1]).toEqual({inlineData:{mimeType:'audio/wav',data:'UklGRg=='}})});
 
 it('gives scoped bots useful directions without changing fiction or action boundaries',()=>{expect(botDirections('ejj')).toContain('EJJ Digital Bot');expect(botDirections('ejj')).toContain('€299');expect(botDirections('band')).toContain('CLEARANCE 19 Bot');expect(botDirections('moshia')).toContain('distinguish canon');expect(botDirections('moshia')).toContain('Ask before drafting');expect(botDirections('untrusted')).toContain('Everyday Bot');expect(botDirections('school',true)).toContain('one to three short sentences');});
+
+afterEach(()=>{vi.unstubAllGlobals();clearSpeechCache();});
+it('streams PCM immediately, keeps voice choice and reuses completed speech',async()=>{
+ const event=JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'audio/l16; rate=24000',data:'AQACAA=='}}]},finishReason:'STOP'}]});
+ const fetcher=vi.fn(async(_url:string,_options:{body:string})=>new Response('data: '+event+'\n\n',{status:200}));vi.stubGlobal('fetch',fetcher);
+ const parts=[];for await(const bytes of speechChunks('A unique streamed greeting','test-key','Puck'))parts.push(bytes);
+ expect([...parts[0]]).toEqual([1,0,2,0]);expect(fetcher.mock.calls[0][0]).toContain('streamGenerateContent');
+ expect(JSON.parse(fetcher.mock.calls[0][1].body).generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Puck');
+ for await(const _ of speechChunks('A unique streamed greeting','test-key','Puck')){};expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('retries an empty speech response once and never retries provider quota rejection',async()=>{
+ const good='data: '+JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'audio/l16',data:'AQACAA=='}}]},finishReason:'STOP'}]})+'\n\n';
+ const fetcher=vi.fn().mockResolvedValueOnce(new Response('data: {}\n\n')).mockResolvedValueOnce(new Response(good));vi.stubGlobal('fetch',fetcher);
+ const parts=[];for await(const b of speechChunks('Retry this empty response','test-key'))parts.push(b);expect(parts).toHaveLength(1);expect(fetcher).toHaveBeenCalledTimes(2);
+ clearSpeechCache();fetcher.mockReset().mockResolvedValue(new Response('{}',{status:429}));
+ await expect((async()=>{for await(const _ of speechChunks('Quota rejected','test-key')){}})()).rejects.toThrow('quota');expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('refuses truncated audio and keeps private speech caches isolated by credential',async()=>{
+ const event=(finish:string)=>'data: '+JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'audio/l16',data:'AQACAA=='}}]},finishReason:finish}]})+'\n\n';
+ const fetcher=vi.fn(async()=>new Response(event('OTHER')));vi.stubGlobal('fetch',fetcher);
+ await expect((async()=>{for await(const _ of speechChunks('Incomplete audio','key-one')){}})()).rejects.toThrow('interrupted');
+ fetcher.mockReset().mockImplementation(async()=>new Response(event('STOP')));
+ for await(const _ of speechChunks('Private cached reply','key-one')){};for await(const _ of speechChunks('Private cached reply','key-two')){};expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it('samples video more frequently while keeping audio and image parts intact',()=>{const video=attachmentParts([{name:'practice.mp4',mimeType:'video/mp4',data:'AQACAA=='}])[1];expect(video).toEqual({inlineData:{mimeType:'video/mp4',data:'AQACAA=='},videoMetadata:{fps:4}});expect(attachmentParts([{name:'photo.png',mimeType:'image/png',data:'AQACAA=='}])[1]).not.toHaveProperty('videoMetadata')});
+
+it('accepts common audio file formats without discarding the soundtrack',()=>{for(const mimeType of ['audio/mpeg','audio/mp4','audio/aac','audio/aiff','audio/flac','audio/ogg'])expect(attachmentParts([{name:'Recording',mimeType,data:'AQACAA=='}])[1]).toEqual({inlineData:{mimeType,data:'AQACAA=='}})});

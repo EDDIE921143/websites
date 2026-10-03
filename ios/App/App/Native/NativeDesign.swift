@@ -40,16 +40,33 @@ enum WorkspaceTheme {
         }
     }
 }
+private struct WorkspaceFocusKey:EnvironmentKey {static let defaultValue="all"}
+extension EnvironmentValues {var edizWorkspaceFocus:String {get{self[WorkspaceFocusKey.self]}set{self[WorkspaceFocusKey.self]=newValue}}}
+struct FocusLogo:View {
+    let scope:String
+    var body:some View {
+        Image("EdizLogo").resizable().scaledToFit().overlay {
+            if scope != "all" {GeometryReader{geometry in
+                RoundedRectangle(cornerRadius:geometry.size.width*0.012)
+                    .fill(WorkspaceTheme.accent(scope))
+                    .frame(width:geometry.size.width*0.307,height:geometry.size.height*0.053)
+                    .position(x:geometry.size.width*0.457,y:geometry.size.height*0.5)
+            }}
+        }.accessibilityLabel("Ediz OS logo").accessibilityValue(scope == "all" ? "Balanced":Catalog.space(scope).name).accessibilityIdentifier("focus-logo")
+    }
+}
 struct AppBackdrop:View {
     var scope:String = "all"
-    var accent:Color {WorkspaceTheme.accent(scope)}
+    @Environment(\.edizWorkspaceFocus) private var focus
+    var palette:String{scope == "all" ? focus:scope}
+    var accent:Color {WorkspaceTheme.accent(palette)}
     var body:some View {
         ZStack {
-            WorkspaceTheme.base(scope)
-            LinearGradient(colors:[accent.opacity(scope == "all" ? 0.035:0.07),.clear,Color.black.opacity(0.34)],startPoint:.topLeading,endPoint:.bottomTrailing)
+            WorkspaceTheme.base(palette)
+            LinearGradient(colors:[accent.opacity(palette == "all" ? 0.035:0.07),.clear,Color.black.opacity(0.34)],startPoint:.topLeading,endPoint:.bottomTrailing)
             Canvas { context,size in
                 var pattern=Path()
-                switch scope {
+                switch palette {
                 case "ejj":
                     // Blueprints: a broad technical grid, with sparse registration marks.
                     let step:CGFloat=72
@@ -82,7 +99,7 @@ struct AppBackdrop:View {
                     context.stroke(pattern,with:.color(accent.opacity(0.04)),lineWidth:1)
                 default:
                     for offset in stride(from:CGFloat(-100),through:500,by:80){pattern.move(to:CGPoint(x:size.width+offset,y:-80));pattern.addCurve(to:CGPoint(x:-120,y:size.height*0.8+offset),control1:CGPoint(x:size.width*0.12+offset,y:size.height*0.18),control2:CGPoint(x:size.width*1.3,y:size.height*0.58+offset))}
-                    context.stroke(pattern,with:.color(accent.opacity(scope == "personal" ? 0.12:0.065)),lineWidth:0.8)
+                    context.stroke(pattern,with:.color(accent.opacity(palette == "personal" ? 0.12:0.065)),lineWidth:0.8)
                 }
             }
         }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)

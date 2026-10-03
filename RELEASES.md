@@ -1,3 +1,9 @@
+## Ediz OS 0.3.14
+
+Full native/browser regression sweep, streaming natural speech with audible device fallback, measured waveforms, stable voice settings and explicit destructive/canon confirmations. Assistant now sits beside Today. Focus changes background and logo accent; rehearsal adds direct BPM entry, ± controls and tap tempo. Moshia adds a continuity desk and CLEARANCE 19 a rehearsal readiness summary. Common audio/video attachments, profile restore, browser preferences and audio seeking were repaired.
+
+Verification and practical limits are recorded in [the sweep report](docs/SWEEP-0.3.14.md).
+
 ## Ediz OS 0.3.7
 
 Centered Capture, numbered chapters, separated creation fields, workspace assistant perspectives, and private Gemini connection with reviewable record actions. Native Today isolates its selected workspace; native assistant connection is stored in Keychain.

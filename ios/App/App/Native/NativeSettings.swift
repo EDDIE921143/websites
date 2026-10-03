@@ -42,7 +42,7 @@ struct NativeSettings:View {
                     Text("Connect a model you run on your local network. Records are sent only when you switch on ‘Use my local model’ in Assistant and ask a question. No paid key is required.").font(.footnote).foregroundStyle(Design.muted)
                 }
             }
-            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.13 · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition 0.3.14 · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
             Section {
                 NavigationLink { NativeTutorial() } label: {
                     HStack(spacing:14) {
@@ -104,7 +104,7 @@ struct NativeHistory:View {
 }
 struct NativeHealth:View {
     @EnvironmentObject var store:NativeStore
-    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:"0.3.13");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
+    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:"0.3.14");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
 }
 
 struct NativeFocusChoice:View {
@@ -132,14 +132,14 @@ enum WalkthroughKind:String,CaseIterable,Identifiable {
         .init(title:"Try typing",instruction:"Tap the highlighted field. Type ‘Practice guitar tomorrow’ or a thought of your own.",event:"capture-typed",target:"capture-text"),
         .init(title:"Save the thought",instruction:"Look at the preview, then tap the highlighted Save button at the top right.",event:"captured",target:"capture-save")]
     case .chapters:return [
-        .init(title:"Open your spaces",instruction:"Tap Spaces in the bottom bar.",event:"tab-1",target:""),
+        .init(title:"Open your spaces",instruction:"Tap Spaces in the bottom bar.",event:"tab-4",target:""),
         .init(title:"Find Moshia",instruction:"Tap the highlighted Chapters button in the Moshia card. Scroll a little if needed.",event:"chapters-open",target:"chapters"),
         .init(title:"Add a chapter",instruction:"Tap the highlighted Add chapter button at the top left.",event:"creation-open",target:"add-chapter"),
         .init(title:"Give it a title",instruction:"Tap the highlighted Chapter title field and type a title.",event:"chapter-titled",target:"chapter-title"),
         .init(title:"Keep the context",instruction:"Tap the highlighted Context worth keeping field. Write one sentence about what happens.",event:"chapter-context",target:"chapter-context"),
         .init(title:"Create your chapter",instruction:"Tap the highlighted Add button at the top right. This chapter stays in the practice workspace.",event:"saved-chapter",target:"chapter-save")]
     case .assistant:return [
-        .init(title:"Open Assistant",instruction:"Tap Assistant in the bottom bar.",event:"tab-4",target:""),
+        .init(title:"Open Assistant",instruction:"Tap Assistant in the bottom bar.",event:"tab-1",target:""),
         .init(title:"Choose a conversation",instruction:"Tap the highlighted Moshia card to open its own conversation.",event:"chat-open",target:"assistant-moshia"),
         .init(title:"Write a message",instruction:"Tap the highlighted Message field and ask ‘What have I saved about Moshia?’.",event:"assistant-typed",target:"assistant-message"),
         .init(title:"Send it",instruction:"Tap the highlighted arrow. Practice uses Saved context; your connected Gemini chats work outside this tutorial.",event:"assistant-replied",target:"assistant-send")]

@@ -29,7 +29,11 @@ import EdizCore
         open()
     }
     @Published var assistantConnected=false
-    var assistantToken:String? {if isPractice || ProcessInfo.processInfo.arguments.contains("-ui-testing"){return nil};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
+    var assistantToken:String? {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-voice-fallback"){return String(repeating:"0",count:64)}
+        #endif
+        if isPractice || ProcessInfo.processInfo.arguments.contains("-ui-testing"){return nil};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
     func connectAssistant(_ url:URL){guard !isPractice,url.scheme == "edizos",url.host == "assistant",let token=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "token"})?.value,token.count == 64,token.allSatisfy({$0.isHexDigit}) else{return};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device"];SecItemDelete(query as CFDictionary);var item=query;item[kSecValueData as String]=Data(token.utf8);item[kSecAttrAccessible as String]=kSecAttrAccessibleWhenUnlockedThisDeviceOnly;if SecItemAdd(item as CFDictionary,nil)==errSecSuccess{assistantConnected=true;loadContext()}else{error="This device could not connect to the assistant."}}
     func loadContext() {
         guard let token = assistantToken else { return }

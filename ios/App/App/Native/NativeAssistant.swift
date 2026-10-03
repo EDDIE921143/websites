@@ -109,6 +109,7 @@ struct NativeAssistantChat:View {
     @State private var proposal:GeminiProposal?
     @State private var attachments:[AssistantAttachment]=[]
     @State private var importingFiles=false
+    @State private var attachmentOptions=false
     @State private var choosingMedia=false
     @State private var preparing=0
     @State private var mediaError:String?
@@ -144,12 +145,17 @@ struct NativeAssistantChat:View {
                 .onChange(of:busy){_,_ in scrollToBottom(reader)}
                 .safeAreaInset(edge:.bottom){composer}
         }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}
+            .confirmationDialog("Add to your message",isPresented:$attachmentOptions,titleVisibility:.visible){
+                Button("Photo or video"){mediaError=nil;choosingMedia=true}
+                Button("Choose a file"){mediaError=nil;importingFiles=true}
+                Button("Cancel",role:.cancel){}
+            } message:{Text("Photos, videos up to 60 seconds, PDFs and text")}
             .sheet(isPresented:$choosingMedia){NativeAssistantMediaPicker(receive:{url in prepareAttachment(url,temporary:true)},close:{choosingMedia=false},failed:{mediaError=$0})}
             .sheet(item:$memoPreview,onDismiss:{memoPreview=nil}){clip in NativeAudioPractice(url:clip.url).presentationDragIndicator(.visible)}
-            .fileImporter(isPresented:$importingFiles,allowedContentTypes:[.image,.movie,.audio,.pdf,.plainText,.text,.json,.commaSeparatedText],allowsMultipleSelection:true){result in switch result{case .success(let urls):for url in urls{prepareAttachment(url)};case .failure:mediaError="That file couldn’t be opened. Try choosing it again."}}
-            .fullScreenCover(isPresented:$voiceOpen,onDismiss:{endVoice()}){NativeAssistantVoicePanel(speech:speech,speaker:speaker,busy:busy,reply:entries.last(where:{$0.role == "assistant"})?.text ?? "",error:message,scope:scope,listen:{beginListening()},pause:{voiceAuto=false;voiceTurn?.cancel();speech.stop();speaker.stop()},send:{sendVoice()},read:{voiceAuto=false;speech.stop();speaker.say(entries.last(where:{$0.role == "assistant"})?.text ?? "Hi Ediz. I’m here to help with your day, your projects, and your ideas.",token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true,voice:UserDefaults.standard.string(forKey:"assistant-natural-voice-name") ?? "Aoede")},end:{endVoice()})}
+            .fileImporter(isPresented:$importingFiles,allowedContentTypes:[.image,.movie,.audio,.pdf,.plainText,.text,.json,.commaSeparatedText],allowsMultipleSelection:true){result in switch result{case .success(let urls):for url in urls{prepareAttachment(url)};case .failure(let error):if (error as NSError).code != NSUserCancelledError{mediaError="That file couldn’t be opened. Try choosing it again."}}}
+            .fullScreenCover(isPresented:$voiceOpen,onDismiss:{endVoice()}){NativeAssistantVoicePanel(speech:speech,speaker:speaker,busy:busy,reply:entries.last(where:{$0.role == "assistant"})?.text ?? "",error:message,scope:scope,listen:{beginListening()},pause:{voiceAuto=false;voiceTurn?.cancel();speech.stop();speaker.stop()},send:{sendVoice()},read:{voiceAuto=false;speech.stop();speaker.say(entries.last(where:{$0.role == "assistant"})?.text ?? "Hi Ediz. I’m here to help with your day, your projects, and your ideas.",token:store.assistantToken,natural:NativeVoicePreferences.defaults.object(forKey:"assistant-natural-voice") as? Bool ?? true,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")},end:{endVoice()})}
             .onChange(of:speech.transcript){_,value in scheduleVoice(value)}
-            .onChange(of:entries.count){_,_ in if voiceWanted,let last=entries.last,last.role == "assistant"{speech.stop();speaker.say(last.text,token:store.assistantToken,natural:UserDefaults.standard.object(forKey:"assistant-natural-voice") as? Bool ?? true,voice:UserDefaults.standard.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}}
+            .onChange(of:entries.count){_,_ in if voiceWanted,let last=entries.last,last.role == "assistant"{speech.stop();speaker.say(last.text,token:store.assistantToken,natural:NativeVoicePreferences.defaults.object(forKey:"assistant-natural-voice") as? Bool ?? true,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}}
             .onDisappear{dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false;if !voiceOpen{voiceAuto=false;voiceWanted=false;voiceTurn?.cancel();speech.stop();speaker.stop()}}
             .onChange(of:scenePhase){_,phase in if phase == .background{endVoice();dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
             .onAppear{if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
@@ -251,11 +257,7 @@ struct NativeAssistantChat:View {
             if let mediaError{Text(mediaError).font(.caption).foregroundStyle(Design.muted)}
             if dictating || transcribing { recordingBar } else {
             HStack(alignment:.bottom,spacing:6) {
-                Menu {
-                    Button("Photo or video",systemImage:"photo.on.rectangle"){mediaError=nil;choosingMedia=true}
-                    Button("Choose a file",systemImage:"doc"){mediaError=nil;importingFiles=true}
-                    Text("Photos, videos up to 60 seconds, PDFs and text")
-                } label:{Image(systemName:"plus").font(.body.weight(.medium)).frame(width:40,height:44)}.accessibilityLabel("Add attachment").accessibilityIdentifier("assistant-attach").disabled(busy || preparing>0)
+                Button {typing=false;attachmentOptions=true} label:{Image(systemName:"plus").font(.body.weight(.medium)).frame(width:40,height:44)}.accessibilityLabel("Add attachment").accessibilityIdentifier("assistant-attach").disabled(busy || preparing>0)
                 TextField("Message…",text:$question,axis:.vertical)
                     .lineLimit(1...4).font(Design.font(16,weight:"Regular"))
                     .focused($typing).accessibilityIdentifier("assistant-question").walkthroughTarget("assistant-message",session:store.walkthrough)
@@ -282,7 +284,7 @@ struct NativeAssistantChat:View {
         HStack(spacing:10){
             Button{dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}label:{Image(systemName:"xmark").frame(width:40,height:44)}.accessibilityLabel("Cancel recording").accessibilityIdentifier("dictation-cancel")
             if transcribing || dictation.requesting{ProgressView();Text(transcribing ? "Transcribing…":"Starting microphone…").font(.subheadline).frame(maxWidth:.infinity,alignment:.leading)}else{
-                VStack(alignment:.leading,spacing:2){TimelineView(.periodic(from:recordStarted,by:1)){time in Text("Recording · "+String(Int(max(0,time.date.timeIntervalSince(recordStarted))))+"s").font(.caption).monospacedDigit()};AudioWaveform(levels:(0..<48).map{max(0.025,dictation.level*(0.4+0.6*abs(sin(CGFloat($0)*0.42))))},color:accent).frame(height:24).clipped()}.frame(maxWidth:.infinity).accessibilityIdentifier("dictation-recording")
+                VStack(alignment:.leading,spacing:2){TimelineView(.periodic(from:recordStarted,by:1)){time in Text("Recording · "+String(Int(max(0,time.date.timeIntervalSince(recordStarted))))+"s").font(.caption).monospacedDigit()};AudioWaveform(levels:dictation.levels,color:accent,height:26)}.frame(maxWidth:.infinity).accessibilityIdentifier("dictation-recording")
             }
             Button{finishDictation(sendAfter:false)}label:{Image(systemName:"stop.fill").frame(width:40,height:44)}.disabled(transcribing || dictation.requesting).accessibilityLabel("Stop and transcribe").accessibilityIdentifier("dictation-stop")
             Button{finishDictation(sendAfter:true)}label:{Image(systemName:"arrow.up").frame(width:44,height:44).foregroundStyle(Design.background).background(accent,in:Circle())}.disabled(transcribing || dictation.requesting).accessibilityLabel("Transcribe and send").accessibilityIdentifier("dictation-send")

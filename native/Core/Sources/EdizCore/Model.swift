@@ -87,7 +87,7 @@ public struct Record: Codable, Identifiable, Hashable, Sendable {
         ["task","assignment","exam","lead"].contains(kind) && !["done","Lost","Client","archived","waiting","blocked","REJECTED"].contains(status) && blocked != true
     }
     public var valid: Bool {
-        Catalog.spaces.contains { $0.id == space } && Catalog.kinds.contains(kind) && !id.isEmpty && !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && Time.date(created) != nil && Time.date(updated) != nil && (due == nil || Time.date(due) != nil)
+        Catalog.spaces.contains { $0.id == space } && Catalog.kinds.contains(kind) && !id.isEmpty && !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && Time.date(created) != nil && Time.date(updated) != nil && (due == nil || Time.date(due) != nil) && (duration == nil || (1...1440).contains(duration!))
     }
 }
 public struct Activity: Codable, Identifiable, Hashable, Sendable {
@@ -123,6 +123,16 @@ public struct Preferences: Codable, Sendable {
         assistantChats=try c.decodeIfPresent([String:String].self,forKey:.assistantChats) ?? [:]
     }
 }
+public struct Profile:Codable,Sendable {
+    public var format="ediz-profile"
+    public var version=1
+    public var settings:Preferences
+    public init(settings:Preferences){self.settings=settings}
+    public func validatedPreferences() throws -> Preferences {
+        guard format == "ediz-profile",version == 1,["light","dark","system"].contains(settings.theme),["comfortable","compact"].contains(settings.density),settings.focus == "all" || Catalog.spaces.contains(where:{$0.id == settings.focus}) else{throw CoreError.invalidBackup}
+        return settings
+    }
+}
 public struct Attachment: Codable, Identifiable, Sendable {
     public var id: String
     public var entityId: String
@@ -150,5 +160,5 @@ public struct Backup: Codable, Sendable {
 }
 public enum CoreError: Error, LocalizedError {
     case invalidBackup, database(String), invalidRecord
-    public var errorDescription: String? { switch self { case .invalidBackup:return "This backup could not be validated. Your current records are unchanged.";case .database:return "Ediz OS couldn’t save that change. Your previous version is safe.";case .invalidRecord:return "Add a title and check the date before saving." } }
+    public var errorDescription: String? { switch self { case .invalidBackup:return "This backup could not be validated. Your current records are unchanged.";case .database:return "Ediz OS couldn’t save that change. Your previous version is safe.";case .invalidRecord:return "Add a title, check the date, and use 1–1440 minutes before saving." } }
 }
