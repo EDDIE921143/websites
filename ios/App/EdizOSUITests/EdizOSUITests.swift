@@ -32,7 +32,7 @@ final class EdizOSUITests:XCTestCase {
         app.terminate();app.launchArguments=["-ui-testing"];app.launch()
         XCTAssertTrue(task.waitForExistence(timeout:5))
         app.buttons["Complete French homework tomorrow"].tap()
-        XCTAssertTrue(app.buttons["Undo"].waitForExistence(timeout:5));app.buttons["Undo"].tap()
+        XCTAssertTrue(app.buttons["Undo"].waitForExistence(timeout:5));XCTAssertTrue(app.otherElements["completion-feedback"].exists);snapshot("Completion ring and Undo");app.buttons["Undo"].tap()
         XCTAssertTrue(task.waitForExistence(timeout:5))
     }
     func testNativeEdgeSwipeBackFromEditor() {
@@ -128,7 +128,7 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["A sweep import note"].waitForExistence(timeout:5))
         app.navigationBars.buttons.firstMatch.tap()
         for _ in 0..<6{if app.buttons["System health"].isHittable{break};app.swipeUp()}
-        app.buttons["System health"].tap();XCTAssertTrue(app.staticTexts["Database, SQLite · WAL"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Version, 0.3.14"].exists)
+        app.buttons["System health"].tap();XCTAssertTrue(app.staticTexts["Database, SQLite · WAL"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Version, 0.3.15"].exists)
         snapshot("System health after a real text import")
     }
     func testChapterCreationKeepsItsOwnDraftAndFields(){
@@ -219,6 +219,71 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["Hello"].waitForExistence(timeout:5))
         snapshot("Conversation restored after app restart")
     }
+    func testConnectedTutorialUsesNaturalVoiceReadOnly() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Natural tutorial voice uses the paired phone credential.")
+        #endif
+        app.terminate();app.launchArguments=[];app.launchEnvironment=[:];app.launch()
+        app.buttons["Settings and backup"].tap()
+        let guide=app.buttons["settings-tutorial"]
+        for _ in 0..<6{if guide.isHittable{break};app.swipeUp()}
+        guide.tap()
+        let spoken=app.switches["tutorial-spoken-guide"]
+        XCTAssertTrue(spoken.waitForExistence(timeout:5));if spoken.value as? String == "0"{spoken.tap()}
+        app.buttons["tutorial-start-chapters"].tap()
+        XCTAssertTrue(app.staticTexts["Natural voice"].waitForExistence(timeout:20))
+        let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
+        expectation(for:audible,evaluatedWith:app.otherElements["tutorial-voice-activity"]);waitForExpectations(timeout:8)
+        snapshot("Natural spoken chapter walkthrough in a safe practice workspace")
+        app.buttons["walkthrough-voice-toggle"].tap();app.buttons["walkthrough-exit"].tap()
+        XCTAssertTrue(app.navigationBars["Your guide"].waitForExistence(timeout:5))
+    }
+    func testSpokenTutorialCanReadMuteReplayAndAdvance(){
+        app.buttons["Settings and backup"].tap()
+        let guide=app.buttons["settings-tutorial"]
+        for _ in 0..<6{if guide.isHittable{break};app.swipeUp()}
+        guide.tap()
+        let spoken=app.switches["tutorial-spoken-guide"]
+        XCTAssertTrue(spoken.waitForExistence(timeout:5));if spoken.value as? String == "0"{spoken.tap()}
+        app.buttons["tutorial-start-capture"].tap()
+        XCTAssertTrue(app.buttons["walkthrough-voice-replay"].waitForExistence(timeout:5))
+        let activity=app.otherElements["tutorial-voice-activity"]
+        let audible=NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*")
+        expectation(for:audible,evaluatedWith:activity);waitForExpectations(timeout:8)
+        snapshot("Spoken tutorial with measured audio and mute replay controls")
+        app.buttons["walkthrough-voice-toggle"].tap()
+        XCTAssertFalse(app.buttons["walkthrough-voice-replay"].exists)
+        app.tabBars.buttons["Capture"].tap()
+        XCTAssertTrue(app.staticTexts["Try typing"].waitForExistence(timeout:5))
+        app.buttons["walkthrough-voice-toggle"].tap()
+        XCTAssertTrue(app.buttons["walkthrough-voice-replay"].exists)
+        app.buttons["walkthrough-voice-replay"].tap()
+        expectation(for:audible,evaluatedWith:activity);waitForExpectations(timeout:8)
+        app.buttons["walkthrough-exit"].tap()
+        XCTAssertTrue(app.navigationBars["Your guide"].waitForExistence(timeout:5))
+        XCTAssertFalse(app.otherElements["tutorial-voice-activity"].exists)
+    }
+    func testPullToRefreshReloadsTheWorkspace(){
+        XCTAssertFalse(app.staticTexts["workspace-refreshed"].exists)
+        let start=app.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.25))
+        let end=app.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.78))
+        start.press(forDuration:0.1,thenDragTo:end)
+        XCTAssertTrue(app.staticTexts["workspace-refreshed"].waitForExistence(timeout:5))
+        snapshot("Today confirms a real completed refresh")
+    }
+    func testWorkspaceHeadersMatchTheirDestinations(){
+        app.tabBars.buttons["Spaces"].tap();app.buttons["Chapters"].tap()
+        XCTAssertTrue(app.otherElements["workspace-header-moshia"].waitForExistence(timeout:5))
+        XCTAssertTrue(app.staticTexts["Your story, taking shape."].exists)
+        snapshot("Moshia workspace header and continuity entry")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["space-ejj"].tap()
+        XCTAssertTrue(app.otherElements["workspace-header-ejj"].waitForExistence(timeout:5))
+        XCTAssertTrue(app.staticTexts["Keep good work moving."].exists)
+        app.buttons["module-picker"].tap();app.buttons["Websites"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Add website"].exists)
+        snapshot("EJJ workspace identity and module selector")
+    }
     func testHandsOnTutorialsAdvanceWithRealActionsAndKeepYourData(){
         snapshot("Warm welcoming Today screen")
         app.buttons["Settings and backup"].tap()
@@ -226,6 +291,7 @@ final class EdizOSUITests:XCTestCase {
         for _ in 0..<6 {if guide.isHittable{break};app.swipeUp()}
         XCTAssertTrue(guide.isHittable);guide.tap()
         XCTAssertTrue(app.staticTexts["Learn by doing."].waitForExistence(timeout:5))
+        let spoken=app.switches["tutorial-spoken-guide"];if spoken.value as? String == "1"{spoken.tap()}
         snapshot("Hands-on tutorial chooser")
         func start(_ id:String){
             let button=app.buttons["tutorial-start-"+id]

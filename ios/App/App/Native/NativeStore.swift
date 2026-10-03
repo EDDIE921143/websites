@@ -12,6 +12,8 @@ import EdizCore
     @Published var captureRequest: EdizCore.Record?
     @Published var focusRequest: EdizCore.Record?
     @Published var undoRecord: EdizCore.Record?
+    @Published var lastCreatedRecordID:String?
+    @Published var lastRefresh:Date?
     @Published var ready = false
     private(set) var database: Database?
     private let root: URL
@@ -37,26 +39,29 @@ import EdizCore
     func connectAssistant(_ url:URL){guard !isPractice,url.scheme == "edizos",url.host == "assistant",let token=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "token"})?.value,token.count == 64,token.allSatisfy({$0.isHexDigit}) else{return};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device"];SecItemDelete(query as CFDictionary);var item=query;item[kSecValueData as String]=Data(token.utf8);item[kSecAttrAccessible as String]=kSecAttrAccessibleWhenUnlockedThisDeviceOnly;if SecItemAdd(item as CFDictionary,nil)==errSecSuccess{assistantConnected=true;loadContext()}else{error="This device could not connect to the assistant."}}
     func loadContext() {
         guard let token = assistantToken else { return }
-        Task { @MainActor in await fetchContext(token) }
+        Task { @MainActor in _ = await fetchContext(token) }
     }
-    func refresh() async {
-        do { try reload() } catch { self.error=error.localizedDescription }
-        if let token=assistantToken { await fetchContext(token) }
+    @discardableResult func refresh() async -> Bool {
+        do { try reload() } catch { self.error=error.localizedDescription;return false }
+        if let token=assistantToken,!(await fetchContext(token)){return false}
+        lastRefresh=Date();return true
     }
-    private func fetchContext(_ token:String) async {
+    private func fetchContext(_ token:String) async -> Bool {
             do {
-                var request = URLRequest(url: URL(string: "https://ediz-os.vercel.app/api/assistant?context=1")!)
+                var request = URLRequest(url: URL(string: "https://ediz-os.vercel.app/api/assistant?context=1")!);request.timeoutInterval=12
                 request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
                 let (data, response) = try await URLSession.shared.data(for: request)
-                guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { self.error="Your workspace context could not be refreshed. Your saved work is still here.";return false }
                 let context = try JSONDecoder().decode(WorkspaceContextBundle.self, from: data)
                 let changes = WorkspaceContext.changes(incoming:context.items,existing:records)
                 if !changes.isEmpty,let database {
                     for item in changes { try database.save(item,action:"Context imported") }
                     try reload()
                 }
+                return true
             } catch {
                 self.error = "Your workspace context could not be downloaded. Try connecting again when online."
+                return false
             }
     }
     func open() {
@@ -76,7 +81,7 @@ import EdizCore
         records = try database.records(); activity = try database.history(); preferences = try database.preferences()
     }
     @discardableResult func save(_ record: EdizCore.Record, action: String = "Updated") -> Bool {
-        do { guard let database else{throw CoreError.database("unavailable")};var copy=record;copy.updated=Time.string(Date());try database.save(copy,action:action);try reload();UISelectionFeedbackGenerator().selectionChanged();walkthrough?.event("saved-"+copy.kind);return true }
+        do { guard let database else{throw CoreError.database("unavailable")};var copy=record;copy.updated=Time.string(Date());try database.save(copy,action:action);try reload();if action == "Created"{lastCreatedRecordID=copy.id};UISelectionFeedbackGenerator().selectionChanged();walkthrough?.event("saved-"+copy.kind);return true }
         catch { self.error=error.localizedDescription;return false }
     }
     func complete(_ record: EdizCore.Record) { var copy=record;copy.status="done";if save(copy,action:"Completed"){undoRecord=record;UINotificationFeedbackGenerator().notificationOccurred(.success)} }

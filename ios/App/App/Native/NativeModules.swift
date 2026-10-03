@@ -7,18 +7,17 @@ struct NativeSpace:View {
     @State private var kind=""
     @State private var filter="all"
     @State private var rehearsal=false
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     var space:SpaceDefinition{Catalog.space(route.id)}
     var creationNoun:String {kind == "thread" ? "plot thread":kind == "assignment" ? "homework":kind == "note" && route.id == "moshia" ? "research":kind}
     var orderedRecords:[EdizCore.Record]{store.records.filter{$0.space == route.id && $0.kind == kind}.sorted{kind == "chapter" ? chapterBefore($0,$1):$0.updated>$1.updated}}
     var records:[EdizCore.Record]{orderedRecords.filter{filter == "all" || $0.status == filter}}
     var songs:[EdizCore.Record]{store.records.filter{$0.space == "band" && $0.kind == "song" && $0.status != "archived"}.sorted{$0.created<$1.created}}
     var body:some View {
+        ScrollViewReader { proxy in
         List {
-            Section {
-                Picker("Area",selection:$kind){ForEach(space.modules){Text($0.label).tag($0.kind)}}.accessibilityIdentifier("module-picker")
-                if kind == "lead"{Picker("Pipeline",selection:$filter){Text("All leads").tag("all");ForEach(Catalog.states(kind:"lead",space:"ejj"),id:\.self){Text($0).tag($0)}}}
-                if route.id == "moshia"{Picker("Story state",selection:$filter){Text("All states").tag("all");ForEach(Catalog.states(kind:kind,space:"moshia"),id:\.self){Text($0).tag($0)}}}
-            }
+            Section { workspaceHeader.listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden) }
+
             if route.id == "moshia" {
                 Section {NavigationLink{NativeStoryDesk()}label:{HStack(spacing:14){Image(systemName:"book.pages.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("moshia"));VStack(alignment:.leading,spacing:5){Text("Continuity desk").font(.headline);Text("Chapters, open threads and established canon").font(.subheadline).foregroundStyle(Design.muted)}}.padding(.vertical,8)}.accessibilityIdentifier("story-desk-open")}
             }
@@ -50,7 +49,7 @@ struct NativeSpace:View {
                                     .background(Design.raised, in: Capsule())
                             }.padding(.vertical, store.preferences.density == "compact" ? 8 : 14)
                         }.accessibilityIdentifier("chapter-card-" + record.id)
-                            .listRowBackground(Design.surface).listRowSeparator(.hidden)
+                            .listRowBackground(Design.surface).listRowSeparator(.hidden).id(record.id)
                     }
                 }
             } else {
@@ -61,16 +60,43 @@ struct NativeSpace:View {
                         if route.id == "moshia"{Text(record.status).font(.caption.weight(.medium)).foregroundStyle(Design.color(space.color))}
                         if record.kind == "song"{Text([record.data["artist"],record.data["BPM"].map{"\($0) BPM"},record.data["tuning"],record.status].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}
                         if record.kind == "chapter"{Text([record.data["POV"],record.data["wordCount"].map{"\($0) words"},record.data["location"]].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline).foregroundStyle(Design.muted)}
-                    }.listRowSeparator(.hidden).swipeActions(edge:.trailing,allowsFullSwipe:true){if record.actionable{Button{store.complete(record)}label:{Label("Done",systemImage:"checkmark")}.tint(.green)}}
+                    }.id(record.id).listRowSeparator(.hidden).swipeActions(edge:.trailing,allowsFullSwipe:true){if record.actionable{Button{store.complete(record)}label:{Label("Done",systemImage:"checkmark")}.tint(.green)}}
                 }
             }
             }
             if route.id == "moshia" && kind == "event"{NativeTimeline()}
-        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop(scope:route.id)).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
+        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).modifier(WorkspaceEntrance()).modifier(BrandedRefresh()).background(AppBackdrop(scope:route.id)).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
             .toolbar{ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add").walkthroughTarget("add-chapter",session:store.walkthrough)}}
             .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind};if route.id == "moshia" && kind == "chapter"{store.walkthrough?.event("chapters-open")}}
             .onChange(of:kind){_,_ in filter="all"}
             .fullScreenCover(isPresented:$rehearsal){NativeRehearsal(songs:songs)}
+            .safeAreaInset(edge:.top){moduleControls.padding(.horizontal,20).padding(.vertical,8).background(WorkspaceTheme.base(route.id))}
+            .onChange(of:store.lastCreatedRecordID){_,id in
+                guard let id,records.contains(where:{$0.id == id}) else{return}
+                DispatchQueue.main.asyncAfter(deadline:.now()+0.2){withAnimation(reducedMotion ? nil:.easeOut(duration:0.25)){proxy.scrollTo(id,anchor:.center)}}
+            }
+        }
+    }
+    var moduleControls:some View {
+                HStack(spacing:12){
+                    Picker("Area",selection:$kind){ForEach(space.modules){Text($0.label).tag($0.kind)}}.labelsHidden().pickerStyle(.menu).font(.headline).tint(WorkspaceTheme.accent(route.id)).accessibilityIdentifier("module-picker")
+                    Spacer(minLength:0)
+                    if kind == "lead"{Picker("Pipeline",selection:$filter){Text("All leads").tag("all");ForEach(Catalog.states(kind:"lead",space:"ejj"),id:\.self){Text($0).tag($0)}}.labelsHidden().pickerStyle(.menu).font(.caption)}
+                    if route.id == "moshia"{Picker("Story state",selection:$filter){Text("All states").tag("all");ForEach(Catalog.states(kind:kind,space:"moshia"),id:\.self){Text($0).tag($0)}}.labelsHidden().pickerStyle(.menu).font(.caption)}
+                }.frame(minHeight:48).padding(.horizontal,16).background(Design.surface,in:Capsule())
+
+    }
+    var workspaceHeader:some View {
+        let count=store.records.filter{$0.space == route.id && $0.status != "archived"}.count
+        return VStack(alignment:.leading,spacing:16){
+            HStack{Text("YOUR WORKSPACE").font(.caption2.weight(.semibold)).tracking(1.4);Spacer();SpaceMark(space:space).scaleEffect(1.2)}.foregroundStyle(WorkspaceTheme.accent(route.id))
+            Text(workspaceHeading).font(.system(.title,design:route.id == "moshia" ? .serif:.rounded).weight(.semibold)).fixedSize(horizontal:false,vertical:true)
+            Text(space.summary).font(.subheadline).foregroundStyle(Design.muted)
+            HStack(spacing:8){Circle().fill(WorkspaceTheme.accent(route.id)).frame(width:6,height:6);Text("\(count) saved items · \(space.modules.count) areas").font(.caption).foregroundStyle(Design.muted)}
+        }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background{WorkspacePanel(scope:route.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(route.id).opacity(0.22),lineWidth:1)}.accessibilityElement(children:.contain).accessibilityIdentifier("workspace-header-"+route.id)
+    }
+    var workspaceHeading:String {
+        switch route.id{case "moshia":return "Your story, taking shape.";case "band":return "Make room for the music.";case "ejj":return "Keep good work moving.";case "school":return "One step ahead.";default:return "A little room for you."}
     }
     func chapterBefore(_ a:EdizCore.Record,_ b:EdizCore.Record)->Bool {
         let first=WorkspaceContext.chapterNumber(a),second=WorkspaceContext.chapterNumber(b)

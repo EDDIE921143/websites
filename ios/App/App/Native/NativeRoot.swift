@@ -23,7 +23,8 @@ struct NativeRoot:View {
                     .onChange(of:selected){_,next in if next != 2 {previous=next};store.walkthrough?.event("tab-\(next)") }
                     .sheet(item:$store.captureRequest){seed in Group { if seed.data["_creation"] == "1" { NativeCreation(seed:seed) } else { NativeCapture(seed:seed) } }.presentationDetents([.large]).presentationDragIndicator(.visible)}
                     .fullScreenCover(item:$store.focusRequest){NativeFocus(record:$0)}
-                    .overlay(alignment:.bottom){if store.undoRecord != nil{HStack{Text("Completed").font(.subheadline);Spacer();Button("Undo"){store.undo()}.font(.subheadline.weight(.medium));Button{store.undoRecord=nil}label:{Image(systemName:"xmark").frame(width:30,height:36)}.accessibilityLabel("Dismiss completion")}.padding(.horizontal,16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)).padding(.horizontal,20).padding(.bottom,80)}}
+                    .overlay(alignment:.bottom){if let completed=store.undoRecord{CompletionToast(undo:{store.undo()},dismiss:{store.undoRecord=nil}).id(completed.id).padding(.horizontal,20).padding(.bottom,80).transition(.move(edge:.bottom).combined(with:.opacity))}}
+                    .animation(reducedMotion ? nil:.spring(duration:0.35,bounce:0.18),value:store.undoRecord?.id)
             } else {
                 VStack(spacing:20){Text("Ediz OS").font(.title2.weight(.medium));Text("Your local data couldn’t be opened.").foregroundStyle(Design.muted);Button("Try again"){store.open()}.buttonStyle(ActionStyle())}.padding(24)
             }
@@ -82,13 +83,14 @@ struct NativeToday:View {
 
                 HStack(spacing:12){GlassAction{Button{weekly=false;review=true}label:{Label("Review today",systemImage:"checkmark.circle").frame(maxWidth:.infinity,minHeight:48)}};GlassAction{Button{weekly=true;review=true}label:{Image(systemName:"calendar").frame(minWidth:44,minHeight:48)}.accessibilityLabel("Review this week")}}.font(Design.font(15))
             }.padding(.horizontal,20).padding(.top,8).padding(.bottom,26)
-        }.refreshable{await store.refresh()}.background(AppBackdrop()).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
+        }.modifier(BrandedRefresh()).background(AppBackdrop()).navigationTitle("Ediz OS").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented:$choosingFocus){NativeFocusChoice().presentationDragIndicator(.visible)}
             .sheet(isPresented:$review){NativeReview(weekly:weekly).presentationDragIndicator(.visible)}
     }
     var welcomeHero:some View {
         VStack(alignment:.leading,spacing:18){
             HStack(spacing:12){FocusLogo(scope:store.preferences.focus).frame(width:46,height:46).clipShape(RoundedRectangle(cornerRadius:10));Text("YOUR DAY").font(.caption.weight(.semibold)).tracking(1.5).foregroundStyle(Design.muted);Spacer();Text(Date.now,format:.dateTime.weekday(.abbreviated).day().month(.abbreviated)).font(.caption).foregroundStyle(Design.muted)}
+            if let date=store.lastRefresh {Label("Updated "+date.formatted(date:.omitted,time:.shortened),systemImage:"checkmark.circle").font(.caption).foregroundStyle(Design.muted).accessibilityIdentifier("workspace-refreshed")}
             if store.preferences.focus == "all" {
                 Text(greeting+",\nEdiz.").font(.system(.largeTitle,design:.rounded).weight(.semibold)).fixedSize(horizontal:false,vertical:true)
                 Text("A little space for your plans, stories, and ideas.").font(.subheadline).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)
@@ -140,7 +142,7 @@ struct NativeSpaces:View {
                     HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44).walkthroughTarget(module.kind == "chapter" ? "chapters":"",session:store.walkthrough)}}}}
                 }.padding(store.preferences.density == "compact" ? 12:24).background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(space.id).opacity(0.18),lineWidth:1)}
             }
-        }.padding(20) }.refreshable{await store.refresh()}.background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces")
+        }.padding(20) }.modifier(BrandedRefresh()).background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces")
     }
 }
 struct NativeSearch:View {
@@ -159,6 +161,6 @@ struct NativeSearch:View {
                 if results.isEmpty{QuietEmpty(title:query.isEmpty ? "Your work will appear here.":"No matches yet.",message:query.isEmpty ? "Capture or import something to make it searchable.":"Try a shorter name or a different space.")}
                 ForEach(Array(results.prefix(100))){RecordRow(record:$0).walkthroughTarget($0.title == "Practice guitar" ? "search-result":"",session:store.walkthrough)}
             }
-        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop()).listRowSpacing(store.preferences.density == "compact" ? 4:12).refreshable{await store.refresh()}.navigationTitle("Search").onChange(of:query){_,value in if value.localizedCaseInsensitiveContains("guitar"){store.walkthrough?.event("searched")}}
+        }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop()).listRowSpacing(store.preferences.density == "compact" ? 4:12).modifier(BrandedRefresh()).navigationTitle("Search").onChange(of:query){_,value in if value.localizedCaseInsensitiveContains("guitar"){store.walkthrough?.event("searched")}}
     }
 }

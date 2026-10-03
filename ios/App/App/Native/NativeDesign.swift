@@ -231,3 +231,80 @@ struct NativeTabScrubber:UIViewRepresentable {
         }
     }
 }
+
+
+struct WorkspaceEntrance:ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    @State private var entered=false
+    func body(content:Content)->some View {
+        content.opacity(reducedMotion || entered ? 1:0)
+            .offset(y:reducedMotion || entered ? 0:12)
+            .onAppear{withAnimation(reducedMotion ? nil:.spring(duration:0.42,bounce:0.12)){entered=true}}
+            .onDisappear{entered=false}
+    }
+}
+struct CompletionToast:View {
+    let undo:()->Void
+    let dismiss:()->Void
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    @State private var appeared=false
+    var body:some View {
+        HStack(spacing:12){
+            ZStack {
+                Circle().stroke(Design.ink.opacity(0.15),lineWidth:2)
+                Circle().trim(from:0,to:appeared ? 1:0).stroke(Design.ink,lineWidth:2).rotationEffect(.degrees(-90))
+                Image(systemName:"checkmark").font(.system(size:15,weight:.semibold)).scaleEffect(appeared ? 1:0.5).opacity(appeared ? 1:0)
+                ForEach(0..<6){index in Capsule().fill(Design.ink).frame(width:2,height:5).offset(y:appeared ? -25:-17).rotationEffect(.degrees(Double(index)*60)).opacity(appeared ? 0:1)}
+            }.frame(width:32,height:32).accessibilityHidden(true)
+            Text("Completed").font(.subheadline.weight(.medium))
+            Spacer()
+            Button("Undo",action:undo).font(.subheadline.weight(.medium)).frame(minHeight:44)
+            Button(action:dismiss){Image(systemName:"xmark").frame(width:32,height:44)}.accessibilityLabel("Dismiss completion")
+        }.padding(.horizontal,16).padding(.vertical,4).background(.regularMaterial,in:RoundedRectangle(cornerRadius:18))
+            .onAppear{withAnimation(reducedMotion ? nil:.easeOut(duration:0.65)){appeared=true}}
+            .accessibilityElement(children:.contain).accessibilityIdentifier("completion-feedback")
+    }
+}
+struct BrandedRefresh:ViewModifier {
+    @EnvironmentObject var store:NativeStore
+    @Environment(\.edizWorkspaceFocus) private var focus
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    @State private var refreshing=false
+    @State private var showing=false
+    @State private var failed=false
+    func body(content:Content)->some View {
+        content.refreshable {
+            guard !refreshing else{return}
+            failed=false;refreshing=true
+            withAnimation(reducedMotion ? nil:.easeOut(duration:0.18)){showing=true}
+            let succeeded=await store.refresh()
+            try? await Task.sleep(for:.milliseconds(450))
+            failed = !succeeded
+            refreshing=false
+            try? await Task.sleep(for:.milliseconds(550))
+            withAnimation(reducedMotion ? nil:.easeOut(duration:0.2)){showing=false}
+        }.overlay(alignment:.top){
+            if showing {
+                HStack(spacing:10){
+                    BrandedRefreshLogo(scope:focus,refreshing:refreshing)
+                    Text(refreshing ? "Refreshing your workspace…":failed ? "Refresh needs a connection":"Up to date").font(.caption.weight(.medium))
+                    if !refreshing{Image(systemName:failed ? "wifi.slash":"checkmark").font(.caption.weight(.semibold))}
+                }.padding(.horizontal,16).padding(.vertical,12).background(.regularMaterial,in:Capsule()).padding(.top,8)
+                    .transition(.move(edge:.top).combined(with:.opacity)).accessibilityIdentifier("workspace-refresh-status").allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+struct BrandedRefreshLogo:View {
+    let scope:String
+    let refreshing:Bool
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    @State private var rotating=false
+    var body:some View {
+        FocusLogo(scope:scope).frame(width:28,height:28)
+            .rotationEffect(.degrees(rotating && !reducedMotion ? 360:0))
+            .animation(reducedMotion ? nil:refreshing ? .linear(duration:1.1).repeatForever(autoreverses:false):.easeOut(duration:0.2),value:rotating)
+            .onAppear{rotating=refreshing}.onChange(of:refreshing){_,value in rotating=value}
+    }
+}

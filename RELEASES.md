@@ -1,3 +1,7 @@
+## Ediz OS 0.3.15
+
+Conversational natural voice tutorials with mute/replay, distinct workspace headers, pinned module controls and saved-item reveal, animated completion feedback, and branded pull-to-refresh. Xcode 26 voice drawing compilation and dependency lock metadata were repaired. See [verification and practical limits](docs/UPDATE-0.3.15.md).
+
 ## Ediz OS 0.3.14
 
 Full native/browser regression sweep, streaming natural speech with audible device fallback, measured waveforms, stable voice settings and explicit destructive/canon confirmations. Assistant now sits beside Today. Focus changes background and logo accent; rehearsal adds direct BPM entry, ± controls and tap tempo. Moshia adds a continuity desk and CLEARANCE 19 a rehearsal readiness summary. Common audio/video attachments, profile restore, browser preferences and audio seeking were repaired.
