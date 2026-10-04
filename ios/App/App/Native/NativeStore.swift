@@ -5,7 +5,9 @@ import Security
 import EdizCore
 
 @MainActor final class NativeStore: ObservableObject {
+    @Published var practiceOverlay=false
     private(set) var originalManuscript:[EdizCore.Record]=[]
+    func setPracticeManuscript(_ chapters:[EdizCore.Record]){guard isPractice else{return};originalManuscript=chapters}
     @Published var records: [EdizCore.Record] = []
     @Published var activity: [Activity] = []
     @Published var preferences = Preferences()
@@ -36,7 +38,7 @@ import EdizCore
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-voice-fallback"){NativeVoicePreferences.defaults.set(true,forKey:"assistant-offline-voice");return String(repeating:"0",count:64)}
         #endif
-        if isPractice || ProcessInfo.processInfo.arguments.contains("-ui-testing"){return nil};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
+        if isPractice || (ProcessInfo.processInfo.arguments.contains("-ui-testing") && !ProcessInfo.processInfo.arguments.contains("-test-connected-assistant")){return nil};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device",kSecReturnData as String:true];var value:CFTypeRef?;guard SecItemCopyMatching(query as CFDictionary,&value)==errSecSuccess,let data=value as? Data else{return nil};return String(data:data,encoding:.utf8)}
     func connectAssistant(_ url:URL){guard !isPractice,url.scheme == "edizos",url.host == "assistant",let token=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "token"})?.value,token.count == 64,token.allSatisfy({$0.isHexDigit}) else{return};let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"EdizOSAssistant",kSecAttrAccount as String:"device"];SecItemDelete(query as CFDictionary);var item=query;item[kSecValueData as String]=Data(token.utf8);item[kSecAttrAccessible as String]=kSecAttrAccessibleWhenUnlockedThisDeviceOnly;if SecItemAdd(item as CFDictionary,nil)==errSecSuccess{assistantConnected=true;loadContext()}else{error="This device could not connect to the assistant."}}
     func loadContext() {
         if ProcessInfo.processInfo.arguments.contains("-ui-testing"){return}
@@ -55,7 +57,7 @@ import EdizCore
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard (response as? HTTPURLResponse)?.statusCode == 200 else { self.error="Your workspace context could not be refreshed. Your saved work is still here.";return false }
                 let context = try JSONDecoder().decode(WorkspaceContextBundle.self, from: data)
-                let changes = WorkspaceContext.changes(incoming:context.items,existing:records)
+                let changes = WorkspaceContext.changes(incoming:context.items.map{item in var clean=item;if clean.data["contextType"] == "original-manuscript"{clean.title=ManuscriptText.clean(clean.title);clean.body=ManuscriptText.clean(clean.body)};return clean},existing:records)
                 if !changes.isEmpty,let database {
                     for item in changes { try database.save(item,action:"Context imported") }
                     try reload()
@@ -72,7 +74,7 @@ import EdizCore
             self.database = database
             try reload()
             if !isPractice,!ProcessInfo.processInfo.arguments.contains("-ui-testing"),let url=Bundle.main.url(forResource:"moshia-manuscript",withExtension:"json",subdirectory:"GuideAudio/PrivateContext"),let bytes=try? Data(contentsOf:url),let envelope=(try? JSONSerialization.jsonObject(with:bytes)) as? [String:Any],let items=envelope["items"] as? [[String:Any]]{
-                originalManuscript=items.compactMap{item in guard let id=item["id"] as? String,let title=item["title"] as? String,let body=item["body"] as? String else{return nil};var record=EdizCore.Record(space:"moshia",kind:"note",title:title);record.id=id;record.body=body;record.data=item["data"] as? [String:String] ?? [:];return record}
+                originalManuscript=items.compactMap{item in guard let id=item["id"] as? String,let title=item["title"] as? String,let body=item["body"] as? String else{return nil};var record=EdizCore.Record(space:"moshia",kind:"note",title:ManuscriptText.clean(title));record.id=id;record.body=ManuscriptText.clean(body);record.data=item["data"] as? [String:String] ?? [:];return record}
             }
             if !isPractice,!ProcessInfo.processInfo.arguments.contains("-ui-testing"),!records.contains(where:{$0.id == "ediz-context-websites-20261003"}){
                 var websites=EdizCore.Record(space:"ejj",kind:"note",title:"Websites project · verified links")
@@ -80,17 +82,22 @@ import EdizCore
                 websites.body="The local Websites project contains RELAX CUT, an independent EJJ Digital barbershop demo for Reutlingen, and HSS, an automotive hail-damage concept. RELAX CUT public demo: https://relax-cut-demo.pages.dev . Its booking is simulated, not a live business booking service. HSS is a local project with no verified public URL. Do not invent a live link. Other demos and repositories may exist in separate projects; confirm their current links before sharing them. EJJ Digital’s normal complete website offer is €299."
                 try database.save(websites,action:"Context imported");try reload()
             }
+            for var record in records where record.data["contextType"] == "original-manuscript"{
+                let title=ManuscriptText.clean(record.title),body=ManuscriptText.clean(record.body)
+                if title != record.title || body != record.body{record.title=title;record.body=body;try database.save(record,action:"Removed import formatting")}
+            }
+            try reload()
             for scope in ["all"]+Catalog.spaces.map(\.id) where chatShelf(scope).threads.isEmpty && !conversation(scope).isEmpty{_=openThread(scope:scope)}
             try database.snapshot(directory:root.appendingPathComponent("Snapshots"))
             try? FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],ofItemAtPath:root.path)
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-call-results"){
-                let id=openThread(scope:"band");let card=AssistantCard(type:"songs",title:"Friday practice ideas",subtitle:"Suggestions to try together",items:[AssistantCardItem(title:"Everlong",detail:"Foo Fighters · Work on steady dynamics"),AssistantCardItem(title:"Seven Nation Army",detail:"The White Stripes · Keep the riff locked in"),AssistantCardItem(title:"Come As You Are",detail:"Nirvana · Listen to the guitar phrasing")]);saveThread([ConversationEntry(role:"user",text:"Suggest rock songs for Friday"),ConversationEntry(role:"assistant",text:"Here are three ideas to try together.",provider:"CLEARANCE 19 Bot",cards:[card],spokenText:"I’ve put three ideas on your screen. Which would you like to start with?")],id:id,scope:"band");nameThread(id,scope:"band",title:"Friday practice ideas")
+                let id=openThread(scope:"band");let card=AssistantCard(type:"songs",title:"Friday practice ideas",subtitle:"Suggestions to try together",items:[AssistantCardItem(title:"Everlong",detail:"Foo Fighters · Work on steady dynamics"),AssistantCardItem(title:"Seven Nation Army",detail:"The White Stripes · Keep the riff locked in"),AssistantCardItem(title:"Come As You Are",detail:"Nirvana · Listen to the guitar phrasing")]);saveThread([ConversationEntry(role:"user",text:"Suggest rock songs for Friday"),ConversationEntry(role:"assistant",text:"Here are three ideas to try together.",provider:"CLEARANCE 19 Bot",cards:[card],spokenText:"I’ve put three ideas on your screen. Which would you like to start with?",presentResults:!ProcessInfo.processInfo.arguments.contains("-test-no-results"))],id:id,scope:"band");nameThread(id,scope:"band",title:"Friday practice ideas")
             }
             if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-call-saved-results"){
                 let record=EdizCore.Record(space:"band",kind:"note",title:"Saved Friday rehearsal");_ = save(record)
                 let proposal=GeminiProposal(type:"create",title:"Prepare Saturday rehearsal",fields:GeminiFields(space:"band",kind:"rehearsal",title:"Prepared Saturday rehearsal"))
-                let id=openThread(scope:"band");saveThread([ConversationEntry(role:"user",text:"Find my rehearsal and prepare a new one"),ConversationEntry(role:"assistant",text:"Here is your saved Friday rehearsal and a Saturday plan to review.",records:[record],actions:[proposal],provider:"CLEARANCE 19 Bot")],id:id,scope:"band")
+                let id=openThread(scope:"band");saveThread([ConversationEntry(role:"user",text:"Find my rehearsal and prepare a new one"),ConversationEntry(role:"assistant",text:"Here is your saved Friday rehearsal and a Saturday plan to review.",records:[record],actions:[proposal],provider:"CLEARANCE 19 Bot",presentResults:true)],id:id,scope:"band")
             }
             if ProcessInfo.processInfo.arguments.contains("-ui-testing") && ProcessInfo.processInfo.arguments.contains("-test-long-chat-result"){
                 let id=openThread(scope:"band");let items=(1...24).map{number in AssistantCardItem(title:"Practice idea \(number) · A longer title that should wrap without losing its meaning.",detail:"A complete explanation with enough detail to verify that a large result remains readable from its first item through its last item.")}

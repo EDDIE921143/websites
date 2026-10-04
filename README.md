@@ -1,8 +1,8 @@
-# Ediz OS 0.3.18
+# Ediz OS 0.3.20
 
 An owner-specific personal operating system, primarily a genuine SwiftUI iPhone app. The web companion is available at https://ediz-os.vercel.app. Both editions work locally without paid APIs, analytics or a server database.
 
-Current update: [0.3.18 validation and limits](docs/UPDATE-0.3.18.md).
+Current native source update: [0.3.20 tutorial refresh](docs/UPDATE-0.3.20.md). The connected iPhone remains on installed 0.3.19; 0.3.20 has been verified in an iOS simulator.
 
 ## Native iPhone edition
 
@@ -20,7 +20,7 @@ Implemented modules include EJJ leads/pipeline and websites; band songs, rehears
 
 GitHub Actions run https://github.com/EDDIE921143/websites/actions/runs/36847582563 compiled the app and UI tests with Xcode 26.3 on macOS 15. All 18 Swift core tests and seven XCUITests passed on an iPhone 17 Pro simulator. Tests cover capture/reload/completion/undo, edge swipe-back, sheet dismissal/draft recovery, real space destinations and creative states, assistant follow-ups and reminder preview, focus controls, and sliding across the tab bar. Actual screenshots and test evidence are archived by the workflow. An unsigned physical-iPhone Release archive also built successfully.
 
-**Current physical-device status:** 0.3.18 was signed, installed and launched on the owner’s paired iPhone. Capture’s voice-only screen and Stop/edit behavior passed an on-device UI test; guide narration/mute/replay also passed earlier in this update. This supersedes the original signing blocker above. Human confirmation of call audio and long-form acoustic testing remain separate checks.
+**Current physical-device status:** 0.3.19 build 18 was signed, installed and launched on the owner’s paired iPhone. The physical sweep passed 42 existing and new reader/call checks; subsequent tests verified the new AI notes lab and connected review/apply/restore workflow. Natural playback signal, recorded guide audio, complete-thought transcription and exact reader pagination passed. Human call audibility and real-room interruption remain separate from signal measurements.
 
 ## Web companion
 
@@ -38,6 +38,6 @@ Bundled Lato font subsets are self-hosted; iOS uses its installed Avenir Next fo
 
 Approved source branch: https://github.com/EDDIE921143/websites/tree/ediz-os-native. Vercel hosts the static web build at the existing origin. The native build does not depend on Vercel.
 
-Not implemented: signed native distribution, cross-device sync, reliable scheduled background notifications, authenticated third-party sync, semantic embeddings, automated continuity reasoning, secure app lock, remote backups, waveform decoding or fully normalized creative relationship editing. Website deployment information is saved metadata, not a live integration. Grade estimates are unofficial. The local assistant is a transparent rules-based helper; optional local models expand its language capabilities.
+Not implemented: App Store distribution, cross-device sync, reliable scheduled background notifications, authenticated third-party sync, semantic embeddings, automated continuity reasoning, secure app lock, remote backups, fully normalized creative relationship editing. Website deployment information is saved metadata, not a live integration. Grade estimates are unofficial. The local assistant is a transparent rules-based helper; optional local models expand its language capabilities.
 
 Core source: `native/Core/Sources/EdizCore`; native UI: `ios/App/App/Native`; native gesture tests: `ios/App/EdizOSUITests`. Web domain/storage: `src/core.ts`, `src/db.ts`; shell: `src/main.tsx`; design/navigation: `src/Today.tsx`, `src/Dock.tsx`, `src/primitives.tsx`, `src/style.css`; assistant: `src/assistant.ts`, `src/ConversationAssistant.tsx`.

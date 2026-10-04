@@ -13,3 +13,8 @@ it('uses an actual exact catalog match and only its trusted preview URL',async()
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({results:[{kind:'song',trackName:'Other song',artistName:'Other',previewUrl:'https://attacker.example/track'},{kind:'song',trackId:123,trackName:'Seven Nation Army',artistName:'The White Stripes',previewUrl:'https://audio-ssl.itunes.apple.com/preview.m4a',trackViewUrl:'https://music.apple.com/track/123'}]}))));
  const result=await musicPreview('Seven Nation Army');expect(result.artist).toBe('The White Stripes');expect(result.id).toBe('123');
 });
+it('understands a requested preview without triggering a catalog request for an ordinary chat',()=>{expect(requestedSong('give me a preview of Last Resort')).toBe('Last Resort');expect(requestedSong('can you preview Seven Nation Army?')).toBe('Seven Nation Army');expect(requestedSong('Hello')).toBeNull()});
+it('does not substitute a different artist for a requested known song',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({results:[{kind:'song',trackId:1,trackName:'Last Resort',artistName:'Different artist',previewUrl:'https://audio-ssl.itunes.apple.com/preview.m4a',trackViewUrl:'https://music.apple.com/track/1'}]}))));
+ expect(await musicPreview('Last Resort by Papa Roach')).toBeNull();
+});

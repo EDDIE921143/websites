@@ -1,6 +1,6 @@
 import {it,expect,vi,afterEach} from 'vitest';
 // @ts-expect-error server modules are JavaScript
-import {presentationReply,featureInstructions,generateImage,replySchema,needsWebSearch} from '../server/app-features.js';
+import {presentationReply,featureInstructions,generateImage,replySchema,needsWebSearch,requestsVoicePresentation} from '../server/app-features.js';
 // @ts-expect-error server modules are JavaScript
 import {botDirections} from '../server/gemini.js';
 // @ts-expect-error server modules are JavaScript
@@ -49,5 +49,24 @@ it('dictated idea cleanup is read-only and cannot request cards or actions',asyn
  const fetcher=vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'I want to practice guitar tomorrow, if I have time.',recordIds:[],actions:[{type:'create',title:'Invented deadline',fields:{space:'personal',kind:'task',title:'Practice today'}}]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
  const res={statusCode:0,body:null as any,setHeader(){},status(code:number){this.statusCode=code;return this},json(body:any){this.body=body;return this}};
  await handler({method:'POST',headers:{host:'ediz-os.vercel.app',authorization:'Bearer '+token},body:{mode:'capture-polish',question:'Um I want to practice tomorrow, uh if I have time',scope:'personal',records:[]}},res);
- expect(res.statusCode).toBe(200);expect(res.body.actions).toEqual([]);expect(res.body.text).toContain('if I have time');const body=JSON.parse((fetcher.mock.calls[0] as any)[1].body);expect(body).not.toHaveProperty('tools');expect(body.generationConfig.responseJsonSchema.properties).not.toHaveProperty('cards');expect(featureInstructions('capture-polish')).toContain('Do not add facts');
+ expect(res.statusCode).toBe(200);expect(res.body.actions).toEqual([]);expect(res.body.text).toContain('if I have time');const body=JSON.parse((fetcher.mock.calls[0] as any)[1].body);expect(body).not.toHaveProperty('tools');expect(body.generationConfig.responseJsonSchema).toBeUndefined();expect(featureInstructions('capture-polish')).toContain('Do not add facts');
+});
+
+it('keeps calls conversational until a visible result is explicitly requested',()=>{
+ for(const text of ['Hello','I am thinking about our songs','I want to talk about my plan','What do you recommend?'])expect(requestsVoicePresentation(text)).toBe(false);
+ for(const text of ['Show me the songs','Make me a list of songs','Give me a preview of Last Resort','Play Seven Nation Army'])expect(requestsVoicePresentation(text)).toBe(true);
+});
+
+it('record tools preserve uncertainty and require explicit review',()=>{
+ for(const mode of ['record-polish','record-summary','record-plan','record-review']){
+  const instructions=featureInstructions(mode);expect(instructions).toContain('selected supplied record');expect(instructions).toContain('Never invent');expect(instructions).toContain('actions: []');
+ }
+});
+
+it('record AI suggestions cannot save, show unsolicited cards or invoke search',async()=>{
+ const token='a'.repeat(64);vi.stubEnv('GEMINI_API_KEY','test');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',token);
+ const fetcher=vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'I may record guitar only if homework is finished.',recordIds:[],actions:[{type:'create',title:'Unrequested save',fields:{space:'personal',kind:'task',title:'Record today'}}],cards:[{type:'list',title:'Unrequested list',items:[{title:'Record today'}]}]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
+ const res={statusCode:0,body:null as any,setHeader(){},status(code:number){this.statusCode=code;return this},json(body:any){this.body=body;return this}};
+ await handler({method:'POST',headers:{host:'ediz-os.vercel.app',authorization:'Bearer '+token},body:{mode:'record-polish',question:'Improve this note',scope:'personal',records:[{id:'sample',space:'personal',kind:'note',title:'Guitar'}]}},res);
+ expect(res.statusCode).toBe(200);expect(res.body.actions).toEqual([]);expect(res.body.cards).toBeUndefined();expect(JSON.parse((fetcher.mock.calls[0] as any)[1].body)).not.toHaveProperty('tools');
 });

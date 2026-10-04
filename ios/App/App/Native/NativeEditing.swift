@@ -20,7 +20,7 @@ struct NativeCapture:View {
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @State private var explicitDate=false
     @State private var date=Date()
-    @StateObject private var speech=NativeSpeech()
+    @StateObject private var speech=NativeThoughtRecorder()
     @FocusState private var typing:Bool
     private var onFinish:(()->Void)?
     init(seed:EdizCore.Record,onFinish:(()->Void)?=nil){self.onFinish=onFinish;_draft=State(initialValue:seed);_originalVoice=State(initialValue:seed.data["dictationOriginal"] ?? "");_polishedVoice=State(initialValue:seed.data["dictationPolished"] ?? "");_automatic=State(initialValue:seed.data["_captureAuto"] == "1");_date=State(initialValue:Time.date(seed.due) ?? Date());_explicitDate=State(initialValue:seed.due != nil)}
@@ -47,6 +47,7 @@ struct NativeCapture:View {
                             if !originalVoice.isEmpty {HStack {Button("Original"){draft.title=originalVoice};if !polishedVoice.isEmpty{Button("Polished"){draft.title=polishedVoice}}else if !polishBusy,store.assistantToken != nil{Button("Polish idea"){polishIdea(originalVoice)}}}.font(.footnote).buttonStyle(.bordered)}
                             if let polishMessage {Text(polishMessage).font(.footnote).foregroundStyle(Design.muted)}
                             if let error=speech.message{Text(error).font(.footnote).foregroundStyle(Design.muted)}
+                            if let audio=speech.recordingURL,!speech.listening,!voiceOpen{HStack{Button("Retry transcription"){finishCaptureVoice()}.disabled(voiceFinishing);ShareLink(item:audio){Label("Save recording",systemImage:"square.and.arrow.up")}}.font(.footnote)}
                         }
                     }
                     Surface {
@@ -66,6 +67,8 @@ struct NativeCapture:View {
                 }.padding(20)
             }.scrollDismissesKeyboard(.interactively).background(AppBackdrop(scope:"capture")).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);if let onFinish{onFinish()}else{dismiss()}}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);store.walkthrough?.event("captured");if let onFinish{onFinish()}else{dismiss()}}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save").walkthroughTarget("capture-save",session:store.walkthrough)}}
+                .onAppear{speech.restore(draft.data["_captureAudio"])}
+                .onChange(of:speech.recordingURL){_,url in draft.data["_captureAudio"]=url?.path}
                 .onChange(of:draft){_,value in store.draft(value);if !value.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("capture-typed")}}
                 .onChange(of:draft.space){_,value in if !Catalog.space(value).modules.contains(where:{$0.kind == draft.kind}){draft.kind=Catalog.space(value).modules[0].kind}}
                 .onChange(of:automatic){_,value in draft.data["_captureAuto"]=value ? "1":nil}
@@ -75,12 +78,12 @@ struct NativeCapture:View {
                 .onDisappear{if !voiceOpen{voiceJob?.cancel();polishJob?.cancel();speech.stop()}}
                 .sheet(isPresented:$voiceOpen,onDismiss:{if speech.listening{finishCaptureVoice()}else{speech.stop()}}){
                     VStack(alignment:.leading,spacing:22){
-                        HStack{Label("Voice capture",systemImage:"waveform").font(.subheadline.weight(.semibold));Spacer();Button{voiceJob?.cancel();speech.stop();draft.title=voicePrefix;voiceFinishing=false;voiceOpen=false}label:{Image(systemName:"xmark").frame(width:44,height:44)}.accessibilityLabel("Cancel voice capture")}
+                        HStack{Label("Voice capture",systemImage:"waveform").font(.subheadline.weight(.semibold));Spacer();Button{voiceJob?.cancel();speech.discard();draft.title=voicePrefix;voiceFinishing=false;voiceOpen=false}label:{Image(systemName:"xmark").frame(width:44,height:44)}.accessibilityLabel("Cancel voice capture")}
                         Text("Let the idea come as it is.").font(.title2.weight(.medium)).fixedSize(horizontal:false,vertical:true)
                         HStack(spacing:8){Circle().fill(voiceFinishing ? Design.muted:Color(red:0.84,green:0.47,blue:0.38)).frame(width:7,height:7);Text(speech.requesting ? "Starting…":voiceFinishing ? "Keeping your last words…":"Recording").font(.subheadline);Spacer();TimelineView(.periodic(from:voiceStarted,by:1)){time in let elapsed=Int(max(0,time.date.timeIntervalSince(voiceStarted)));Text(String(format:"%d:%02d",elapsed/60,elapsed%60)).font(.subheadline.monospacedDigit()).foregroundStyle(Design.muted)}}
                         Spacer(minLength:12)
-                        CaptureListeningVisual(level:speech.levels.last ?? 0,reducedMotion:reducedMotion)
-                            .frame(maxWidth:.infinity).frame(height:220).accessibilityIdentifier("capture-waveform")
+                        AudioWaveform(levels:speech.levels.isEmpty ? Array(repeating:0.02,count:48):speech.levels,color:Design.ink,height:90)
+                            .padding(.horizontal,8).padding(.vertical,40).frame(maxWidth:.infinity).frame(height:220).accessibilityIdentifier("capture-waveform")
                         Text("Listening to you").font(.title3.weight(.medium))
                             .foregroundStyle(Design.ink.opacity(0.65+Double(min(speech.levels.last ?? 0,1))*0.35))
                             .scaleEffect(reducedMotion ? 1:1+min(speech.levels.last ?? 0,1)*0.035)
@@ -90,7 +93,7 @@ struct NativeCapture:View {
                         Spacer(minLength:12)
                         if let message=speech.message{Text(message).font(.footnote).foregroundStyle(Design.muted)}
                         VStack(spacing:12){Button{finishCaptureVoice()}label:{Label(voiceFinishing ? "Finishing…":"Stop and keep",systemImage:"stop.fill").font(.headline).frame(maxWidth:.infinity,minHeight:54)}.buttonStyle(ActionStyle()).disabled(speech.requesting || voiceFinishing).accessibilityIdentifier("capture-voice-stop");Text("Speak freely. Your idea stays editable.").font(.caption).foregroundStyle(Design.muted).frame(maxWidth:.infinity)}
-                    }.padding(.horizontal,24).padding(.top,16).padding(.bottom,24).frame(maxWidth:.infinity,maxHeight:.infinity).background(AppBackdrop(scope:"capture")).presentationDetents([.large]).presentationDragIndicator(.visible)
+                    }.padding(.horizontal,24).padding(.top,16).padding(.bottom,24).frame(maxWidth:.infinity,maxHeight:.infinity).background(AppBackdrop(scope:"capture")).onAppear{UIApplication.shared.isIdleTimerDisabled=true}.onDisappear{UIApplication.shared.isIdleTimerDisabled=false}.presentationDetents([.large]).presentationDragIndicator(.visible)
                 }
 
         }.tint(Design.accent).preferredColorScheme(.dark)
@@ -101,7 +104,7 @@ struct NativeCapture:View {
             let text=await speech.finish().trimmingCharacters(in:.whitespacesAndNewlines)
             guard !Task.isCancelled else{return}
             if !text.isEmpty{draft.title=voicePrefix+(voicePrefix.isEmpty ? "":" ")+text;originalVoice=draft.title;draft.data["dictationOriginal"]=originalVoice;polishedVoice="";draft.data["dictationPolished"]=nil;polishIdea(originalVoice)}
-            voiceFinishing=false;voiceOpen=false;typing=false
+            voiceFinishing=false;voiceOpen=false;typing=false;UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
     }
 
@@ -126,7 +129,9 @@ struct NativeEditor:View {
     @EnvironmentObject var store:NativeStore
     @Environment(\.dismiss) private var dismiss
     @State var record:EdizCore.Record
+    var startWithAI=false
     @State private var deletion=false
+    @State private var aiOpen=false
     @State private var confirmCanon=false
     @State private var addingFile=false
     @State private var files:[Attachment]=[]
@@ -152,7 +157,7 @@ struct NativeEditor:View {
                     Button("Start focus"){store.focusRequest=record}.disabled(record != store.records.first(where:{$0.id == record.id}))
                 }
             }
-            Section(record.kind == "chapter" ? "Context worth keeping":"Notes"){TextField("Add context or notes",text:$record.body,axis:.vertical).lineLimit(4...15).accessibilityIdentifier("record-context")}
+            Section(record.kind == "chapter" ? "Context worth keeping":"Notes"){TextField("Add context or notes",text:$record.body,axis:.vertical).lineLimit(4...15).accessibilityIdentifier("record-context");if let original=record.data["notesBeforeAI"]{Button("Restore original notes"){record.body=original;record.data["notesBeforeAI"]=nil}.accessibilityIdentifier("record-ai-restore")};Button{aiOpen=true}label:{Label("Work on this with AI",systemImage:"sparkles")}.accessibilityIdentifier("record-ai-open")}
             if !Catalog.fields(record.kind).isEmpty { Section("Details"){ForEach(Catalog.fields(record.kind),id:\.self){key in TextField(friendly(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...7)}} }
             if let p=Priority.rank([record]).first { Section("Why Today may show this"){ForEach(p.reasons,id:\.self){Text($0).font(.subheadline).foregroundStyle(Design.muted)}} }
             Section("Files & recordings") {
@@ -160,7 +165,8 @@ struct NativeEditor:View {
                 Button("Attach a file"){addingFile=true}
             }
             Section { Button("Delete item",role:.destructive){deletion=true} }
-        }.scrollContentBackground(.hidden).background(AppBackdrop()).onAppear{store.walkthrough?.event("result-open")}.navigationTitle(Catalog.space(record.space).name).navigationBarTitleDisplayMode(.inline)
+        }.scrollContentBackground(.hidden).background(AppBackdrop()).onAppear{store.walkthrough?.event("result-open");if startWithAI{aiOpen=true}}.navigationTitle(Catalog.space(record.space).name).navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented:$aiOpen){NativeRecordAssist(record:record){text,replace in if replace{if record.data["notesBeforeAI"] == nil{record.data["notesBeforeAI"]=record.body};record.body=text}else{record.body += (record.body.isEmpty ? "":"\n\n")+text}}}
             .toolbar{ToolbarItem(placement:.confirmationAction){Button("Save"){if record.space == "moshia" && record.status == "CANON" && store.records.first(where:{$0.id == record.id})?.status != "CANON"{confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-save")}}
             .task{store.remember(record);do{if let draft=try store.database?.editDraft(recordID:record.id){record=draft};files=try store.database?.attachments(recordID:record.id) ?? []}catch{store.error=error.localizedDescription};hasDate=record.due != nil;date=Time.date(record.due) ?? Date()}
             .onChange(of:record){_,value in store.editDraft(value)}
@@ -229,6 +235,7 @@ struct NativeCreation:View {
     @EnvironmentObject var store:NativeStore
     @Environment(\.dismiss) private var dismiss
     @State private var record:EdizCore.Record
+    @State private var aiOpen=false
     @State private var confirmCanon=false
     @State private var scheduled=false
     @State private var date=Date()
@@ -249,6 +256,7 @@ struct NativeCreation:View {
                 Section("Context worth keeping") {
                     TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"Context worth keeping",text:$record.body,axis:.vertical).lineLimit(2...7).listRowSeparator(.hidden)
                         .accessibilityIdentifier("creation-context").walkthroughTarget("chapter-context",session:store.walkthrough).padding(.vertical,8)
+                    Button{aiOpen=true}label:{Label("Work on this with AI",systemImage:"sparkles")}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-ai-open")
                 }
                 if !detailKeys.isEmpty {
                     Section(record.kind == "chapter" ? "In this chapter":record.kind == "thread" ? "The thread":record.kind == "location" ? "The place":record.kind == "note" ? "Sources & connections":"Details") {
@@ -262,7 +270,8 @@ struct NativeCreation:View {
                     if ["task","assignment","exam","event","rehearsal","lead"].contains(record.kind) {Toggle("Set a date",isOn:$scheduled);if scheduled{DatePicker("When",selection:$date)}}
                 }
             }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Add "+noun).navigationBarTitleDisplayMode(.inline)
-                .toolbar {
+                .sheet(isPresented:$aiOpen){NativeRecordAssist(record:record){text,replace in if replace{if record.data["notesBeforeAI"] == nil{record.data["notesBeforeAI"]=record.body};record.body=text}else{record.body += (record.body.isEmpty ? "":"\n\n")+text}}}
+            .toolbar {
                     ToolbarItem(placement:.cancellationAction){Button("Close"){keepDraft();dismiss()}}
                     ToolbarItem(placement:.confirmationAction){Button("Add"){if record.status == "CANON" {confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("creation-save").walkthroughTarget("chapter-save",session:store.walkthrough).accessibilityLabel("Add "+noun)}
                 }

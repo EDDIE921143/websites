@@ -21,13 +21,14 @@ struct NativeSpace:View {
             if route.id == "moshia" {
                 Section {NavigationLink{NativeStoryDesk()}label:{HStack(spacing:14){Image(systemName:"book.pages.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("moshia"));VStack(alignment:.leading,spacing:5){Text("Continuity desk").font(.headline);Text("Chapters, open threads and established canon").font(.subheadline).foregroundStyle(Design.muted)}}.padding(.vertical,8)}.accessibilityIdentifier("story-desk-open")}
             }
+            if route.id == "band" && kind == "song"{Section{Button("Add your own song"){store.capture(space:"band",kind:"song")};NavigationLink{NativeKnownSongs()}label:{Label("Add known songs",systemImage:"sparkles")}.accessibilityIdentifier("known-songs-open")}}
             if kind == "lead" {
                 Section("Pipeline"){
                     let leads=store.records.filter{$0.space == "ejj" && $0.kind == "lead"}
                     HStack{metric("Leads",leads.filter{$0.status != "Client" && $0.status != "Lost"}.count);Spacer();metric("Interested",leads.filter{$0.status == "Interested"}.count);Spacer();metric("Clients",leads.filter{$0.status == "Client"}.count)}
                 }
             }
-            if route.id == "band" && kind == "song"{Section("Rehearsal desk"){HStack{metric("Setlist",songs.count);Spacer();metric("Ready",songs.filter{$0.status == "Ready"}.count);Spacer();metric("Learning",songs.filter{$0.status == "Learning"}.count)};Button{rehearsal=true}label:{Label("Rehearsal mode",systemImage:"play.circle.fill").font(.headline).frame(minHeight:44)};if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
+            if route.id == "band" && kind == "song"{Section("Rehearsal desk"){HStack{metric("Setlist",songs.count);Spacer();metric("Ready",songs.filter{$0.status == "Ready"}.count);Spacer();metric("Learning",songs.filter{$0.status == "Learning"}.count)};Button{rehearsal=true}label:{Label("Rehearsal mode",systemImage:"play.circle.fill").font(.headline).frame(minHeight:44)}.walkthroughTarget("rehearsal",session:store.walkthrough);if let next=store.records.filter({$0.kind == "rehearsal" && Time.date($0.due).map{$0>Date()} == true}).sorted(by:{($0.due ?? "")<($1.due ?? "")}).first{RecordRow(record:next)}}}
             if route.id == "school" && kind == "grade"{NativeGradeProjection()}
             if route.id == "school" && ["assignment","exam"].contains(kind){NativeWorkload()}
             if kind == "chapter" && !records.isEmpty {
@@ -66,8 +67,8 @@ struct NativeSpace:View {
             }
             if route.id == "moshia" && kind == "event"{NativeTimeline()}
         }.listStyle(.insetGrouped).scrollContentBackground(.hidden).modifier(WorkspaceEntrance()).modifier(BrandedRefresh()).background(AppBackdrop(scope:route.id)).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
-            .toolbar{ToolbarItem(placement:.topBarTrailing){NavigationLink{NativeChatHistory(scope:route.id)}label:{Image(systemName:"bubble.left.and.bubble.right")}.accessibilityLabel("Chats").accessibilityIdentifier("space-chats")};ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add").walkthroughTarget("add-chapter",session:store.walkthrough)}}
-            .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind};if route.id == "moshia" && kind == "chapter"{store.walkthrough?.event("chapters-open")}}
+            .toolbar{if route.id == "moshia"{ToolbarItem(placement:.topBarTrailing){NavigationLink{NativeFullBook()}label:{Image(systemName:"book.closed")}.accessibilityLabel("Full Book").accessibilityIdentifier("full-book-open").walkthroughTarget("full-book",session:store.walkthrough)}};ToolbarItem(placement:.topBarTrailing){NavigationLink{NativeChatHistory(scope:route.id)}label:{Image(systemName:"bubble.left.and.bubble.right")}.accessibilityLabel("Chats").accessibilityIdentifier("space-chats")};ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add").walkthroughTarget("add-chapter",session:store.walkthrough)}}
+            .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind};if route.id == "moshia" && kind == "chapter"{store.walkthrough?.event("chapters-open")};if route.id == "band" && kind == "song"{store.walkthrough?.event("songs-open")}}
             .onChange(of:kind){_,_ in filter="all"}
             .fullScreenCover(isPresented:$rehearsal){NativeRehearsal(songs:songs)}
             .safeAreaInset(edge:.top){moduleControls.padding(.horizontal,20).padding(.vertical,8).background(WorkspaceTheme.base(route.id))}
@@ -175,6 +176,7 @@ struct NativeFocus:View {
     let record:EdizCore.Record
     @State private var started:Date?
     @State private var accumulated=0.0
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     var begun:Bool {started != nil || accumulated>0}
     var body:some View {
         NavigationStack {
@@ -185,23 +187,28 @@ struct NativeFocus:View {
                     Text(!begun ? "A little space to begin.":started == nil ? "Take your time. Your session is here.":"Stay with this one thing.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).multilineTextAlignment(.center)
                     TimelineView(.periodic(from:.now,by:1)){context in
                         let elapsed=max(0,Int(accumulated+(started.map{context.date.timeIntervalSince($0)} ?? 0)))
-                        VStack(spacing:10){Text("\(elapsed/60):\(String(format:"%02d",elapsed%60))").font(Design.font(38,weight:"Regular",relativeTo:.largeTitle)).monospacedDigit();Text("Time with your work").font(Design.font(12,weight:"Regular")).foregroundStyle(Design.muted)}
-                            .frame(width:208,height:208).background(Design.surface,in:Circle()).shadow(color:.black.opacity(0.2),radius:25,y:12).padding(.vertical,10)
+                        ZStack{
+                            Circle().fill(WorkspaceTheme.accent(record.space).opacity(0.07)).frame(width:270,height:270)
+                            Circle().stroke(Design.muted.opacity(0.12),style:StrokeStyle(lineWidth:1,dash:[1,12])).frame(width:250,height:250)
+                            Circle().fill(LinearGradient(colors:[Design.raised,Design.surface],startPoint:.topLeading,endPoint:.bottomTrailing)).frame(width:224,height:224).shadow(color:.black.opacity(0.16),radius:22,y:12)
+                            if let minutes=record.duration,minutes>0{Circle().trim(from:0,to:min(1,Double(elapsed)/Double(minutes*60))).stroke(WorkspaceTheme.accent(record.space).opacity(0.6),style:StrokeStyle(lineWidth:3,lineCap:.round)).frame(width:236,height:236).rotationEffect(.degrees(-90)).animation(reducedMotion ? nil:.easeInOut(duration:0.8),value:elapsed)}
+                            VStack(spacing:14){Text("TIME WITH YOUR WORK").font(.caption2).tracking(2).foregroundStyle(Design.muted);Text("\(elapsed/60):\(String(format:"%02d",elapsed%60))").font(.system(size:54,weight:.light,design:.rounded)).monospacedDigit().contentTransition(.numericText());HStack(spacing:6){Circle().fill(started != nil ? WorkspaceTheme.accent(record.space):Design.muted).frame(width:5,height:5);Text(started != nil ? "Here, with one thing":begun ? "A quiet pause":"Whenever you’re ready").font(.caption).foregroundStyle(Design.muted)}}
+                        }.frame(height:280).padding(.vertical,4)
                     }
                     if let minutes=record.duration{Text("You allowed about \(minutes) minutes. There’s no countdown.").font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted).multilineTextAlignment(.center)}
                     if !record.body.isEmpty{Surface{VStack(alignment:.leading,spacing:10){Text("Keep in mind").font(Design.font(16));Text(record.body).font(Design.font(15,weight:"Regular")).lineSpacing(4).textSelection(.enabled)}}}
                     Group{
                     HStack(spacing:12){
                         GlassAction{Button(started == nil ? (begun ? "Continue":"Begin"):"Pause"){toggle()}.font(Design.font(16)).frame(maxWidth:.infinity,minHeight:48)}
-                        GlassAction{Button("Finish"){store.complete(record);dismiss()}.font(Design.font(14)).foregroundStyle(Design.muted).frame(maxWidth:.infinity,minHeight:48)}.opacity(begun ? 1:0).disabled(!begun).accessibilityHidden(!begun)
+                        if begun{GlassAction{Button("Finish"){store.complete(record);dismiss()}.font(Design.font(14)).foregroundStyle(Design.muted).frame(maxWidth:.infinity,minHeight:48)}}
                     }.padding(.top,4)
                 }
                 }.frame(maxWidth:.infinity).padding(24)
-            }.background(AppBackdrop()).navigationTitle("Focus").navigationBarTitleDisplayMode(.inline)
+            }.background(AppBackdrop().environment(\.edizWorkspaceFocus,record.space)).navigationTitle("Focus").navigationBarTitleDisplayMode(.inline)
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){dismiss()}}}
         }.preferredColorScheme(.dark).tint(Design.accent)
     }
-    func toggle(){if let start=started{accumulated += Date().timeIntervalSince(start);started=nil}else{started=Date()}}
+    func toggle(){UIImpactFeedbackGenerator(style:.soft).impactOccurred();withAnimation(reducedMotion ? nil:.easeInOut(duration:0.25)){if let start=started{accumulated += Date().timeIntervalSince(start);started=nil}else{started=Date()}}}
 }
 struct NativeReview:View {
     @EnvironmentObject var store:NativeStore
@@ -215,3 +222,115 @@ struct NativeReview:View {
         }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle(weekly ? "This week":"Today’s review").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}}}}
     }
 }
+
+struct NativeKnownSongs:View {
+    @EnvironmentObject var store:NativeStore
+    @State private var songs:[KnownSong]=[]
+    @State private var loading=false
+    @State private var error:String?
+    @State private var job:Task<Void,Never>?
+    @State private var activeRequest=UUID()
+    var body:some View {
+        List {
+            Section{Text("Ideas for your next rehearsal, informed by your band notes. Listen first, then choose what to add.").font(.subheadline).foregroundStyle(Design.muted)}
+            if loading{Section{HStack{ProgressView();Text("Finding your next songs…");Spacer();Button("Stop"){activeRequest=UUID();job?.cancel();loading=false}}}}
+            if let error{Section{Text(error);Button("Try again"){load()}}}
+            ForEach(songs){song in Section{KnownSongRow(song:song)}}
+        }.scrollContentBackground(.hidden).background(AppBackdrop(scope:"band")).navigationTitle("Add known songs").navigationBarTitleDisplayMode(.inline)
+            .toolbar{ToolbarItem(placement:.topBarTrailing){Button{load()}label:{Image(systemName:"arrow.clockwise")}.accessibilityLabel("New suggestions").disabled(loading)}}
+            .onAppear{if songs.isEmpty,!loading{load()}}.onDisappear{activeRequest=UUID();job?.cancel();loading=false}
+    }
+    func load(){
+        job?.cancel();let id=UUID();activeRequest=id;error=nil;loading=true
+        job=Task{@MainActor in defer{if activeRequest==id{loading=false}}
+            guard let token=store.assistantToken else{error="Connect your assistant in Settings to get suggestions based on your band context.";return}
+            do{let reply=try await GeminiAssistant.answer(question:"Suggest 20 songs we could learn next. Use our band context and avoid our saved repertoire.",records:store.records.filter{$0.space == "band"},conversation:[],token:token,scope:"band",requestMode:"song-recommendations",memories:store.searchableMemories().filter{$0.space == "band"});try Task.checkCancellation();songs=reply.songSuggestions ?? [];if songs.isEmpty{error="The assistant returned no song suggestions. Please try again."}}
+            catch{if !Task.isCancelled{self.error=error.localizedDescription}}
+        }
+    }
+}
+struct KnownSongRow:View {
+    @EnvironmentObject var store:NativeStore
+    let song:KnownSong
+    @State private var preview:SongPreview?
+    @State private var loading=false
+    @State private var error:String?
+    var saved:Bool{store.records.contains{$0.space == "band" && $0.kind == "song" && $0.title.localizedCaseInsensitiveCompare(song.title) == .orderedSame && ($0.data["artist"] ?? "").localizedCaseInsensitiveCompare(song.artist) == .orderedSame}}
+    var spotify:URL{var url=URLComponents(string:"https://open.spotify.com/search")!;url.path="/search/"+song.title+" "+song.artist;return url.url!}
+    var body:some View {
+        VStack(alignment:.leading,spacing:12){Text(song.title).font(.headline);Text(song.artist).font(.subheadline).foregroundStyle(Design.muted);Text(song.reason).font(.subheadline).fixedSize(horizontal:false,vertical:true)
+            if let preview{NativeSongPreview(preview:preview)}else{Button{findPreview()}label:{Label(loading ? "Finding preview…":"Listen to a preview",systemImage:"play.circle")}.disabled(loading)}
+            if let error{Text(error).font(.caption).foregroundStyle(Design.muted)}
+            HStack{Button(saved ? "Added":"Add to songs"){var record=EdizCore.Record(space:"band",kind:"song",title:song.title);record.data["artist"]=song.artist;record.body=song.reason;record.status="Learning";if store.save(record){UINotificationFeedbackGenerator().notificationOccurred(.success)}}.disabled(saved);Spacer();Link("Open in Spotify",destination:spotify).font(.caption)}
+        }.padding(.vertical,8)
+    }
+    func findPreview(){loading=true;error=nil;Task{@MainActor in defer{loading=false};guard let token=store.assistantToken else{error="Connect your assistant first.";return};do{let reply=try await GeminiAssistant.answer(question:"Play "+song.title+" by "+song.artist,records:[],conversation:[],token:token,scope:"band");preview=reply.musicPreview;if preview==nil{error="No catalog preview is available for this song."}}catch{self.error=error.localizedDescription}}}
+}
+
+struct NativeFullBook:View {
+    var chaptersOverride:[EdizCore.Record]?=nil
+    @EnvironmentObject var store:NativeStore
+    @State private var page=0
+    @State private var pages:[ReaderPage]=[]
+    @State private var textSize:Double=20
+    @State private var paper="linen"
+    @State private var contents=false
+    @State private var controls=true
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    var chapters:[EdizCore.Record]{(chaptersOverride ?? store.originalManuscript).sorted{(Int($0.data["binderOrder"] ?? "") ?? 0)<(Int($1.data["binderOrder"] ?? "") ?? 0)}}
+    var pageColor:Color{paper == "paper" ? Color(red:0.94,green:0.90,blue:0.82):paper == "night" ? Color(red:0.10,green:0.10,blue:0.10):Color(red:0.18,green:0.16,blue:0.14)}
+    var ink:Color{paper == "paper" ? Color(red:0.20,green:0.17,blue:0.14):Color(red:0.88,green:0.83,blue:0.75)}
+    var body:some View {
+        GeometryReader{geometry in
+            VStack(spacing:0){
+                if pages.isEmpty{QuietEmpty(title:"Your original book",message:"The private manuscript will appear here when it has been imported on this device.").padding(24)}else{
+                    TabView(selection:$page){ForEach(Array(pages.enumerated()),id:\.offset){index,item in
+                        VStack(alignment:.leading,spacing:20){
+                            VStack(alignment:.leading,spacing:10){
+                                if item.offset == 0{Text("MOSHIA").font(.caption2.weight(.medium)).tracking(3).opacity(0.55);Text(item.chapter).font(.system(size:25,weight:.medium,design:.serif)).lineLimit(2).minimumScaleFactor(0.8)}else{HStack{Text(item.chapter).lineLimit(1);Spacer();Text("MOSHIA").tracking(2)}.font(.caption2).opacity(0.5)}
+                                Rectangle().fill(ink.opacity(0.14)).frame(height:1)
+                            }.frame(height:76,alignment:.bottom)
+                            Text(item.text).font(.system(size:textSize,design:.serif)).lineSpacing(5).frame(maxWidth:.infinity,alignment:.leading).fixedSize(horizontal:false,vertical:true)
+                            Spacer(minLength:0)
+                        }.foregroundStyle(ink).padding(.horizontal,30).padding(.top,24).padding(.bottom,12).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading).contentShape(Rectangle()).onTapGesture{location in
+                            if location.x<geometry.size.width*0.25{turn(-1)}else if location.x>geometry.size.width*0.75{turn(1)}else{withAnimation(reducedMotion ? nil:.easeInOut(duration:0.2)){controls.toggle()}}
+                        }.tag(index).accessibilityIdentifier("book-page-"+String(index)).accessibilityAction(named:"Next page"){turn(1)}.accessibilityAction(named:"Previous page"){turn(-1)}
+                    }}.tabViewStyle(.page(indexDisplayMode:.never))
+                    VStack(spacing:0){
+                        HStack{Button{turn(-1)}label:{Image(systemName:"chevron.left").frame(width:44,height:44)}.accessibilityLabel("Previous page").disabled(page==0);Spacer();VStack(spacing:3){Text("\(page+1) of \(pages.count)").font(.caption.monospacedDigit());Text("Tap the edges or swipe to turn").font(.caption2).opacity(0.55)};Spacer();Button{turn(1)}label:{Image(systemName:"chevron.right").frame(width:44,height:44)}.accessibilityLabel("Next page").disabled(page>=pages.count-1)}
+                        Slider(value:Binding(get:{Double(page)},set:{page=Int($0.rounded())}),in:0...Double(max(1,pages.count-1)),step:1).accessibilityLabel("Book position").tint(ink.opacity(0.6)).disabled(pages.count<2)
+                    }.foregroundStyle(ink).padding(.horizontal,24).frame(height:74).opacity(controls ? 1:0.12).allowsHitTesting(controls)
+                }
+            }.background(pageColor).task(id:"\(geometry.size.width)-\(geometry.size.height)-\(textSize)"){paginate(size:geometry.size)}
+        }.navigationTitle("Moshia · Full Book").navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar)
+            .toolbar{ToolbarItem(placement:.topBarTrailing){Button{contents=true;store.walkthrough?.event("reader-contents")}label:{Image(systemName:"list.bullet")}.accessibilityLabel("Book contents")};ToolbarItem(placement:.topBarTrailing){Menu{Button("Larger text"){textSize=min(28,textSize+2)};Button("Smaller text"){textSize=max(16,textSize-2)};Picker("Page appearance",selection:$paper){Text("Warm linen").tag("linen");Text("Paper").tag("paper");Text("Night").tag("night")}}label:{Image(systemName:"textformat.size")}.accessibilityLabel("Reader options")}}
+            .sheet(isPresented:$contents){NavigationStack{List{ForEach(chapters){chapter in Button{if let index=pages.firstIndex(where:{$0.chapterID==chapter.id}){page=index};contents=false;store.walkthrough?.event("reader-chapter")}label:{VStack(alignment:.leading,spacing:6){Text(chapter.title).font(.system(.headline,design:.serif));if let index=pages.firstIndex(where:{$0.chapterID==chapter.id}){Text("Page \(index+1)").font(.caption).foregroundStyle(.secondary)}}.padding(.vertical,8)}}}.navigationTitle("Contents").toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){contents=false}}}}}
+            .onAppear{if !store.isPractice{textSize=UserDefaults.standard.object(forKey:"moshia-reader-size") as? Double ?? 20;paper=UserDefaults.standard.string(forKey:"moshia-reader-paper") ?? "linen"};store.walkthrough?.event("reader-open")}
+            .onChange(of:textSize){_,value in if !store.isPractice{UserDefaults.standard.set(value,forKey:"moshia-reader-size")}}
+            .onChange(of:paper){_,value in if !store.isPractice{UserDefaults.standard.set(value,forKey:"moshia-reader-paper")}}
+            .onChange(of:page){old,new in if old != new{store.walkthrough?.event("reader-turned")};if !store.isPractice,pages.indices.contains(new){UserDefaults.standard.set(pages[new].chapterID+"|"+String(pages[new].offset),forKey:"moshia-reader-bookmark")}}
+    }
+    func turn(_ amount:Int){guard !pages.isEmpty else{return};withAnimation(reducedMotion ? nil:.easeInOut(duration:0.28)){page=min(max(0,page+amount),pages.count-1)}}
+    func paginate(size:CGSize){
+        let bookmark=pages.indices.contains(page) ? pages[page].chapterID+"|"+String(pages[page].offset):(store.isPractice ? nil:UserDefaults.standard.string(forKey:"moshia-reader-bookmark"))
+        pages=chapters.flatMap{BookPagination.pages(chapter:$0,width:max(100,size.width-60),height:max(100,size.height-218),fontSize:textSize)}
+        if let bookmark{let parts=bookmark.components(separatedBy:"|");let offset=Int(parts.last ?? "") ?? 0;page=pages.lastIndex(where:{$0.chapterID==parts.first && $0.offset<=offset}) ?? 0}else{page=0}
+    }
+}
+struct ReaderPage {let chapterID:String;let chapter:String;let offset:Int;let text:String}
+enum BookPagination {
+    static func pages(chapter:EdizCore.Record,width:CGFloat,height:CGFloat,fontSize:CGFloat)->[ReaderPage]{
+        let paragraph=NSMutableParagraphStyle();paragraph.lineSpacing=5
+        let storage=NSTextStorage(string:chapter.body,attributes:[.font:UIFont.systemFont(ofSize:fontSize,weight:.regular).withDesign(.serif),.paragraphStyle:paragraph])
+        let layout=NSLayoutManager();storage.addLayoutManager(layout)
+        var result:[ReaderPage]=[];var last=0
+        while last<storage.length{
+            let container=NSTextContainer(size:CGSize(width:width,height:height));container.lineFragmentPadding=0;layout.addTextContainer(container)
+            let range=layout.characterRange(forGlyphRange:layout.glyphRange(for:container),actualGlyphRange:nil)
+            guard range.length>0 else{break}
+            result.append(ReaderPage(chapterID:chapter.id,chapter:chapter.title,offset:range.location,text:(chapter.body as NSString).substring(with:range)));last=NSMaxRange(range)
+        }
+        return result
+    }
+}
+private extension UIFont {func withDesign(_ design:UIFontDescriptor.SystemDesign)->UIFont{UIFont(descriptor:fontDescriptor.withDesign(design) ?? fontDescriptor,size:pointSize)}}

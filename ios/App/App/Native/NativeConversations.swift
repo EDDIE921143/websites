@@ -121,6 +121,7 @@ struct AssistantResultCard:View {
     let scope:String
     var onOpen:()->Void = {}
     @State private var selected:EdizCore.Record?
+    @State private var rehearsalOpen=false
     var saved:Bool{!card.items.isEmpty && card.items.allSatisfy{$0.recordId != nil}}
     var category:String{saved ? "From your saved work":card.type == "songs" ? "Song suggestions":card.type == "practice" ? "Generated practice plan":card.type == "outline" ? "Draft outline":"Generated list"}
     var body:some View {
@@ -129,8 +130,67 @@ struct AssistantResultCard:View {
             ForEach(Array(card.items.enumerated()),id:\.offset){index,item in
                 HStack(alignment:.top,spacing:12){Text(String(format:"%02d",index+1)).font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(WorkspaceTheme.accent(scope)).frame(width:25,alignment:.leading).padding(.top,3);VStack(alignment:.leading,spacing:5){Text(item.title).font(.body.weight(.medium)).fixedSize(horizontal:false,vertical:true);if let detail=item.detail{Text(detail).font(.subheadline).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)};if let meta=item.meta{Text(meta).font(.caption.weight(.medium)).foregroundStyle(WorkspaceTheme.accent(scope))}};Spacer(minLength:0)}
                 if let id=item.recordId{if let record=store.records.first(where:{$0.id == id}){Button{onOpen();selected=record}label:{Label("Open saved item",systemImage:"arrow.up.right.square").font(.subheadline)}.accessibilityIdentifier("assistant-card-record-"+id)}else{Text("This saved item is no longer available.").font(.caption).foregroundStyle(Design.muted)}}
+                if card.type == "songs" {AssistantSongPlayback(item:item,onOpen:onOpen)}
                 if index<card.items.count-1{Divider().opacity(0.35)}
             }
-        }.padding(18).frame(maxWidth:.infinity,alignment:.leading).foregroundStyle(Design.ink).background{if card.items.count<=6{RoundedRectangle(cornerRadius:18).fill(Design.surface)}}.overlay{if card.items.count<=6{RoundedRectangle(cornerRadius:18).strokeBorder(WorkspaceTheme.accent(scope).opacity(0.12),lineWidth:1)}}.sheet(item:$selected){record in NavigationStack{NativeEditor(record:record)}}
+            if card.type == "songs",!card.items.isEmpty{Button{onOpen();rehearsalOpen=true}label:{Label("Add to rehearsal",systemImage:"music.note.list")}.buttonStyle(ActionStyle()).accessibilityIdentifier("assistant-add-rehearsal")}
+        }.padding(18).frame(maxWidth:.infinity,alignment:.leading).foregroundStyle(Design.ink).background{if card.items.count<=6{RoundedRectangle(cornerRadius:18).fill(Design.surface)}}.overlay{if card.items.count<=6{RoundedRectangle(cornerRadius:18).strokeBorder(WorkspaceTheme.accent(scope).opacity(0.12),lineWidth:1)}}.sheet(item:$selected){record in NavigationStack{NativeEditor(record:record)}}.sheet(isPresented:$rehearsalOpen){NativeSuggestedRehearsal(items:card.items)}
+    }
+}
+
+
+struct NativeAINotes:View {
+    @EnvironmentObject var store:NativeStore
+    @State private var query=""
+    var notes:[EdizCore.Record]{store.records.filter{!$0.body.isEmpty && $0.data["contextType"] != "original-manuscript" && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.body.localizedCaseInsensitiveContains(query))}.sorted{$0.updated>$1.updated}}
+    var body:some View {
+        VStack(alignment:.leading,spacing:16){
+            Text("Make your notes clearer.").font(.title3.weight(.medium))
+            Text("Choose saved notes to clarify, summarize, plan or ask questions. Review the result before saving.").font(.subheadline).foregroundStyle(Design.muted)
+            TextField("Find notes",text:$query).textFieldStyle(.roundedBorder).accessibilityIdentifier("ai-notes-search")
+            if notes.isEmpty{QuietEmpty(title:"A place for your thoughts.",message:"Capture a thought or add notes to a workspace to use them here.")}
+            ForEach(notes){record in NavigationLink{NativeEditor(record:record,startWithAI:true)}label:{VStack(alignment:.leading,spacing:6){Text(record.title).font(.headline);Text(Catalog.space(record.space).name).font(.caption).foregroundStyle(Design.muted);Text(record.body).font(.subheadline).foregroundStyle(Design.muted).lineLimit(2)}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(Design.surface,in:RoundedRectangle(cornerRadius:18))}.buttonStyle(.plain).accessibilityIdentifier("ai-notes-"+record.id)}
+        }
+    }
+}
+struct NativeSuggestedRehearsal:View {
+    @EnvironmentObject var store:NativeStore
+    @Environment(\.dismiss) private var dismiss
+    let items:[AssistantCardItem]
+    @State private var selected=Set<Int>()
+    @State private var destination="new"
+    @State private var draft:EdizCore.Record?
+    var body:some View {
+        NavigationStack{Form{
+            Section{Text("Choose songs, then review your rehearsal. Nothing is added until you save.").font(.subheadline).foregroundStyle(Design.muted)}
+            Section("Songs"){ForEach(Array(items.enumerated()),id:\.offset){index,item in Toggle(item.title,isOn:Binding(get:{selected.contains(index)},set:{if $0{selected.insert(index)}else{selected.remove(index)}}))}}
+            Section("Rehearsal"){Picker("Add to",selection:$destination){Text("New rehearsal").tag("new");ForEach(store.records.filter{$0.space == "band" && $0.kind == "rehearsal"}){Text($0.title).tag($0.id)}}}
+        }.scrollContentBackground(.hidden).background(AppBackdrop(scope:"band")).navigationTitle("Add to rehearsal").navigationBarTitleDisplayMode(.inline)
+        .toolbar{ToolbarItem(placement:.cancellationAction){Button("Cancel"){dismiss()}};ToolbarItem(placement:.confirmationAction){Button("Review"){review()}.disabled(selected.isEmpty).accessibilityIdentifier("rehearsal-review")}}
+        .sheet(item:$draft,onDismiss:{dismiss()}){record in NavigationStack{NativeEditor(record:record)}}
+        }.onAppear{selected=Set(items.indices)}
+    }
+    func review(){
+        var record=store.records.first{$0.id == destination && $0.space == "band" && $0.kind == "rehearsal"} ?? EdizCore.Record(space:"band",kind:"rehearsal",title:"Next rehearsal")
+        var lines=(record.data["setlist"] ?? "").components(separatedBy:.newlines).filter{!$0.isEmpty}
+        for index in items.indices where selected.contains(index){let item=items[index];let song=item.recordId.flatMap{id in store.records.first{$0.id == id}};let artist=song?.data["artist"] ?? "";let line=item.title+(artist.isEmpty ? "":" — "+artist);if !lines.contains(where:{$0.localizedCaseInsensitiveCompare(line) == .orderedSame}){lines.append(line)}}
+        record.data["setlist"]=lines.joined(separator:"\n");draft=record
+    }
+}
+struct AssistantSongPlayback:View {
+    @EnvironmentObject var store:NativeStore
+    let item:AssistantCardItem
+    var onOpen:()->Void
+    @State private var preview:SongPreview?
+    @State private var busy=false
+    @State private var failure:String?
+    @State private var job:Task<Void,Never>?
+    var spotify:URL{var url=URLComponents(string:"https://open.spotify.com")!;let record=item.recordId.flatMap{id in store.records.first{$0.id == id}};url.path="/search/"+item.title+" "+(record?.data["artist"] ?? "");return url.url!}
+    var body:some View {
+        VStack(alignment:.leading,spacing:10){
+            if let preview{NativeSongPreview(preview:preview,beforePlayback:onOpen)}else{Button(busy ? "Finding preview…":"Play preview"){onOpen();busy=true;failure=nil;job=Task{@MainActor in defer{busy=false};guard let token=store.assistantToken else{failure="Connect your assistant to find a preview.";return};do{let response=try await GeminiAssistant.answer(question:"Play "+item.title,records:store.records.filter{$0.space == "band"},conversation:[],token:token,scope:"band");try Task.checkCancellation();preview=response.musicPreview;if preview == nil{failure="No catalog preview is available. Try Spotify."}}catch{if !Task.isCancelled{failure=error.localizedDescription}}}}.disabled(busy)}
+            Link("Listen in Spotify",destination:spotify).simultaneousGesture(TapGesture().onEnded{onOpen();NativeMusicPlayback.shared.stop()}).font(.caption)
+            if let failure{Text(failure).font(.caption).foregroundStyle(Design.muted)}
+        }.onDisappear{job?.cancel();busy=false}
     }
 }

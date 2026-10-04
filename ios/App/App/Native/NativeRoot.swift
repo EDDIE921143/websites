@@ -4,12 +4,15 @@ import EdizCore
 struct NativeRoot:View {
     @StateObject private var store: NativeStore
     init(store: NativeStore) { _store = StateObject(wrappedValue: store) }
+    #if DEBUG
+    static var readerFixture:[EdizCore.Record]{(1...2).map{number in var chapter=EdizCore.Record(space:"moshia",kind:"chapter",title:"Practice chapter \(number)");chapter.data["binderOrder"]=String(number);chapter.body=(1...35).map{"Sample paragraph \($0). A quiet reading page gives the words enough room. This is demonstration text for checking page navigation, not the private manuscript."}.joined(separator:"\n\n");return chapter}}
+    #endif
     @State private var selected=0
     @State private var previous=0
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     var body:some View {
         VStack(spacing:0) {
-            if let session=store.walkthrough {WalkthroughCoach(session:session)}
+            if let session=store.walkthrough,!store.practiceOverlay {WalkthroughCoach(session:session)}
         Group {
             if store.ready {
                 TabView(selection:$selected) {
@@ -37,6 +40,12 @@ struct NativeRoot:View {
             .listSectionSpacing(.custom(store.preferences.density == "compact" ? 12:28))
             .font(store.preferences.density == "compact" ? .callout:.body)
             .animation(reducedMotion ? nil:.easeInOut(duration:0.18),value:store.preferences.density)
+            #if DEBUG
+            .onAppear{if ProcessInfo.processInfo.arguments.contains("-ui-testing"){UIApplication.shared.isIdleTimerDisabled=true}}
+            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-complete-recording"))){NativeRecordingDiagnostics()}
+            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-reader-display"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerFixture)}.environmentObject(store)}
+            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-manuscript-clean"))){Text("Original sections: \(store.originalManuscript.count); Clean: \( (store.originalManuscript+store.records.filter{$0.data["contextType"] == "original-manuscript"}).allSatisfy{ManuscriptText.clean($0.title)==$0.title && ManuscriptText.clean($0.body)==$0.body} )").accessibilityIdentifier("manuscript-clean-status")}
+            #endif
             .onChange(of:store.assistantConnected){_,connected in if connected { selected=1 } }
             .alert("Ediz OS",isPresented:Binding(get:{store.error != nil},set:{if !$0{store.error=nil}})){Button("OK"){store.error=nil}}message:{Text(store.error ?? "")}
     }
@@ -68,7 +77,7 @@ struct NativeToday:View {
                 welcomeHero
 
                 if store.preferences.focus != "all" { focusedWorkspace }
-                VStack(alignment:.leading,spacing:12) {
+                Surface {VStack(alignment:.leading,spacing:12) {
                     HStack{Text("What matters").font(Design.font(19,weight:"Medium",relativeTo:.headline));Spacer();GlassAction{Button{choosingFocus=true}label:{Image(systemName:"slider.horizontal.3").frame(width:44,height:44)}.accessibilityLabel("Change focus").walkthroughTarget("focus",session:store.walkthrough)}}
                     if focusedPriorities.isEmpty {
                         VStack(alignment:.leading,spacing:10){Text("Room for what matters.").font(Design.font(23,weight:"DemiBold",relativeTo:.title2));Text("A thought, a plan, or a little time for yourself.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted)}.padding(.vertical,12)
@@ -76,7 +85,7 @@ struct NativeToday:View {
                         VStack(alignment:.leading,spacing:14){ForEach(Array(focusedPriorities.prefix(4))){recommendation in RecordRow(record:recommendation.record);Divider().opacity(0.4)};Text(Priority.briefing(store.records,focus:store.preferences.focus)).font(Design.font(14,weight:"Regular")).foregroundStyle(Design.muted)}
                     }
                     HStack(spacing:12){if store.preferences.focus != "all"{GlassAction{Button{store.capture()}label:{Label("Capture",systemImage:"plus").padding(.horizontal,8).frame(minHeight:44)}.accessibilityIdentifier("capture-from-today")}};NavigationLink{NativeImport()}label:{Label("Bring in existing work",systemImage:"square.and.arrow.down").font(.subheadline).foregroundStyle(Design.muted).frame(minHeight:44)};Spacer()}
-                }
+                }}
                 if let recent=store.recent,store.preferences.focus == "all" || recent.space == store.preferences.focus { Surface { VStack(alignment:.leading,spacing:10){Text("Continue where you left off").font(Design.font(19,weight:"DemiBold"));RecordRow(record:recent).padding(.vertical,8)} } }
                 if !upcoming.isEmpty { VStack(alignment:.leading,spacing:10){Text("Coming up").font(Design.font(19,weight:"DemiBold"));VStack(spacing:12){ForEach(Array(upcoming.prefix(3))){RecordRow(record:$0);Divider().opacity(0.4)}}} }
                 VStack(alignment:.leading,spacing:12){Text(store.preferences.focus == "all" ? "Your spaces":"Your workspace").font(Design.font(19,weight:"DemiBold",relativeTo:.headline));ForEach(Catalog.spaces.filter{store.preferences.focus == "all" || $0.id == store.preferences.focus}){space in NativeSpaceShortcut(space:space);Divider().opacity(0.35)};if store.preferences.focus != "all"{GlassAction{Button("All spaces"){store.setFocus("all")}.frame(minHeight:44)}}}

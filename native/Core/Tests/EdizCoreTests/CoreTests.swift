@@ -1,6 +1,19 @@
 import XCTest
 @testable import EdizCore
 final class CoreTests: XCTestCase {
+    func testManuscriptStyleCleanupPreservesProseAndOtherPlaceholders(){
+        let original="<$ScrKeepWithNext><$Scr_H::1>Chapter one<!$Scr_H::1>\n\n<$Scr_Ps::0>The price is $20. Café 🎸 stays. <story> stays. <$name> stays.<!$Scr_Ps::0>"
+        XCTAssertEqual(ManuscriptText.clean(original),"Chapter one\n\nThe price is $20. Café 🎸 stays. <story> stays. <$name> stays.")
+        XCTAssertEqual(ManuscriptText.clean("No formatting here.\n\nSecond paragraph."),"No formatting here.\n\nSecond paragraph.")
+    }
+    func testNaturalVoiceChunksKeepEveryCharacterOfLongReplies() {
+        let text=String(repeating:"A plan with café, 日本語, 🎸 and a conditional step.\n",count:90)
+        let parts=SpeechText.chunks(text)
+        XCTAssertGreaterThan(parts.count,1)
+        XCTAssertEqual(parts.joined(),text)
+        XCTAssertTrue(parts.allSatisfy{$0.count<=700 && !$0.isEmpty})
+        XCTAssertEqual(SpeechText.chunks(String(repeating:"🎸",count:1600)).joined(),String(repeating:"🎸",count:1600))
+    }
     func testAudioMeterMakesQuietSpeechVisibleWithoutAnimatingSilence() {
         XCTAssertEqual(AudioMeter.level(rms:0),0)
         XCTAssertEqual(AudioMeter.level(rms:0.00001),0)
