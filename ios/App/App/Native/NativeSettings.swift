@@ -269,6 +269,25 @@ enum GuideNarration {
     }
     func close(){celebrationJob?.cancel();narrator.stop();onExit?()}
 }
+struct GuideVoiceMark:View {
+    let accent:Color
+    let level:CGFloat
+    let speaking:Bool
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    var body:some View {
+        ZStack {
+            RoundedRectangle(cornerRadius:12).fill(accent.opacity(speaking ? 0.22:0.12))
+            RoundedRectangle(cornerRadius:12).strokeBorder(accent.opacity(speaking ? 0.8:0.35),lineWidth:1)
+            HStack(alignment:.center,spacing:3){
+                ForEach(0..<3,id:\.self){index in
+                    Capsule().fill(accent).frame(width:3,height:speaking ? 6+min(17,level*CGFloat(11+index*5)):CGFloat(4+index*2))
+                }
+            }
+        }.frame(width:36,height:36)
+            .animation(reducedMotion ? nil:.easeOut(duration:0.12),value:level)
+            .accessibilityHidden(true)
+    }
+}
 struct WalkthroughCoach:View {
     @ObservedObject var session:WalkthroughSession
     @ObservedObject private var narrator:NativeAssistantSpeaker
@@ -278,7 +297,7 @@ struct WalkthroughCoach:View {
     var body:some View {Group{if expanded{detailed}else{compactCoach}}.animation(reducedMotion ? nil:.easeOut(duration:0.22),value:expanded)}
     var compactCoach:some View {
         VStack(alignment:.leading,spacing:4){
-            HStack(spacing:10){Image(systemName:session.celebrating ? "checkmark.seal.fill":session.kind.symbol).font(.title3).foregroundStyle(session.kind.accent).symbolEffect(.bounce,value:reducedMotion ? 0:session.index).frame(width:32)
+            HStack(spacing:10){GuideVoiceMark(accent:session.kind.accent,level:CGFloat(narrator.level),speaking:session.narrationEnabled && narrator.speaking)
                 VStack(alignment:.leading,spacing:3){Text(session.step?.title ?? "You made it your own.").font(.subheadline.weight(.semibold));if let step=session.step,!step.event.hasPrefix("learn-"){Text(step.instruction).font(.caption).foregroundStyle(Design.muted).lineLimit(2)}}
                 Spacer(minLength:0);Button{session.close()}label:{Image(systemName:"xmark").frame(width:44,height:44)}.accessibilityLabel("Exit tutorial").accessibilityIdentifier("walkthrough-exit")
             }
@@ -287,16 +306,16 @@ struct WalkthroughCoach:View {
                 Button{session.toggleNarration()}label:{Image(systemName:session.narrationEnabled ? "speaker.wave.2.fill":"speaker.slash.fill").frame(width:44,height:44)}.accessibilityLabel(session.narrationEnabled ? "Mute guide":"Read aloud").accessibilityIdentifier("walkthrough-voice-toggle")
                 if session.narrationEnabled{Button{session.readStep()}label:{Image(systemName:"arrow.counterclockwise").frame(width:44,height:44)}.accessibilityLabel("Replay instruction").accessibilityIdentifier("walkthrough-voice-replay")}
                 Spacer(minLength:0)
-                if let step=session.step{if step.event.hasPrefix("learn-"){Button("Let’s try it"){session.event(step.event)}.font(.caption.weight(.semibold)).frame(minHeight:44).accessibilityIdentifier("walkthrough-lesson-continue")}else{Text("\(session.index+1) / \(session.steps.count)").font(.caption.monospacedDigit()).foregroundStyle(Design.muted)}}else{Button("Done — back to tutorials"){session.close()}.font(.caption).frame(minHeight:44).accessibilityIdentifier("walkthrough-done")}
+                if let step=session.step{if step.event.hasPrefix("learn-"){Button("Let’s try it"){session.event(step.event)}.font(.caption.weight(.semibold)).frame(minHeight:44).accessibilityIdentifier("walkthrough-lesson-continue")}else{Text("\(session.index+1) / \(session.steps.count)").font(.caption.monospacedDigit()).foregroundStyle(Design.muted)}}else{Button("Done"){session.close()}.font(.caption.weight(.semibold)).frame(minHeight:44).accessibilityLabel("Done — back to tutorials").accessibilityIdentifier("walkthrough-done")}
             }.accessibilityElement(children:.contain).accessibilityIdentifier("tutorial-voice-activity").accessibilityValue("Audio level \(Int(narrator.level*100))")
             GeometryReader{size in Capsule().fill(session.kind.accent.opacity(0.16)).overlay(alignment:.leading){Capsule().fill(session.kind.accent).frame(width:size.size.width*CGFloat(session.index)/CGFloat(max(1,session.steps.count)))}}.frame(height:3).accessibilityLabel("Lesson progress").accessibilityValue("Step \(min(session.index+1,session.steps.count)) of \(session.steps.count)")
-            if session.celebrating{HStack(spacing:6){ForEach(0..<5,id:\.self){index in Image(systemName:index%2 == 0 ? "sparkle":"circle.fill").font(.system(size:index%2 == 0 ? 12:4)).foregroundStyle(session.kind.accent).symbolEffect(.bounce,value:reducedMotion ? 0:session.index)};Text(session.finished ? "Ready for your own workspace":"One step closer").font(.caption2).foregroundStyle(Design.muted)}.transition(.opacity)}
-        if session.finished{HStack(spacing:14){Image(systemName:"star.circle.fill").font(.system(size:40)).foregroundStyle(session.kind.accent).symbolEffect(.bounce,value:reducedMotion ? 0:session.index);VStack(alignment:.leading,spacing:4){Text("A little more yours.").font(.system(.headline,design:.rounded));Text(session.kind.title+" · Explored").font(.caption).foregroundStyle(Design.muted)}}.padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:14)).transition(.opacity.combined(with:.scale(scale:0.95)))}
+            if session.celebrating{HStack(spacing:6){Image(systemName:"sparkle").foregroundStyle(session.kind.accent).symbolEffect(.bounce,value:reducedMotion ? 0:session.index);Text(session.finished ? "Ready for your own workspace":"One step closer").font(.caption2.weight(.medium)).foregroundStyle(Design.muted)}.frame(maxWidth:.infinity).transition(.opacity)}
+        if session.finished{HStack(spacing:12){Image(systemName:"star.circle.fill").font(.system(size:30)).foregroundStyle(session.kind.accent).symbolEffect(.bounce,value:reducedMotion ? 0:session.index);VStack(alignment:.leading,spacing:2){Text("Course complete").font(.subheadline.weight(.semibold));Text(session.kind.title+" · Explored").font(.caption).foregroundStyle(Design.muted)}}.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:14)).transition(.opacity.combined(with:.scale(scale:0.95)))}
         }.animation(reducedMotion ? nil:.spring(duration:0.45,bounce:0.2),value:session.finished).animation(reducedMotion ? nil:.easeOut(duration:0.25),value:session.celebrating).animation(reducedMotion ? nil:.easeOut(duration:0.25),value:session.index).padding(.horizontal,12).padding(.top,4).background(Design.raised,in:RoundedRectangle(cornerRadius:16)).padding(.horizontal,12).padding(.vertical,4).background(Design.background)
     }
     var detailed:some View {
         VStack(alignment:.leading,spacing:10){
-            HStack{Button{withAnimation{expanded.toggle()}}label:{Label(expanded ? "LESS GUIDANCE":"SHOW GUIDANCE",systemImage:"hand.tap.fill")}.font(.caption2.weight(.semibold)).tracking(1);Spacer();Button{session.close()}label:{Image(systemName:"xmark.circle.fill").font(.title2)}.accessibilityLabel("Exit tutorial").accessibilityIdentifier("walkthrough-exit")}
+            HStack(spacing:8){GuideVoiceMark(accent:session.kind.accent,level:CGFloat(narrator.level),speaking:session.narrationEnabled && narrator.speaking);Button{withAnimation{expanded.toggle()}}label:{Text(expanded ? "LESS GUIDANCE":"SHOW GUIDANCE")}.font(.caption2.weight(.semibold)).tracking(1);Spacer();Button{session.close()}label:{Image(systemName:"xmark.circle.fill").font(.title2)}.accessibilityLabel("Exit tutorial").accessibilityIdentifier("walkthrough-exit")}
             if session.celebrating {Label(session.finished ? "Woohoo! You did it!":"Nice — you’ve got it!",systemImage:"checkmark.seal.fill").font(.subheadline.weight(.semibold)).foregroundStyle(session.kind.accent).symbolEffect(.bounce,value:reducedMotion ? 0:session.index).transition(reducedMotion ? .opacity:.move(edge:.top).combined(with:.opacity))}
             if session.celebrating && expanded{HStack(spacing:8){ForEach(0..<7,id:\.self){index in Image(systemName:index%2==0 ? "sparkle":"circle.fill").font(.system(size:index%2==0 ? 16:5)).foregroundStyle(session.kind.accent.opacity(0.4+Double(index%3)*0.2)).offset(y:reducedMotion ? 0:CGFloat(index%2==0 ? -3:3))}}.frame(maxWidth:.infinity).transition(.opacity)}
             if let step=session.step {

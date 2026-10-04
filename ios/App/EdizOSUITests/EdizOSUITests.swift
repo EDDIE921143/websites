@@ -40,23 +40,30 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["Settings and backup"].tap();let guide=app.buttons["settings-tutorial"];for _ in 0..<7{if guide.isHittable{break};app.swipeUp()};guide.tap();let spoken=app.switches["tutorial-spoken-guide"];if spoken.value as? String == "1"{spoken.tap()}
         func start(_ id:String){let lesson=app.buttons["tutorial-start-"+id];for _ in 0..<10{if lesson.isHittable{break};app.swipeUp()};XCTAssertTrue(lesson.isHittable);lesson.tap();app.buttons["walkthrough-lesson-continue"].tap()}
         start("reader");app.tabBars.buttons["Spaces"].tap();let chapters=app.buttons["Chapters"];for _ in 0..<6{if chapters.isHittable{break};app.swipeUp()};chapters.tap();app.buttons["full-book-open"].tap();XCTAssertTrue(app.staticTexts["Turn a page"].waitForExistence(timeout:5));app.buttons["Next page"].tap();app.buttons["Book contents"].tap();app.buttons.containing(.staticText,identifier:"The rehearsal room").firstMatch.tap();XCTAssertTrue(app.buttons["walkthrough-done"].waitForExistence(timeout:5));snapshot("Reading lesson completed with sample chapters");app.buttons["walkthrough-done"].tap()
-        start("rehearsal");app.tabBars.buttons["Spaces"].tap();let songs=app.buttons["Songs"];for _ in 0..<6{if songs.isHittable{break};app.swipeUp()};songs.tap();app.buttons["Rehearsal mode"].tap();XCTAssertTrue(app.staticTexts["Find a comfortable pace"].waitForExistence(timeout:5));app.buttons["Increase tempo"].tap();app.buttons["Start metronome"].tap();XCTAssertTrue(app.staticTexts["Leave room for the music"].waitForExistence(timeout:5));app.buttons["Stop metronome"].tap();XCTAssertTrue(app.buttons["walkthrough-done"].waitForExistence(timeout:5));snapshot("Rehearsal lesson completed inside the real rehearsal view");app.buttons["walkthrough-done"].tap()
+        start("rehearsal");app.tabBars.buttons["Spaces"].tap();let songs=app.buttons["Songs"];for _ in 0..<6{if songs.isHittable{break};app.swipeUp()};songs.tap();let rehearsal=app.buttons["Rehearsal mode"];for _ in 0..<8{if rehearsal.isHittable{break};app.swipeUp()};XCTAssertTrue(rehearsal.isHittable);rehearsal.tap();XCTAssertTrue(app.staticTexts["Find a comfortable pace"].waitForExistence(timeout:5));app.buttons["Increase tempo"].tap();app.buttons["Start metronome"].tap();XCTAssertTrue(app.staticTexts["Leave room for the music"].waitForExistence(timeout:5));app.buttons["Stop metronome"].tap();XCTAssertTrue(app.buttons["walkthrough-done"].waitForExistence(timeout:5));snapshot("Rehearsal lesson completed inside the real rehearsal view");app.buttons["walkthrough-done"].tap()
     }
-    func testImportedManuscriptIsCleanWithoutExposingProse(){
+    func testImportedManuscriptIsCleanWithoutExposingProse() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("The private manuscript is only bundled in the owner's signed device build.")
+        #endif
         app.terminate();app.launchArguments=["-test-manuscript-clean"];app.launchEnvironment=[:];app.launch()
         let status=app.staticTexts["manuscript-clean-status"];XCTAssertTrue(status.waitForExistence(timeout:10));XCTAssertEqual(status.label,"Original sections: 15; Clean: true");snapshot("Private manuscript verification shows counts only")
     }
     func testAINotesWorkshopExploresToolsAndAppliesOnlyToPractice(){
         capture("Keep my actual note")
+        app.tabBars.buttons["Today"].tap()
         app.buttons["Settings and backup"].tap();let guide=app.buttons["settings-tutorial"];for _ in 0..<8{if guide.isHittable{break};app.swipeUp()};guide.tap()
         let lab=app.buttons["tutorial-ai-lab"];for _ in 0..<5{if lab.isHittable{break};app.swipeUp()};lab.tap()
         for tool in ["polish","summary","plan","review"]{
             let choice=app.buttons["record-ai-tool-"+tool];XCTAssertTrue(choice.waitForExistence(timeout:5));choice.tap();app.buttons["record-ai-run"].tap();XCTAssertTrue(app.staticTexts["record-ai-result"].waitForExistence(timeout:5))
         }
-        for _ in 0..<4{if app.buttons["record-ai-apply"].isHittable{break};app.swipeUp()};snapshot("AI notes lab shows reviewed practice questions before applying");app.buttons["record-ai-apply"].tap();XCTAssertTrue(app.buttons["ai-lab-done"].waitForExistence(timeout:5));snapshot("AI notes lab reward keeps real work separate");app.buttons["ai-lab-done"].tap();app.navigationBars.buttons["BackButton"].tap()
+        let answer=app.textFields["record-ai-answer"].firstMatch;for _ in 0..<5{if answer.isHittable{break};app.swipeUp()};XCTAssertTrue(answer.isHittable);answer.tap();answer.typeText("Math homework first");let clarify=app.buttons["record-ai-clarify-answers"];for _ in 0..<5{if clarify.isHittable{break};app.swipeUp()};clarify.tap();for _ in 0..<4{if app.buttons["record-ai-apply"].isHittable{break};app.swipeUp()};snapshot("AI notes lab clarifies practice answers before applying");app.buttons["record-ai-apply"].tap();XCTAssertTrue(app.buttons["ai-lab-done"].waitForExistence(timeout:5));snapshot("AI notes lab reward keeps real work separate");app.buttons["ai-lab-done"].tap();app.navigationBars.buttons["BackButton"].tap()
         app.tabBars.buttons["Search"].tap();app.textFields["search-query"].tap();app.textFields["search-query"].typeText("Keep my actual note\n");XCTAssertTrue(app.staticTexts["Keep my actual note"].waitForExistence(timeout:5))
     }
-    func testConnectedRecordPolishCanBeReviewedAppliedAndRestored(){
+    func testConnectedRecordPolishCanBeReviewedAppliedAndRestored() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Connected polish needs the private iPhone credential, which is excluded from CI.")
+        #endif
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-connected-assistant"];app.launch()
         capture("Reviewable AI note")
         app.tabBars.buttons["Search"].tap();app.textFields["search-query"].tap();app.textFields["search-query"].typeText("Reviewable AI note\n")
@@ -80,6 +87,57 @@ final class EdizOSUITests:XCTestCase {
         app.swipeLeft();XCTAssertTrue(app.descendants(matching:.any).matching(identifier:"book-page-2").firstMatch.waitForExistence(timeout:5))
         app.buttons["Book contents"].tap();app.buttons.containing(.staticText,identifier:"Practice chapter 2").firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Practice chapter 2"].waitForExistence(timeout:5));snapshot("Reader contents starts a new chapter on its own page")
+    }
+    func testBookContentsIncludesAudiobook(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-reader-display"];app.launch()
+        app.buttons["Book contents"].tap()
+        let listen=app.buttons["book-audiobook-start"]
+        for _ in 0..<6{if listen.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(listen.isHittable)
+        XCTAssertTrue(app.buttons["book-audiobook-current"].exists)
+        snapshot("Audiobook choices sit at the end of book contents")
+    }
+    func testNaturalAudiobookPlaysSampleOnDevice() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Natural audiobook signal needs the connected iPhone credential.")
+        #endif
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-reader-display","-test-connected-assistant"];app.launch()
+        app.buttons["Book contents"].tap()
+        let listen=app.buttons["book-audiobook-start"]
+        for _ in 0..<6{if listen.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(listen.isEnabled);listen.tap()
+        let controls=app.otherElements["book-audiobook-controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout:5))
+        expectation(for:NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*"),evaluatedWith:controls)
+        waitForExpectations(timeout:110)
+        let pause=app.buttons["book-audiobook-pause"];pause.tap();XCTAssertTrue(app.staticTexts.matching(NSPredicate(format:"label BEGINSWITH %@","Paused")).firstMatch.waitForExistence(timeout:5));pause.tap()
+        app.buttons["book-audiobook-faster"].tap();XCTAssertTrue(app.staticTexts["1.25×"].waitForExistence(timeout:5))
+        app.buttons["book-audiobook-voice"].tap()
+        XCTAssertEqual(app.buttons["book-audiobook-voice"].value as? String,"Puck")
+        expectation(for:NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*"),evaluatedWith:controls)
+        waitForExpectations(timeout:110)
+        snapshot("Natural audiobook playing invented sample chapter")
+        app.buttons["Stop audiobook"].tap()
+        XCTAssertFalse(controls.exists)
+    }
+    func testCaptureQuestionsClarifyAnInventedIdeaOnDevice() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Connected clarification needs the paired iPhone credential.")
+        #endif
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-connected-assistant"];app.launch()
+        app.tabBars.buttons["Capture"].tap()
+        let input=app.descendants(matching:.any).matching(identifier:"capture-text").firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText("Maybe I can record a guitar idea after homework, but I have not decided which part yet.")
+        let clarify=app.buttons["capture-ai-questions"];for _ in 0..<5{if clarify.isHittable{break};app.swipeUp()};XCTAssertTrue(clarify.isHittable);clarify.tap()
+        let answer=app.textFields["record-ai-answer"].firstMatch
+        XCTAssertTrue(answer.waitForExistence(timeout:90));answer.tap();answer.typeText("The quiet opening riff")
+        let useAnswers=app.buttons["record-ai-clarify-answers"];for _ in 0..<5{if useAnswers.isHittable{break};app.swipeUp()};useAnswers.tap()
+        let result=app.staticTexts["record-ai-result"]
+        let containsMeaning=NSPredicate(format:"label CONTAINS[c] %@ AND label CONTAINS[c] %@","guitar","homework")
+        expectation(for:containsMeaning,evaluatedWith:result);waitForExpectations(timeout:90)
+        snapshot("Capture questions produce a reviewable clarified idea")
+        let apply=app.buttons["record-ai-apply"];for _ in 0..<5{if apply.isHittable{break};app.swipeUp()};apply.tap()
+        XCTAssertTrue(input.waitForExistence(timeout:5));XCTAssertTrue((input.value as? String ?? "").localizedCaseInsensitiveContains("guitar"))
     }
     func testCompleteRecordingRetainsBeginningAndEndAndReaderRetainsEveryCharacter() throws {
         #if targetEnvironment(simulator)
@@ -218,7 +276,7 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["A sweep import note"].waitForExistence(timeout:5))
         app.navigationBars.buttons.firstMatch.tap()
         for _ in 0..<6{if app.buttons["System health"].isHittable{break};app.swipeUp()}
-        app.buttons["System health"].tap();XCTAssertTrue(app.staticTexts["Database, SQLite · WAL"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts["Version, 0.3.19"].exists)
+        app.buttons["System health"].tap();XCTAssertTrue(app.staticTexts["Database, SQLite · WAL"].waitForExistence(timeout:5));XCTAssertTrue(app.staticTexts.matching(NSPredicate(format:"label BEGINSWITH %@","Version, 0.3.")).firstMatch.exists)
         snapshot("System health after a real text import")
     }
     func testChapterCreationKeepsItsOwnDraftAndFields(){

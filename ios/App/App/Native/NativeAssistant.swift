@@ -162,11 +162,11 @@ struct NativeAssistantChat:View {
     @FocusState private var typing:Bool
     var body:some View {
         ScrollViewReader{reader in
-            ScrollView{conversation}.safeAreaPadding(.vertical,18)
+            ScrollView{conversation}.safeAreaPadding(.top,8)
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of:entries.count){_,_ in scrollToBottom(reader)}
                 .onChange(of:busy){_,_ in scrollToBottom(reader)}
-                .safeAreaInset(edge:.bottom){composer}
+                .safeAreaInset(edge:.bottom,spacing:0){composer.background(Design.background)}
         }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}
             .sheet(isPresented:$historyOpen){NavigationStack{NativeChatHistory(scope:scope,current:threadID,select:{id in endVoice();historyOpen=false;selectThread?(id)})}}
             .sheet(isPresented:$attachmentOptions,onDismiss:{let choice=attachmentChoice;attachmentChoice=nil;mediaError=nil;if choice == "media"{choosingMedia=true}else if choice == "file"{importingFiles=true}}){
@@ -186,7 +186,7 @@ struct NativeAssistantChat:View {
             .onDisappear{dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false;if !voiceOpen{activeRequest=UUID();responseTask?.cancel();responseTask=nil;busy=false;callRequest=false;voiceAuto=false;voiceWanted=false;voiceTurn?.cancel();speech.stop();speaker.stop()}}
             .onChange(of:scenePhase){_,phase in if phase == .background{endVoice();dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
             .onAppear{withAnimation(reducedMotion ? nil:.spring(response:0.3,dampingFraction:0.85)){chatAppeared=true};if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
-            .toolbar { ToolbarItem(placement:.topBarTrailing) { HStack(spacing:18){Button{historyOpen=true}label:{Image(systemName:"bubble.left.and.bubble.right")}.accessibilityLabel("Chats").accessibilityIdentifier("workspace-chats");Menu {
+            .toolbar { ToolbarItem(placement:.topBarTrailing) { HStack(spacing:6){Button{historyOpen=true}label:{Image(systemName:"bubble.left.and.bubble.right").frame(width:36,height:36)}.accessibilityLabel("Chats").accessibilityIdentifier("workspace-chats");Menu {
                 Picker("Assistant",selection:$mode) {
                     if store.assistantToken != nil { Text(WorkspaceBot.name(scope)).tag("cloud") }
                     if store.preferences.labs { Text("Local model").tag("local") }
@@ -194,7 +194,7 @@ struct NativeAssistantChat:View {
                 }
                 NavigationLink("Review saved context"){NativeAssistantContext()}
                 Text("Context: \(scopedRecords.count) saved records")
-            } label: { Image(systemName:"info.circle") }.accessibilityLabel("Chat context") } } }
+            } label: { Image(systemName:"info.circle").frame(width:36,height:36) }.accessibilityLabel("Chat context") }.padding(.trailing,8) } }
     }
     func scrollToBottom(_ reader:ScrollViewProxy) {
         Task{@MainActor in await Task.yield();withAnimation(reducedMotion ? nil:.easeOut(duration:0.18)){if let last=entries.last,last.role == "assistant"{reader.scrollTo(last.id,anchor:.top)}else{reader.scrollTo("conversation-bottom",anchor:.bottom)}}}
@@ -297,7 +297,7 @@ struct NativeAssistantChat:View {
                 TextField("Message…",text:$question,axis:.vertical)
                     .lineLimit(1...4).font(Design.font(16,weight:"Regular"))
                     .focused($typing).accessibilityIdentifier("assistant-question").walkthroughTarget("assistant-message",session:store.walkthrough)
-                    .padding(.vertical,11).frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
+                    .padding(.vertical,7).frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
                     .contentShape(Rectangle()).onTapGesture { typing=true }
                 Button{typing=false;endVoice();store.walkthrough?.muteForRecording();mediaError=nil;recordStarted=Date();dictating=true;dictation.toggle()}label:{Image(systemName:"mic").font(.body).frame(width:40,height:44)}.accessibilityLabel("Record voice memo").accessibilityIdentifier("assistant-memo").disabled(busy || preparing>0)
                 let hasMessage = !question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !attachments.isEmpty
@@ -317,8 +317,8 @@ struct NativeAssistantChat:View {
         .onChange(of:dictation.requesting){_,requesting in if !requesting && !dictation.listening && dictating{dictating=false;mediaError=dictation.message}}
         .onChange(of:dictation.message){_,error in if let error{mediaError=error}}
         .onChange(of:question){_,value in if !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("assistant-typed")}}
-            .padding(8).background(Design.raised,in:RoundedRectangle(cornerRadius:corners))
-            .padding(.horizontal,16).padding(.bottom,8)
+            .padding(6).background(Design.raised,in:RoundedRectangle(cornerRadius:corners))
+            .padding(.horizontal,12).padding(.top,6).padding(.bottom,4)
     }
     var recordingBar:some View {
         HStack(spacing:10){

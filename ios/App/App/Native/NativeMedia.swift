@@ -329,6 +329,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
 @MainActor final class NativeAssistantSpeaker:NSObject,ObservableObject,AVAudioPlayerDelegate {
     @Published var speaking=false
     @Published var preparing=false
+    @Published var paused=false
     @Published var voiceNote:String?
     @Published var level:CGFloat=0
     @Published var output="iPhone"
@@ -336,6 +337,8 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     private let audioID=UUID()
     private let engine=AVAudioEngine()
     private let node=AVAudioPlayerNode()
+    private let timePitch=AVAudioUnitTimePitch()
+    private var playbackRate:Float=1
     private let synthesizer=AVSpeechSynthesizer()
     private var utterance:AVSpeechUtterance?
     private var meter:Task<Void,Never>?
@@ -356,7 +359,10 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     private var recordedPlayer:AVAudioPlayer?
     private var recordedQueue:[URL]=[]
     private var recordedMeter:Task<Void,Never>?
-    override init(){super.init();engine.attach(node)}
+    override init(){super.init();engine.attach(node);engine.attach(timePitch)}
+    func setPlaybackRate(_ rate:Float){playbackRate=min(1.5,max(0.75,rate));timePitch.rate=playbackRate;recordedPlayer?.rate=playbackRate}
+    func pausePlayback(){guard speaking || preparing else{return};paused=true;node.pause();recordedPlayer?.pause();speaking=false;level=0}
+    func resumePlayback(){guard paused else{return};paused=false;if engine.isRunning && pending>0{node.play();speaking=true};if let recordedPlayer,recordedPlayer.play(){speaking=true}}
     func say(_ text:String,token:String?=nil,natural:Bool=true,voice:String="Aoede") {
         stop();voiceNote=nil
         let text=text.trimmingCharacters(in:.whitespacesAndNewlines);guard !text.isEmpty else{return}
@@ -368,6 +374,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
             var cacheAudio=Data();var cacheable=true;var heardAudio=false;var streamIssue:String?
             do {
                 for chunk in SpeechText.chunks(text){
+                    while paused{try Task.checkCancellation();try await Task.sleep(for:.milliseconds(150))}
                     try Task.checkCancellation();guard playbackID==id else{return}
                     var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!)
                     request.httpMethod="POST";request.timeoutInterval=110
@@ -381,6 +388,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
                         guard !line.isEmpty,let data=line.data(using:.utf8),let packet=try JSONSerialization.jsonObject(with:data) as? [String:Any] else{continue}
                         if let issue=packet["error"] as? String{streamIssue=issue;throw URLError(.cannotLoadFromNetwork)}
                         if let encoded=packet["audio"] as? String,let audio=Data(base64Encoded:encoded){
+                            while paused{try Task.checkCancellation();try await Task.sleep(for:.milliseconds(150))}
                             guard packet["rate"] as? Int==24000,chunkBytes+audio.count<=4000000 else{throw URLError(.cannotDecodeContentData)}
                             chunkBytes+=audio.count;heardAudio=true
                             if cacheable,cacheAudio.count+audio.count<=1500000{cacheAudio.append(audio)}else{cacheable=false;cacheAudio.removeAll()}
@@ -418,7 +426,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     }
     private func nextRecording() throws {
         guard !recordedQueue.isEmpty else{recordedMeter?.cancel();recordedMeter=nil;recordedPlayer=nil;speaking=false;level=0;NativeAudioSession.release(audioID);finished?();return}
-        let next=try AVAudioPlayer(contentsOf:recordedQueue.removeFirst());next.delegate=self;next.isMeteringEnabled=true;next.volume=1;next.prepareToPlay();recordedPlayer=next
+        let next=try AVAudioPlayer(contentsOf:recordedQueue.removeFirst());next.delegate=self;next.isMeteringEnabled=true;next.enableRate=true;next.rate=playbackRate;next.volume=1;next.prepareToPlay();recordedPlayer=next
         guard next.play() else{throw URLError(.cannotDecodeContentData)}
         speaking=true;preparing=false;recordedMeter?.cancel()
         recordedMeter=Task{@MainActor in while !Task.isCancelled,self.recordedPlayer===next{next.updateMeters();self.level=CGFloat(AudioMeter.level(decibels:next.averagePower(forChannel:0)));self.refreshOutput();try? await Task.sleep(for:.milliseconds(50))}}
@@ -441,7 +449,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
                 try engine.inputNode.setVoiceProcessingEnabled(true);voiceProcessing=true
                 beginInterruptionRecognition(id:id)
             }else{try NativeAudioSession.activate(audioID,category:.playback,mode:.spokenAudio,onReplacement:{[weak self] in self?.stop()})}
-            engine.connect(node,to:engine.mainMixerNode,format:buffer.format)
+            engine.connect(node,to:timePitch,format:buffer.format);engine.connect(timePitch,to:engine.mainMixerNode,format:buffer.format);timePitch.rate=playbackRate
             engine.mainMixerNode.installTap(onBus:0,bufferSize:1024,format:nil){[weak self] buffer,_ in
                 guard let samples=buffer.floatChannelData?[0] else{return};var rms:Float=0;vDSP_rmsqv(samples,1,&rms,vDSP_Length(buffer.frameLength));let value=AudioMeter.level(rms:rms)
                 Task{@MainActor in guard let self,self.playbackID==id else{return};self.level=CGFloat(AudioMeter.smooth(previous:Float(self.level),target:value))}
@@ -449,8 +457,8 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
         }
         pending+=1
         node.scheduleBuffer(buffer,completionCallbackType:.dataPlayedBack){[weak self] _ in Task{@MainActor in guard let self,self.playbackID==id else{return};self.pending=max(0,self.pending-1);self.completeIfDrained()}}
-        if !node.isPlaying{node.play()}
-        preparing=false;speaking=true
+        if !node.isPlaying && !paused{node.play()}
+        preparing=false;speaking = !paused
     }
     private func deviceSay(_ text:String) {
         preparing=true;let id=playbackID
@@ -488,7 +496,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     private func completeIfDrained(){guard ended,pending==0 else{return};resetPlayback();finished?()}
     func refreshOutput(){let session=AVAudioSession.sharedInstance();output=session.currentRoute.outputs.map(\.portName).joined(separator:", ");muted=session.outputVolume<0.01}
     private func monitorOutput(){meter?.cancel();meter=Task{@MainActor in while !Task.isCancelled{refreshOutput();try? await Task.sleep(for:.milliseconds(100))}}}
-    private func resetPlayback(){playbackID=UUID();interruptionTask?.cancel();interruptionTask=nil;interruptionRequest?.endAudio();interruptionRequest=nil;if inputTapInstalled{engine.inputNode.removeTap(onBus:0);inputTapInstalled=false};meter?.cancel();meter=nil;node.stop();if tapInstalled{engine.mainMixerNode.removeTap(onBus:0);tapInstalled=false};engine.stop();if voiceProcessing{try? engine.inputNode.setVoiceProcessingEnabled(false);voiceProcessing=false};pending=0;ended=false;preparing=false;speaking=false;level=0;NativeAudioSession.release(audioID)}
+    private func resetPlayback(){playbackID=UUID();interruptionTask?.cancel();interruptionTask=nil;interruptionRequest?.endAudio();interruptionRequest=nil;if inputTapInstalled{engine.inputNode.removeTap(onBus:0);inputTapInstalled=false};meter?.cancel();meter=nil;node.stop();if tapInstalled{engine.mainMixerNode.removeTap(onBus:0);tapInstalled=false};engine.stop();if voiceProcessing{try? engine.inputNode.setVoiceProcessingEnabled(false);voiceProcessing=false};pending=0;ended=false;preparing=false;speaking=false;paused=false;level=0;NativeAudioSession.release(audioID)}
     func stop(){recordedMeter?.cancel();recordedMeter=nil;recordedPlayer?.stop();recordedPlayer=nil;recordedQueue=[];generation?.cancel();generation=nil;resetPlayback();utterance=nil;synthesizer.stopSpeaking(at:.immediate)}
 }
 private struct CallScrollOffset:PreferenceKey {static let defaultValue:CGFloat=0;static func reduce(value:inout CGFloat,nextValue:()->CGFloat){value=nextValue()}}

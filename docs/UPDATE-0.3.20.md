@@ -1,6 +1,6 @@
 # Ediz OS 0.3.20 — tutorial refresh
 
-Prepared locally and checked in an iOS simulator. The physical iPhone was not used, installed to or tested during this update. The generated narration is included with the source following owner approval. This update remains a draft PR and has not been installed on the physical phone.
+Prepared locally, checked in an iOS simulator, and uploaded to the existing draft GitHub PR after Ediz approved the generated narration assets. The signed 0.3.20 Release was installed and launched on the connected iPhone. Its first focused device run passed all six existing lessons and spoken-guide playback; two navigation assertions needed more reliable test scrolling and were repaired in 0.3.21.
 
 | Before | After | Why |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ The guide includes Capture a thought, Create a chapter, Explore a chat, Find you
 
 Validation: 74 API/JavaScript tests and 32 Swift Core tests passed, and the production web build passed. The original six walkthroughs passed their simulator flow test. The new reading/rehearsal flow, reader navigation, AI lab, density changes and capture save/undo were also exercised. Final audio pack and simulator regression results are appended below.
 
-This sweep does not establish physical audio audibility or that every possible input in every app function has been tested. The iPhone remains on the previously installed version.
+This sweep does not establish how the audio sounds to a listener or that every possible input in every app function has been tested. Later device testing and installation status are recorded in `UPDATE-0.3.21.md`.
 
 Audio validation: all 68 current recordings decoded successfully and their cached script hashes match the current narration. Total recorded duration is approximately 24 minutes across the courses and notes lab. Existing successful clips were reused; failed long generation requests were split into shorter pieces and assembled into complete recordings.
 

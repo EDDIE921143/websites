@@ -13,6 +13,7 @@ struct NativeCapture:View {
     @State private var polishBusy=false
     @State private var polishMessage:String?
     @State private var polishJob:Task<Void,Never>?
+    @State private var assistOpen=false
     @State private var voiceOpen=false
     @State private var voiceFinishing=false
     @State private var voiceStarted=Date()
@@ -33,6 +34,7 @@ struct NativeCapture:View {
         parsed.body=draft.body;parsed.data.merge(draft.data.filter{!$0.key.hasPrefix("_")}){_,new in new}
         return parsed
     }
+    var assistRecord:EdizCore.Record {var item=preview;item.title="Captured idea";item.body=draft.title;return item}
     var body:some View {
         NavigationStack {
             ScrollView {
@@ -45,6 +47,7 @@ struct NativeCapture:View {
                             HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{typing=false;store.walkthrough?.muteForRecording();voicePrefix=draft.title;voiceStarted=Date();voiceOpen=true;speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
                             if polishBusy {Label("Making your idea clearer…",systemImage:"sparkles").font(.footnote).foregroundStyle(Design.muted)}
                             if !originalVoice.isEmpty {HStack {Button("Original"){draft.title=originalVoice};if !polishedVoice.isEmpty{Button("Polished"){draft.title=polishedVoice}}else if !polishBusy,store.assistantToken != nil{Button("Polish idea"){polishIdea(originalVoice)}}}.font(.footnote).buttonStyle(.bordered)}
+                            if !draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {Button{typing=false;assistOpen=true}label:{Label("Clarify with questions",systemImage:"questionmark.bubble").frame(minHeight:44,alignment:.leading)}.font(.subheadline.weight(.medium)).accessibilityIdentifier("capture-ai-questions")}
                             if let polishMessage {Text(polishMessage).font(.footnote).foregroundStyle(Design.muted)}
                             if let error=speech.message{Text(error).font(.footnote).foregroundStyle(Design.muted)}
                             if let audio=speech.recordingURL,!speech.listening,!voiceOpen{HStack{Button("Retry transcription"){finishCaptureVoice()}.disabled(voiceFinishing);ShareLink(item:audio){Label("Save recording",systemImage:"square.and.arrow.up")}}.font(.footnote)}
@@ -66,6 +69,7 @@ struct NativeCapture:View {
                     }
                 }.padding(20)
             }.scrollDismissesKeyboard(.interactively).background(AppBackdrop(scope:"capture")).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
+                .sheet(isPresented:$assistOpen){NativeRecordAssist(initialTool:.review,record:assistRecord){text,_ in draft.title=text}.environmentObject(store)}
                 .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);if let onFinish{onFinish()}else{dismiss()}}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);store.walkthrough?.event("captured");if let onFinish{onFinish()}else{dismiss()}}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save").walkthroughTarget("capture-save",session:store.walkthrough)}}
                 .onAppear{speech.restore(draft.data["_captureAudio"])}
                 .onChange(of:speech.recordingURL){_,url in draft.data["_captureAudio"]=url?.path}
@@ -157,7 +161,11 @@ struct NativeEditor:View {
                     Button("Start focus"){store.focusRequest=record}.disabled(record != store.records.first(where:{$0.id == record.id}))
                 }
             }
-            Section(record.kind == "chapter" ? "Context worth keeping":"Notes"){TextField("Add context or notes",text:$record.body,axis:.vertical).lineLimit(4...15).accessibilityIdentifier("record-context");if let original=record.data["notesBeforeAI"]{Button("Restore original notes"){record.body=original;record.data["notesBeforeAI"]=nil}.accessibilityIdentifier("record-ai-restore")};Button{aiOpen=true}label:{Label("Work on this with AI",systemImage:"sparkles")}.accessibilityIdentifier("record-ai-open")}
+            Section(record.kind == "chapter" ? "Context worth keeping":"Notes"){
+                TextField("Add context or notes",text:$record.body,axis:.vertical).lineLimit(2...8).padding(.vertical,4).accessibilityIdentifier("record-context")
+                if let original=record.data["notesBeforeAI"]{Button("Restore original notes"){record.body=original;record.data["notesBeforeAI"]=nil}.accessibilityIdentifier("record-ai-restore")}
+            }
+            Section {Button{aiOpen=true}label:{Label("Work on this with AI",systemImage:"sparkles").frame(minHeight:44,alignment:.leading)}.accessibilityIdentifier("record-ai-open")}
             if !Catalog.fields(record.kind).isEmpty { Section("Details"){ForEach(Catalog.fields(record.kind),id:\.self){key in TextField(friendly(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...7)}} }
             if let p=Priority.rank([record]).first { Section("Why Today may show this"){ForEach(p.reasons,id:\.self){Text($0).font(.subheadline).foregroundStyle(Design.muted)}} }
             Section("Files & recordings") {
@@ -254,14 +262,14 @@ struct NativeCreation:View {
                     TextField(record.kind == "chapter" ? "Name this chapter":"Title",text:$record.title,axis:.vertical).font(Design.font(22)).lineLimit(1...3).accessibilityIdentifier("creation-title").walkthroughTarget("chapter-title",session:store.walkthrough).padding(.vertical,8).listRowSeparator(.hidden)
                 }
                 Section("Context worth keeping") {
-                    TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"Context worth keeping",text:$record.body,axis:.vertical).lineLimit(2...7).listRowSeparator(.hidden)
-                        .accessibilityIdentifier("creation-context").walkthroughTarget("chapter-context",session:store.walkthrough).padding(.vertical,8)
-                    Button{aiOpen=true}label:{Label("Work on this with AI",systemImage:"sparkles")}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-ai-open")
+                    TextField(record.kind == "thread" ? "What is left unresolved?":record.kind == "location" ? "What makes this place matter?":record.kind == "idea" ? "Keep the possibility here.":"What changes in this chapter?",text:$record.body,axis:.vertical).lineLimit(2...5).listRowSeparator(.hidden)
+                        .accessibilityIdentifier("creation-context").walkthroughTarget("chapter-context",session:store.walkthrough).padding(.vertical,4)
                 }
+                Section {Button{aiOpen=true}label:{Label("Work on this with AI",systemImage:"sparkles").frame(minHeight:44,alignment:.leading)}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-ai-open")}
                 if !detailKeys.isEmpty {
                     Section(record.kind == "chapter" ? "In this chapter":record.kind == "thread" ? "The thread":record.kind == "location" ? "The place":record.kind == "note" ? "Sources & connections":"Details") {
-                        ForEach(Array(detailKeys.prefix(3)),id:\.self){key in VStack(alignment:.leading,spacing:6){Text(label(key)).font(.caption).foregroundStyle(Design.muted);TextField("",text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...4).accessibilityIdentifier("creation-"+key).accessibilityLabel(label(key))}.listRowSeparator(.hidden)}
-                        if detailKeys.count>3 {DisclosureGroup("More details"){ForEach(Array(detailKeys.dropFirst(3)),id:\.self){key in VStack(alignment:.leading,spacing:6){Text(label(key)).font(.caption).foregroundStyle(Design.muted);TextField("",text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...4).accessibilityIdentifier("creation-"+key).accessibilityLabel(label(key))}.listRowSeparator(.hidden)}}}
+                        ForEach(Array(detailKeys.prefix(3)),id:\.self){key in TextField(label(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...3).padding(.vertical,4).accessibilityIdentifier("creation-"+key).accessibilityLabel(label(key))}
+                        if detailKeys.count>3 {DisclosureGroup("More details"){ForEach(Array(detailKeys.dropFirst(3)),id:\.self){key in TextField(label(key),text:Binding(get:{record.data[key] ?? ""},set:{record.data[key]=$0}),axis:.vertical).lineLimit(1...3).padding(.vertical,4).accessibilityIdentifier("creation-"+key).accessibilityLabel(label(key))}}}
                     }
                 }
                 Section {

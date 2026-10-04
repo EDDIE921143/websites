@@ -67,7 +67,7 @@ struct NativeSpace:View {
             }
             if route.id == "moshia" && kind == "event"{NativeTimeline()}
         }.listStyle(.insetGrouped).scrollContentBackground(.hidden).modifier(WorkspaceEntrance()).modifier(BrandedRefresh()).background(AppBackdrop(scope:route.id)).navigationTitle(space.name).navigationBarTitleDisplayMode(.inline)
-            .toolbar{if route.id == "moshia"{ToolbarItem(placement:.topBarTrailing){NavigationLink{NativeFullBook()}label:{Image(systemName:"book.closed")}.accessibilityLabel("Full Book").accessibilityIdentifier("full-book-open").walkthroughTarget("full-book",session:store.walkthrough)}};ToolbarItem(placement:.topBarTrailing){NavigationLink{NativeChatHistory(scope:route.id)}label:{Image(systemName:"bubble.left.and.bubble.right")}.accessibilityLabel("Chats").accessibilityIdentifier("space-chats")};ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add").walkthroughTarget("add-chapter",session:store.walkthrough)}}
+            .toolbar{ToolbarItem(placement:.topBarTrailing){HStack(spacing:6){if route.id == "moshia"{NavigationLink{NativeFullBook()}label:{Image(systemName:"book.closed").frame(width:36,height:36)}.accessibilityLabel("Full Book").accessibilityIdentifier("full-book-open").walkthroughTarget("full-book",session:store.walkthrough)};NavigationLink{NativeChatHistory(scope:route.id)}label:{Image(systemName:"bubble.left.and.bubble.right").frame(width:36,height:36)}.accessibilityLabel("Chats").accessibilityIdentifier("space-chats")}.padding(.trailing,8)};ToolbarItem(placement:.topBarLeading){Button{store.capture(space:route.id,kind:kind)}label:{Label("Add \(creationNoun)",systemImage:"plus")}.disabled(kind.isEmpty).accessibilityIdentifier("module-add").walkthroughTarget("add-chapter",session:store.walkthrough)}}
             .onAppear{if kind.isEmpty{kind=route.kind ?? space.modules[0].kind};if route.id == "moshia" && kind == "chapter"{store.walkthrough?.event("chapters-open")};if route.id == "band" && kind == "song"{store.walkthrough?.event("songs-open")}}
             .onChange(of:kind){_,_ in filter="all"}
             .fullScreenCover(isPresented:$rehearsal){NativeRehearsal(songs:songs)}
@@ -267,6 +267,57 @@ struct KnownSongRow:View {
     func findPreview(){loading=true;error=nil;Task{@MainActor in defer{loading=false};guard let token=store.assistantToken else{error="Connect your assistant first.";return};do{let reply=try await GeminiAssistant.answer(question:"Play "+song.title+" by "+song.artist,records:[],conversation:[],token:token,scope:"band");preview=reply.musicPreview;if preview==nil{error="No catalog preview is available for this song."}}catch{self.error=error.localizedDescription}}}
 }
 
+@MainActor final class BookAudioController:ObservableObject {
+    @Published var active=false
+    @Published var chapterTitle=""
+    @Published var chapterNumber=0
+    @Published var chapterCount=0
+    @Published var speed:Float=1
+    @Published var voiceName="Aoede"
+    let speaker=NativeAssistantSpeaker()
+    private var chapters:[EdizCore.Record]=[]
+    private var index=0
+    private var token:String?
+    func start(_ source:[EdizCore.Record],at startIndex:Int,token:String?,voice:String){
+        stop()
+        guard let token,!source.isEmpty else{return}
+        chapters=source;index=min(max(0,startIndex),source.count-1);self.token=token;voiceName=voice;chapterCount=source.count;active=true;playCurrent()
+    }
+    func playCurrent(){
+        guard active,chapters.indices.contains(index),let token else{stop();return}
+        chapterNumber=index+1;chapterTitle=chapters[index].title
+        speaker.finished={[weak self] in self?.next()}
+        speaker.setPlaybackRate(speed)
+        speaker.say(chapters[index].title+". "+chapters[index].body,token:token,natural:true,voice:voiceName)
+    }
+    func next(){if index+1<chapters.count{index+=1;playCurrent()}else{stop()}}
+    func setSpeed(_ value:Float){speed=value;speaker.setPlaybackRate(value)}
+    func changeVoice(_ value:String){guard voiceName != value else{return};voiceName=value;playCurrent()}
+    func cycleVoice(){let voices=["Aoede","Puck","Kore"];let next=(voices.firstIndex(of:voiceName) ?? 0)+1;changeVoice(voices[next % voices.count])}
+    func stop(){speaker.finished=nil;speaker.stop();active=false;chapterTitle="";chapterNumber=0;chapterCount=0;chapters=[];token=nil}
+}
+struct BookAudioBar:View {
+    @ObservedObject var audio:BookAudioController
+    @ObservedObject var speaker:NativeAssistantSpeaker
+    var body:some View {
+        VStack(spacing:8){
+            HStack(spacing:12){
+                Image(systemName:"headphones").font(.title3).frame(width:40,height:40).background(WorkspaceTheme.accent("moshia").opacity(0.14),in:RoundedRectangle(cornerRadius:12))
+                VStack(alignment:.leading,spacing:3){Text(audio.chapterTitle).font(.subheadline.weight(.semibold)).lineLimit(1);Text(speaker.paused ? "Paused · \(audio.voiceName)":speaker.voiceNote ?? (speaker.preparing ? "Preparing natural voice…":"Chapter \(audio.chapterNumber) of \(audio.chapterCount) · \(audio.voiceName)")).font(.caption).foregroundStyle(Design.muted).lineLimit(2)}
+                Spacer(minLength:0)
+                Button{audio.stop()}label:{Image(systemName:"stop.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Design.background).frame(width:40,height:40).background(WorkspaceTheme.accent("moshia"),in:Circle())}.buttonStyle(.plain).accessibilityLabel("Stop audiobook")
+            }
+            HStack(spacing:10){
+                Button{if speaker.paused{speaker.resumePlayback()}else{speaker.pausePlayback()}}label:{Label(speaker.paused ? "Play":"Pause",systemImage:speaker.paused ? "play.fill":"pause.fill").frame(minHeight:40)}.buttonStyle(.plain).accessibilityIdentifier("book-audiobook-pause")
+                Button{audio.setSpeed(max(0.75,audio.speed-0.25))}label:{Image(systemName:"minus").frame(width:32,height:40)}.buttonStyle(.plain).disabled(audio.speed<=0.75).accessibilityLabel("Slower audiobook").accessibilityIdentifier("book-audiobook-slower")
+                Text(String(format:"%g×",Double(audio.speed))).monospacedDigit().frame(minWidth:32).accessibilityIdentifier("book-audiobook-speed")
+                Button{audio.setSpeed(min(1.5,audio.speed+0.25))}label:{Image(systemName:"plus").frame(width:32,height:40)}.buttonStyle(.plain).disabled(audio.speed>=1.5).accessibilityLabel("Faster audiobook").accessibilityIdentifier("book-audiobook-faster")
+                Button{audio.cycleVoice()}label:{Label(audio.voiceName,systemImage:"waveform").lineLimit(1).frame(minHeight:40)}.buttonStyle(.plain).accessibilityLabel("Change audiobook voice").accessibilityValue(audio.voiceName).accessibilityIdentifier("book-audiobook-voice")
+                Spacer(minLength:0)
+            }.font(.caption.weight(.semibold)).foregroundStyle(WorkspaceTheme.accent("moshia"))
+        }.padding(.horizontal,16).padding(.vertical,8).background(Design.raised).accessibilityElement(children:.contain).accessibilityIdentifier("book-audiobook-controls").accessibilityValue("Audio level \(Int(speaker.level*100))")
+    }
+}
 struct NativeFullBook:View {
     var chaptersOverride:[EdizCore.Record]?=nil
     @EnvironmentObject var store:NativeStore
@@ -276,6 +327,7 @@ struct NativeFullBook:View {
     @State private var paper="linen"
     @State private var contents=false
     @State private var controls=true
+    @StateObject private var audiobook=BookAudioController()
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     var chapters:[EdizCore.Record]{(chaptersOverride ?? store.originalManuscript).sorted{(Int($0.data["binderOrder"] ?? "") ?? 0)<(Int($1.data["binderOrder"] ?? "") ?? 0)}}
     var pageColor:Color{paper == "paper" ? Color(red:0.94,green:0.90,blue:0.82):paper == "night" ? Color(red:0.10,green:0.10,blue:0.10):Color(red:0.18,green:0.16,blue:0.14)}
@@ -302,13 +354,26 @@ struct NativeFullBook:View {
                     }.foregroundStyle(ink).padding(.horizontal,24).frame(height:74).opacity(controls ? 1:0.12).allowsHitTesting(controls)
                 }
             }.background(pageColor).task(id:"\(geometry.size.width)-\(geometry.size.height)-\(textSize)"){paginate(size:geometry.size)}
-        }.navigationTitle("Moshia · Full Book").navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar)
-            .toolbar{ToolbarItem(placement:.topBarTrailing){Button{contents=true;store.walkthrough?.event("reader-contents")}label:{Image(systemName:"list.bullet")}.accessibilityLabel("Book contents")};ToolbarItem(placement:.topBarTrailing){Menu{Button("Larger text"){textSize=min(28,textSize+2)};Button("Smaller text"){textSize=max(16,textSize-2)};Picker("Page appearance",selection:$paper){Text("Warm linen").tag("linen");Text("Paper").tag("paper");Text("Night").tag("night")}}label:{Image(systemName:"textformat.size")}.accessibilityLabel("Reader options")}}
-            .sheet(isPresented:$contents){NavigationStack{List{ForEach(chapters){chapter in Button{if let index=pages.firstIndex(where:{$0.chapterID==chapter.id}){page=index};contents=false;store.walkthrough?.event("reader-chapter")}label:{VStack(alignment:.leading,spacing:6){Text(chapter.title).font(.system(.headline,design:.serif));if let index=pages.firstIndex(where:{$0.chapterID==chapter.id}){Text("Page \(index+1)").font(.caption).foregroundStyle(.secondary)}}.padding(.vertical,8)}}}.navigationTitle("Contents").toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){contents=false}}}}}
+        }.navigationTitle("Moshia · Full Book").navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar).tint(WorkspaceTheme.accent("moshia"))
+            .safeAreaInset(edge:.bottom,spacing:0){if audiobook.active{BookAudioBar(audio:audiobook,speaker:audiobook.speaker)}}
+            .toolbar{ToolbarItem(placement:.topBarTrailing){HStack(spacing:6){Button{contents=true;store.walkthrough?.event("reader-contents")}label:{Image(systemName:"list.bullet").frame(width:36,height:36)}.accessibilityLabel("Book contents");Menu{Button("Larger text"){textSize=min(28,textSize+2)};Button("Smaller text"){textSize=max(16,textSize-2)};Picker("Page appearance",selection:$paper){Text("Warm linen").tag("linen");Text("Paper").tag("paper");Text("Night").tag("night")}}label:{Image(systemName:"textformat.size").frame(width:36,height:36)}.accessibilityLabel("Reader options")}.padding(.trailing,8)}}
+            .sheet(isPresented:$contents){NavigationStack{List{ForEach(chapters){chapter in Button{if let index=pages.firstIndex(where:{$0.chapterID==chapter.id}){page=index};contents=false;store.walkthrough?.event("reader-chapter")}label:{VStack(alignment:.leading,spacing:6){Text(chapter.title).font(.system(.headline,design:.serif));if let index=pages.firstIndex(where:{$0.chapterID==chapter.id}){Text("Page \(index+1)").font(.caption).foregroundStyle(.secondary)}}.padding(.vertical,8)}}
+                Section("Audiobook"){
+                    Button{startAudiobook(fromCurrent:false)}label:{Label("Listen from the beginning",systemImage:"headphones")}.disabled(store.assistantToken == nil || chapters.isEmpty).accessibilityIdentifier("book-audiobook-start")
+                    Button{startAudiobook(fromCurrent:true)}label:{Label("Listen from this chapter",systemImage:"bookmark")}.disabled(store.assistantToken == nil || chapters.isEmpty).accessibilityIdentifier("book-audiobook-current")
+                    Text(store.assistantToken == nil ? "Connect your assistant in Settings to use the natural voice.":"Reads chapters in order. Pause, change speed or voice, or stop from the reader. Changing voice restarts the current chapter.").font(.caption).foregroundStyle(Design.muted)
+                }
+            }.navigationTitle("Contents").toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){contents=false}}}}}
             .onAppear{if !store.isPractice{textSize=UserDefaults.standard.object(forKey:"moshia-reader-size") as? Double ?? 20;paper=UserDefaults.standard.string(forKey:"moshia-reader-paper") ?? "linen"};store.walkthrough?.event("reader-open")}
             .onChange(of:textSize){_,value in if !store.isPractice{UserDefaults.standard.set(value,forKey:"moshia-reader-size")}}
             .onChange(of:paper){_,value in if !store.isPractice{UserDefaults.standard.set(value,forKey:"moshia-reader-paper")}}
             .onChange(of:page){old,new in if old != new{store.walkthrough?.event("reader-turned")};if !store.isPractice,pages.indices.contains(new){UserDefaults.standard.set(pages[new].chapterID+"|"+String(pages[new].offset),forKey:"moshia-reader-bookmark")}}
+            .onDisappear{audiobook.stop()}
+    }
+    func startAudiobook(fromCurrent:Bool){
+        let selected=fromCurrent && pages.indices.contains(page) ? chapters.firstIndex(where:{$0.id == pages[page].chapterID}) ?? 0:0
+        let voice=NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede"
+        audiobook.start(chapters,at:selected,token:store.assistantToken,voice:voice);contents=false
     }
     func turn(_ amount:Int){guard !pages.isEmpty else{return};withAnimation(reducedMotion ? nil:.easeInOut(duration:0.28)){page=min(max(0,page+amount),pages.count-1)}}
     func paginate(size:CGSize){

@@ -13,10 +13,13 @@ struct NativeRecordAssist:View {
     @Environment(\.dismiss) private var dismiss
     var closeAfterApply=true
     var onToolSelected:((RecordAssistTool)->Void)?=nil
+    var initialTool:RecordAssistTool = .polish
     let record:EdizCore.Record
     let apply:(String,Bool)->Void
     @State private var tool:RecordAssistTool = .polish
     @State private var result=""
+    @State private var questions:[String]=[]
+    @State private var answers:[String:String]=[:]
     @State private var error:String?
     @State private var busy=false
     @State private var job:Task<Void,Never>?
@@ -26,22 +29,33 @@ struct NativeRecordAssist:View {
         NavigationStack{ScrollView{VStack(alignment:.leading,spacing:20){
             VStack(alignment:.leading,spacing:8){Text(record.title).font(.title2.weight(.medium)).fixedSize(horizontal:false,vertical:true);Text("Work with this item, one useful step at a time.").font(.subheadline).foregroundStyle(Design.muted)}
             LazyVGrid(columns:[GridItem(.flexible()),GridItem(.flexible())],spacing:10){ForEach(RecordAssistTool.allCases){choice in
-                Button{cancel();tool=choice;result="";error=nil;onToolSelected?(choice)}label:{VStack(alignment:.leading,spacing:9){Label(choice.title,systemImage:choice.symbol).font(.subheadline.weight(.semibold));Text(choice.detail).font(.caption).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)}.frame(maxWidth:.infinity,minHeight:92,alignment:.topLeading).padding(14).foregroundStyle(Design.ink).background(tool == choice ? Design.raised:Design.surface,in:RoundedRectangle(cornerRadius:16)).overlay{RoundedRectangle(cornerRadius:16).stroke(tool == choice ? WorkspaceTheme.accent(record.space).opacity(0.65):.clear,lineWidth:1)}}.buttonStyle(.plain).accessibilityIdentifier("record-ai-tool-"+choice.id)
+                Button{cancel();tool=choice;result="";questions=[];answers=[:];error=nil;onToolSelected?(choice)}label:{VStack(alignment:.leading,spacing:9){Label(choice.title,systemImage:choice.symbol).font(.subheadline.weight(.semibold));Text(choice.detail).font(.caption).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)}.frame(maxWidth:.infinity,minHeight:92,alignment:.topLeading).padding(14).foregroundStyle(Design.ink).background(tool == choice ? Design.raised:Design.surface,in:RoundedRectangle(cornerRadius:16)).overlay{RoundedRectangle(cornerRadius:16).stroke(tool == choice ? WorkspaceTheme.accent(record.space).opacity(0.65):.clear,lineWidth:1)}}.buttonStyle(.plain).accessibilityIdentifier("record-ai-tool-"+choice.id)
             }}
             Text(store.isPractice ? "Practice examples use a sample idea. No API request is made and your real records are untouched.":"Only this item’s title, notes and details are shared with your connected assistant. Nothing is changed until you choose to use the result and save.").font(.caption).foregroundStyle(Design.muted)
             if busy{HStack{ProgressView();Text("Working on your "+tool.title.lowercased()+"…").font(.subheadline);Spacer();Button("Stop"){cancel()}}.padding(16).background(Design.surface,in:RoundedRectangle(cornerRadius:16))}else{Button{run()}label:{Label(result.isEmpty ? tool.title:"Try again",systemImage:"sparkles").frame(maxWidth:.infinity,minHeight:48)}.buttonStyle(ActionStyle()).accessibilityIdentifier("record-ai-run")}
             if let error{Text(error).font(.subheadline).foregroundStyle(Design.muted).accessibilityIdentifier("record-ai-error")}
             if !result.isEmpty{
                 Surface{VStack(alignment:.leading,spacing:16){Text(tool.title).font(.headline);Text(result).font(.body).lineSpacing(5).fixedSize(horizontal:false,vertical:true).textSelection(.enabled).accessibilityIdentifier("record-ai-result");HStack{Button{UIPasteboard.general.string=result}label:{Label("Copy",systemImage:"doc.on.doc")};Spacer();if !store.isPractice{Button{if speaker.speaking || speaker.preparing{speaker.stop()}else{speaker.say(result,token:store.assistantToken,natural:true,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}}label:{Label(speaker.speaking || speaker.preparing ? "Stop reading":"Read aloud",systemImage:speaker.speaking || speaker.preparing ? "stop.fill":"speaker.wave.2")}}}.font(.caption);if let note=speaker.voiceNote{Text(note).font(.caption).foregroundStyle(Design.muted)}}}
-                Button{apply(result,tool == .polish);store.walkthrough?.event("record-ai-applied");if closeAfterApply{dismiss()}}label:{Label(tool == .polish ? "Use these notes":"Add to notes",systemImage:"pencil").frame(maxWidth:.infinity,minHeight:48)}.buttonStyle(ActionStyle()).accessibilityIdentifier("record-ai-apply")
+                if tool == .review && !questions.isEmpty {
+                    VStack(alignment:.leading,spacing:14){
+                        Text("Answer what you know").font(.headline)
+                        ForEach(questions,id:\.self){question in
+                            VStack(alignment:.leading,spacing:6){Text(question).font(.subheadline);TextField("Your answer",text:Binding(get:{answers[question] ?? ""},set:{answers[question]=$0}),axis:.vertical).lineLimit(2...4).padding(10).background(Design.surface,in:RoundedRectangle(cornerRadius:10)).accessibilityIdentifier("record-ai-answer")}
+                        }
+                        Button("Clarify using my answers"){clarifyAnswers()}.buttonStyle(ActionStyle()).disabled(!answers.values.contains(where:{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty})).accessibilityIdentifier("record-ai-clarify-answers")
+                    }.padding(16).background(Design.raised,in:RoundedRectangle(cornerRadius:16))
+                } else {
+                    Button{apply(result,tool == .polish);store.walkthrough?.event("record-ai-applied");if closeAfterApply{dismiss()}}label:{Label(tool == .polish ? "Use these notes":"Add to notes",systemImage:"pencil").frame(maxWidth:.infinity,minHeight:48)}.buttonStyle(ActionStyle()).accessibilityIdentifier("record-ai-apply")
+                }
                 Text("This updates the editor’s draft. Save the item when you’re ready.").font(.caption).foregroundStyle(Design.muted)
             }
         }.padding(20)}.background(AppBackdrop()).navigationTitle("Work with AI").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){cancel();dismiss()}}}}
+        .onAppear{if initialTool == .review{tool = .review;run()}}
         .environment(\.edizWorkspaceFocus,record.space).onDisappear{cancel();speaker.stop()}
     }
     func cancel(){requestID=UUID();job?.cancel();job=nil;busy=false;speaker.stop()}
     func run(){
-        cancel();error=nil
+        cancel();error=nil;questions=[];answers=[:]
         if tool == .polish,record.body.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{error="Add a few notes first. Clarify improves your own words.";return}
         if store.isPractice{
             switch tool{
@@ -49,17 +63,43 @@ struct NativeRecordAssist:View {
             case .summary:result="The idea is to record guitar after homework. That depends on finishing the homework first. Friday rehearsal is unconfirmed."
             case .plan:result="Suggested next steps\n\n1. Finish the homework before considering recording.\n2. If there is time, record the guitar idea.\n3. Ask the band about Friday before making a commitment."
             case .review:result="Questions to resolve\n\nWhat homework must be finished first?\nWhat part of the guitar idea would you like to record?\nWho needs to confirm Friday’s rehearsal?"
-            };return
+            };if tool == .review{questions=extractQuestions(result)};return
         }
         guard let token=store.assistantToken else{error="Connect your assistant in Settings to use these tools. Your notes are still available to edit.";return}
         let id=UUID();requestID=id;busy=true;let selected=tool
         job=Task{@MainActor in
             defer{if requestID==id{busy=false}}
             do{
-                let answer=try await GeminiAssistant.answer(question:"Work only on this selected item. "+selected.detail,records:[record],conversation:[],token:token,scope:record.space,requestMode:"record-"+selected.id)
+                let prompt=selected == .review && initialTool == .review ? "Ask two or three specific questions that would clarify this captured idea. Keep its uncertainty intact and do not assume missing facts. Return the questions as separate lines ending in question marks.":"Work only on this selected item. "+selected.detail
+                let answer=try await GeminiAssistant.answer(question:prompt,records:[record],conversation:[],token:token,scope:record.space,requestMode:"record-"+selected.id)
                 guard !Task.isCancelled,requestID==id else{return}
                 guard !answer.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw URLError(.cannotParseResponse)}
                 result=answer.text
+                if selected == .review{questions=extractQuestions(result)}
+            }catch{if !Task.isCancelled,requestID==id{self.error=error.localizedDescription}}
+        }
+    }
+    func extractQuestions(_ text:String)->[String]{
+        Array(text.components(separatedBy:.newlines).compactMap{line -> String? in
+            guard let mark=line.firstIndex(of:"?") else{return nil}
+            return String(line[...mark]).trimmingCharacters(in:.whitespacesAndNewlines.union(CharacterSet(charactersIn:"*-•0123456789. ")))
+        }.filter{!$0.isEmpty}.prefix(3))
+    }
+    func clarifyAnswers(){
+        let replies=questions.compactMap{question -> String? in let value=(answers[question] ?? "").trimmingCharacters(in:.whitespacesAndNewlines);return value.isEmpty ? nil:question+"\n"+value}
+        guard !replies.isEmpty else{return}
+        cancel();error=nil
+        if store.isPractice{tool = .polish;questions=[];result="After finishing my homework, I may record a guitar idea. Friday’s rehearsal still needs confirmation. " + replies.map{$0.components(separatedBy:"\n").last ?? ""}.joined(separator:" ");return}
+        guard let token=store.assistantToken else{error="Connect your assistant in Settings to clarify this idea.";return}
+        var context=record;context.body += "\n\nAnswers to your questions:\n"+replies.joined(separator:"\n\n")
+        let id=UUID();requestID=id;busy=true
+        job=Task{@MainActor in
+            defer{if requestID==id{busy=false}}
+            do{
+                let answer=try await GeminiAssistant.answer(question:"Rewrite this idea clearly using the owner's answers. Keep uncertainty and do not invent facts. Return only the clarified idea.",records:[context],conversation:[],token:token,scope:record.space,requestMode:"record-polish")
+                guard !Task.isCancelled,requestID==id else{return}
+                guard !answer.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw URLError(.cannotParseResponse)}
+                tool = .polish;questions=[];result=answer.text
             }catch{if !Task.isCancelled,requestID==id{self.error=error.localizedDescription}}
         }
     }

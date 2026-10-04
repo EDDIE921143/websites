@@ -1,8 +1,8 @@
-# Ediz OS 0.3.20
+# Ediz OS 0.3.21
 
 An owner-specific personal operating system, primarily a genuine SwiftUI iPhone app. The web companion is available at https://ediz-os.vercel.app. Both editions work locally without paid APIs, analytics or a server database.
 
-Current native source update: [0.3.20 tutorial refresh](docs/UPDATE-0.3.20.md). The connected iPhone remains on installed 0.3.19; 0.3.20 has been verified in an iOS simulator.
+Current native source update: [0.3.21 reading, questions and spacing](docs/UPDATE-0.3.21.md). Version 0.3.21 build 20 is signed, installed and launched on the connected iPhone.
 
 ## Native iPhone edition
 
@@ -20,7 +20,7 @@ Implemented modules include EJJ leads/pipeline and websites; band songs, rehears
 
 GitHub Actions run https://github.com/EDDIE921143/websites/actions/runs/36847582563 compiled the app and UI tests with Xcode 26.3 on macOS 15. All 18 Swift core tests and seven XCUITests passed on an iPhone 17 Pro simulator. Tests cover capture/reload/completion/undo, edge swipe-back, sheet dismissal/draft recovery, real space destinations and creative states, assistant follow-ups and reminder preview, focus controls, and sliding across the tab bar. Actual screenshots and test evidence are archived by the workflow. An unsigned physical-iPhone Release archive also built successfully.
 
-**Current physical-device status:** 0.3.19 build 18 was signed, installed and launched on the owner’s paired iPhone. The physical sweep passed 42 existing and new reader/call checks; subsequent tests verified the new AI notes lab and connected review/apply/restore workflow. Natural playback signal, recorded guide audio, complete-thought transcription and exact reader pagination passed. Human call audibility and real-room interruption remain separate from signal measurements.
+**Current physical-device status:** 0.3.21 build 20 was signed, installed and launched on the owner’s paired iPhone. The current focused tests passed Capture’s question-and-answer clarification, the AI notes lab, natural audiobook playback with pause/resume/speed/voice switching, the reading and rehearsal lessons, and spoken tutorial mute/replay. The earlier broad 0.3.19 sweep remains historical evidence. Human audibility and real-room interruption remain separate from signal measurements.
 
 ## Web companion
 
