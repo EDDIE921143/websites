@@ -6,9 +6,12 @@ struct NativeRoot:View {
     init(store: NativeStore) { _store = StateObject(wrappedValue: store) }
     #if DEBUG
     static var readerFixture:[EdizCore.Record]{(1...2).map{number in var chapter=EdizCore.Record(space:"moshia",kind:"chapter",title:"Practice chapter \(number)");chapter.data["binderOrder"]=String(number);chapter.body=(1...35).map{"Sample paragraph \($0). A quiet reading page gives the words enough room. This is demonstration text for checking page navigation, not the private manuscript."}.joined(separator:"\n\n");return chapter}}
+    static var readerAudioFixture:[EdizCore.Record]{(1...2).map{number in var chapter=EdizCore.Record(space:"moshia",kind:"chapter",title:"Practice chapter \(number)");chapter.data["binderOrder"]=String(number);chapter.body=(1...4).map{_ in "A quiet reading page gives the words enough room. This short demonstration chapter checks natural audiobook playback, chapter selection, and saved recordings."}.joined(separator:"\n\n");return chapter}}
     #endif
     @State private var selected=0
     @State private var previous=0
+    @State private var capturedRecord:EdizCore.Record?
+    @State private var captureFeedbackJob:Task<Void,Never>?
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     var body:some View {
         VStack(spacing:0) {
@@ -28,6 +31,9 @@ struct NativeRoot:View {
                     .fullScreenCover(item:$store.focusRequest){NativeFocus(record:$0)}
                     .overlay(alignment:.bottom){if let completed=store.undoRecord{CompletionToast(undo:{store.undo()},dismiss:{store.undoRecord=nil}).id(completed.id).padding(.horizontal,20).padding(.bottom,80).transition(.move(edge:.bottom).combined(with:.opacity))}}
                     .animation(reducedMotion ? nil:.spring(duration:0.35,bounce:0.18),value:store.undoRecord?.id)
+                    .overlay(alignment:.bottom){if let record=capturedRecord,store.undoRecord == nil{HStack(spacing:12){Image(systemName:"checkmark.circle.fill").foregroundStyle(WorkspaceTheme.accent(record.space));VStack(alignment:.leading,spacing:3){Text("Saved to "+Catalog.space(record.space).name).font(.subheadline.weight(.semibold));Text(record.title).font(.caption).lineLimit(1).foregroundStyle(Design.muted)};Spacer()}.padding(16).background(.regularMaterial,in:RoundedRectangle(cornerRadius:18)).padding(.horizontal,20).padding(.bottom,76).transition(.move(edge:.bottom).combined(with:.opacity)).allowsHitTesting(false)}}
+                    .animation(reducedMotion ? nil:.spring(duration:0.25,bounce:0.12),value:capturedRecord?.id)
+                    .onChange(of:store.lastCreatedRecordID){_,id in guard let record=store.records.first(where:{$0.id == id}) else{return};captureFeedbackJob?.cancel();capturedRecord=record;captureFeedbackJob=Task{@MainActor in try? await Task.sleep(for:.seconds(3));guard !Task.isCancelled else{return};capturedRecord=nil}}
             } else {
                 VStack(spacing:20){Text("Ediz OS").font(.title2.weight(.medium));Text("Your local data couldn’t be opened.").foregroundStyle(Design.muted);Button("Try again"){store.open()}.buttonStyle(ActionStyle())}.padding(24)
             }
@@ -42,8 +48,10 @@ struct NativeRoot:View {
             .animation(reducedMotion ? nil:.easeInOut(duration:0.18),value:store.preferences.density)
             #if DEBUG
             .onAppear{if ProcessInfo.processInfo.arguments.contains("-ui-testing"){UIApplication.shared.isIdleTimerDisabled=true}}
+            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-rich-reply"))){ScrollView{NativeRichText(text:"### Rhythm and timing\n\n**Deftones** practice notes: start slowly.\n\n- Keep eighth notes even.\n- Use ×, ♭ and ♯ when useful.\n\n```tab\ne|----------------|\nB|----------------|\nG|----------------|\nD|-----2-----2----|\nA|-----2-----2----|\nE|-0-0---0-0------|\n```\n\n| Tempo | Goal |\n|---|---|\n| 80 BPM | Even timing |").padding(24)}.background(AppBackdrop(scope:"band"))}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-complete-recording"))){NativeRecordingDiagnostics()}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-reader-display"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerFixture)}.environmentObject(store)}
+            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-reader-audio"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerAudioFixture)}.environmentObject(store)}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-manuscript-clean"))){Text("Original sections: \(store.originalManuscript.count); Clean: \( (store.originalManuscript+store.records.filter{$0.data["contextType"] == "original-manuscript"}).allSatisfy{ManuscriptText.clean($0.title)==$0.title && ManuscriptText.clean($0.body)==$0.body} )").accessibilityIdentifier("manuscript-clean-status")}
             #endif
             .onChange(of:store.assistantConnected){_,connected in if connected { selected=1 } }
@@ -144,12 +152,13 @@ struct NativeSpaces:View {
     @EnvironmentObject var store:NativeStore
     var body:some View {
         ScrollView { VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:24) {
-            Text("Five spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
+            Text("Your spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
             ForEach(Catalog.spaces){space in
                 VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain).accessibilityIdentifier("space-"+space.id)
                     HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44).walkthroughTarget(module.kind == "chapter" ? "chapters":"",session:store.walkthrough)}}}}
                 }.padding(store.preferences.density == "compact" ? 12:24).background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(space.id).opacity(0.18),lineWidth:1)}
             }
+            NavigationLink{NativeGym()}label:{HStack(spacing:15){Image(systemName:"dumbbell.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("gym")).frame(width:46,height:46).background(WorkspaceTheme.accent("gym").opacity(0.12),in:RoundedRectangle(cornerRadius:13));VStack(alignment:.leading,spacing:4){Text("Gym").font(Design.font(19,weight:"DemiBold"));Text("Your plan · Workouts · Progress").font(.subheadline).foregroundStyle(Design.muted)};Spacer();Image(systemName:"chevron.right").foregroundStyle(Design.muted)}.foregroundStyle(Design.ink).padding(20).background(Design.surface,in:RoundedRectangle(cornerRadius:22))}.buttonStyle(.plain).accessibilityIdentifier("space-gym")
         }.padding(20) }.modifier(BrandedRefresh()).background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces")
     }
 }

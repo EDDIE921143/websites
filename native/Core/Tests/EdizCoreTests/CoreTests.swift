@@ -14,6 +14,11 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(parts.allSatisfy{$0.count<=700 && !$0.isEmpty})
         XCTAssertEqual(SpeechText.chunks(String(repeating:"🎸",count:1600)).joined(),String(repeating:"🎸",count:1600))
     }
+    func testSpokenReplyRemovesFormattingWithoutDroppingContent(){
+        let reply="## Study plan\n**First**, solve x².\n- Check your answer."
+        XCTAssertEqual(SpeechText.spoken(reply),"Study plan\nFirst, solve x².\nCheck your answer.")
+        XCTAssertEqual(SpeechText.chunks(SpeechText.spoken(reply)).joined(),SpeechText.spoken(reply))
+    }
     func testAudioMeterMakesQuietSpeechVisibleWithoutAnimatingSilence() {
         XCTAssertEqual(AudioMeter.level(rms:0),0)
         XCTAssertEqual(AudioMeter.level(rms:0.00001),0)

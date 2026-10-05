@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import UIKit
 import Security
+import UserNotifications
 import EdizCore
 
 @MainActor final class NativeStore: ObservableObject {
@@ -15,6 +16,7 @@ import EdizCore
     @Published var captureRequest: EdizCore.Record?
     @Published var focusRequest: EdizCore.Record?
     @Published var undoRecord: EdizCore.Record?
+    private var completionDismissal:Task<Void,Never>?
     @Published var lastCreatedRecordID:String?
     @Published var lastRefresh:Date?
     @Published var ready = false
@@ -73,6 +75,7 @@ import EdizCore
             let database = try Database(url:root.appendingPathComponent("ediz.sqlite"))
             self.database = database
             try reload()
+            if UserDefaults.standard.bool(forKey:"ediz-reminders-enabled"){Task{await NativeReminderScheduler.refresh(records:records)}}
             if !isPractice,!ProcessInfo.processInfo.arguments.contains("-ui-testing"),let url=Bundle.main.url(forResource:"moshia-manuscript",withExtension:"json",subdirectory:"GuideAudio/PrivateContext"),let bytes=try? Data(contentsOf:url),let envelope=(try? JSONSerialization.jsonObject(with:bytes)) as? [String:Any],let items=envelope["items"] as? [[String:Any]]{
                 originalManuscript=items.compactMap{item in guard let id=item["id"] as? String,let title=item["title"] as? String,let body=item["body"] as? String else{return nil};var record=EdizCore.Record(space:"moshia",kind:"note",title:ManuscriptText.clean(title));record.id=id;record.body=ManuscriptText.clean(body);record.data=item["data"] as? [String:String] ?? [:];return record}
             }
@@ -115,12 +118,12 @@ import EdizCore
         records = try database.records(); activity = try database.history(); preferences = try database.preferences()
     }
     @discardableResult func save(_ record: EdizCore.Record, action: String = "Updated") -> Bool {
-        do { guard let database else{throw CoreError.database("unavailable")};var copy=record;copy.updated=Time.string(Date());try database.save(copy,action:action);try reload();if action == "Created"{lastCreatedRecordID=copy.id};UISelectionFeedbackGenerator().selectionChanged();walkthrough?.event("saved-"+copy.kind);return true }
+        do { guard let database else{throw CoreError.database("unavailable")};var copy=record;copy.updated=Time.string(Date());try database.save(copy,action:action);try reload();if !isPractice && UserDefaults.standard.bool(forKey:"ediz-reminders-enabled"){Task{await NativeReminderScheduler.refresh(records:records)}};if action == "Created"{lastCreatedRecordID=copy.id};UISelectionFeedbackGenerator().selectionChanged();walkthrough?.event("saved-"+copy.kind);return true }
         catch { self.error=error.localizedDescription;return false }
     }
-    func complete(_ record: EdizCore.Record) { var copy=record;copy.status="done";if save(copy,action:"Completed"){undoRecord=record;UINotificationFeedbackGenerator().notificationOccurred(.success)} }
-    func undo() { guard let record=undoRecord else{return};if save(record,action:"Reopened"){undoRecord=nil} }
-    @discardableResult func remove(_ record: EdizCore.Record) -> Bool { do { guard let database else{throw CoreError.database("unavailable")};try database.delete(record);try reload();return true }catch{self.error=error.localizedDescription;return false} }
+    func complete(_ record: EdizCore.Record) { var copy=record;copy.status="done";if save(copy,action:"Completed"){completionDismissal?.cancel();undoRecord=record;UINotificationFeedbackGenerator().notificationOccurred(.success);completionDismissal=Task{@MainActor in try? await Task.sleep(for:.seconds(5));guard !Task.isCancelled,self.undoRecord?.id == record.id else{return};self.undoRecord=nil}} }
+    func undo() { guard let record=undoRecord else{return};completionDismissal?.cancel();if save(record,action:"Reopened"){undoRecord=nil} }
+    @discardableResult func remove(_ record: EdizCore.Record) -> Bool { do { guard let database else{throw CoreError.database("unavailable")};try database.delete(record);try reload();if !isPractice && UserDefaults.standard.bool(forKey:"ediz-reminders-enabled"){Task{await NativeReminderScheduler.refresh(records:records)}};return true }catch{self.error=error.localizedDescription;return false} }
     func capture(space: String? = nil, kind: String? = nil) {
         do {
             if space == nil && kind == nil, let draft=try database?.draft() { captureRequest=draft;return }
@@ -144,13 +147,27 @@ import EdizCore
     }
     func keepMemo(_ file:AssistantAttachment) throws -> AssistantAttachmentInfo {
         var info=AssistantAttachmentInfo(name:file.name,mimeType:file.mimeType)
-        guard file.mimeType.hasPrefix("audio/") else{return info}
-        let directory=root.appendingPathComponent("ChatMemos",isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
-        let name=file.id.uuidString+".wav";try file.bytes.write(to:directory.appendingPathComponent(name),options:[.atomic,.completeFileProtection]);info.localFile=name;return info
+        let ext:String
+        switch file.mimeType {
+        case "image/jpeg":ext="jpg"
+        case "image/png":ext="png"
+        case "image/webp":ext="webp"
+        case "image/heic","image/heif":ext="heic"
+        case "video/mp4":ext="mp4"
+        case "video/quicktime":ext="mov"
+        case "application/pdf":ext="pdf"
+        case "text/plain":ext="txt"
+        case "audio/mpeg":ext="mp3"
+        case "audio/mp4":ext="m4a"
+        default:ext="wav"
+        }
+        let directory=root.appendingPathComponent("ChatAttachments",isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        let name=file.id.uuidString+"."+ext;try file.bytes.write(to:directory.appendingPathComponent(name),options:[.atomic,.completeFileProtection]);info.localFile=name;return info
     }
     func memoURL(_ file:AssistantAttachmentInfo) throws -> URL {
-        guard let name=file.localFile,name.hasSuffix(".wav"),UUID(uuidString:String(name.dropLast(4))) != nil else{throw CoreError.database("Recording unavailable")}
-        let url=root.appendingPathComponent("ChatMemos",isDirectory:true).appendingPathComponent(name)
+        guard let name=file.localFile,name == URL(fileURLWithPath:name).lastPathComponent,UUID(uuidString:String(name.split(separator:".").first ?? "")) != nil else{throw CoreError.database("Attachment unavailable")}
+        let directory=name.hasSuffix(".wav") && !FileManager.default.fileExists(atPath:root.appendingPathComponent("ChatAttachments").appendingPathComponent(name).path) ? "ChatMemos":"ChatAttachments"
+        let url=root.appendingPathComponent(directory,isDirectory:true).appendingPathComponent(name)
         guard FileManager.default.fileExists(atPath:url.path) else{throw CoreError.database("Recording unavailable")};return url
     }
     func saveConversation(_ entries:[ConversationEntry],scope:String) {
@@ -200,6 +217,50 @@ import EdizCore
         let name=URL(fileURLWithPath:attachment.name).lastPathComponent
         let url=folder.appendingPathComponent("\(UUID().uuidString)-\(name)")
         try bytes.write(to:url,options:[.atomic,.completeFileProtection]);return url
+    }
+}
+
+@MainActor enum NativeReminderScheduler {
+    static let prefix="edizos-reminder-"
+    static func setEnabled(_ enabled:Bool,records:[EdizCore.Record]) async -> Bool {
+        let center=UNUserNotificationCenter.current()
+        if enabled {
+            let granted=(try? await center.requestAuthorization(options:[.alert,.sound,.badge])) ?? false
+            guard granted else{return false}
+            UserDefaults.standard.set(true,forKey:"ediz-reminders-enabled")
+            await refresh(records:records)
+            return true
+        }
+        UserDefaults.standard.set(false,forKey:"ediz-reminders-enabled")
+        await clear()
+        return false
+    }
+    static func clear() async {
+        let center=UNUserNotificationCenter.current()
+        let ids=await center.pendingNotificationRequests().map(\.identifier).filter{$0.hasPrefix(prefix)}
+        center.removePendingNotificationRequests(withIdentifiers:ids)
+    }
+    static func refresh(records:[EdizCore.Record]) async {
+        guard UserDefaults.standard.bool(forKey:"ediz-reminders-enabled") else{return}
+        let center=UNUserNotificationCenter.current()
+        let settings=await center.notificationSettings()
+        guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else{return}
+        await clear()
+        let now=Date()
+        for record in records where record.status != "done" && record.status != "archived" {
+            guard let due=Time.date(record.due),due>now,due<now.addingTimeInterval(60*60*24*30) else{continue}
+            let reminder=record.kind == "exam" ? due.addingTimeInterval(-24*60*60):due.addingTimeInterval(-60*60)
+            guard reminder>now else{continue}
+            let content=UNMutableNotificationContent();content.title=record.kind == "exam" ? "Test coming up":"Coming up in "+Catalog.space(record.space).name
+            content.body=record.title;content.sound = .default
+            let trigger=UNCalendarNotificationTrigger(dateMatching:Calendar.current.dateComponents([.year,.month,.day,.hour,.minute],from:reminder),repeats:false)
+            try? await center.add(UNNotificationRequest(identifier:prefix+record.id,content:content,trigger:trigger))
+        }
+        if UserDefaults.standard.bool(forKey:"ediz-writing-nudge"),let chapter=records.filter({$0.space == "moshia" && $0.kind == "chapter" && $0.status != "REJECTED"}).max(by:{$0.updated<$1.updated}) {
+            let content=UNMutableNotificationContent();content.title="A little time for Moshia?";content.body="Pick up \(chapter.title) when you have a moment.";content.sound = .default
+            let trigger=UNCalendarNotificationTrigger(dateMatching:DateComponents(hour:18,minute:0),repeats:true)
+            try? await center.add(UNNotificationRequest(identifier:prefix+"writing",content:content,trigger:trigger))
+        }
     }
 }
 

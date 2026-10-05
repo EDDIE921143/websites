@@ -1,5 +1,6 @@
 import SwiftUI
 import EdizCore
+import CryptoKit
 
 struct NativeSpace:View {
     @EnvironmentObject var store:NativeStore
@@ -255,20 +256,26 @@ struct KnownSongRow:View {
     @State private var preview:SongPreview?
     @State private var loading=false
     @State private var error:String?
+    @State private var previewJob:Task<Void,Never>?
+    @Environment(\.scenePhase) private var phase
     var saved:Bool{store.records.contains{$0.space == "band" && $0.kind == "song" && $0.title.localizedCaseInsensitiveCompare(song.title) == .orderedSame && ($0.data["artist"] ?? "").localizedCaseInsensitiveCompare(song.artist) == .orderedSame}}
-    var spotify:URL{var url=URLComponents(string:"https://open.spotify.com/search")!;url.path="/search/"+song.title+" "+song.artist;return url.url!}
     var body:some View {
         VStack(alignment:.leading,spacing:12){Text(song.title).font(.headline);Text(song.artist).font(.subheadline).foregroundStyle(Design.muted);Text(song.reason).font(.subheadline).fixedSize(horizontal:false,vertical:true)
             if let preview{NativeSongPreview(preview:preview)}else{Button{findPreview()}label:{Label(loading ? "Finding preview…":"Listen to a preview",systemImage:"play.circle")}.disabled(loading)}
             if let error{Text(error).font(.caption).foregroundStyle(Design.muted)}
-            HStack{Button(saved ? "Added":"Add to songs"){var record=EdizCore.Record(space:"band",kind:"song",title:song.title);record.data["artist"]=song.artist;record.body=song.reason;record.status="Learning";if store.save(record){UINotificationFeedbackGenerator().notificationOccurred(.success)}}.disabled(saved);Spacer();Link("Open in Spotify",destination:spotify).font(.caption)}
-        }.padding(.vertical,8)
+            HStack{Button(saved ? "Added":"Add to songs"){var record=EdizCore.Record(space:"band",kind:"song",title:song.title);record.data["artist"]=song.artist;record.body=song.reason;record.status="Learning";if store.save(record){UINotificationFeedbackGenerator().notificationOccurred(.success)}}.disabled(saved)}
+        }.padding(.vertical,8).onDisappear{previewJob?.cancel();loading=false}.onChange(of:phase){_,value in if value == .background{previewJob?.cancel();loading=false}}
     }
-    func findPreview(){loading=true;error=nil;Task{@MainActor in defer{loading=false};guard let token=store.assistantToken else{error="Connect your assistant first.";return};do{let reply=try await GeminiAssistant.answer(question:"Play "+song.title+" by "+song.artist,records:[],conversation:[],token:token,scope:"band");preview=reply.musicPreview;if preview==nil{error="No catalog preview is available for this song."}}catch{self.error=error.localizedDescription}}}
+    func findPreview(){previewJob?.cancel();loading=true;error=nil;previewJob=Task{@MainActor in defer{loading=false};guard let token=store.assistantToken else{error="Connect your assistant first.";return};do{let reply=try await GeminiAssistant.answer(question:"Play "+song.title+" by "+song.artist,records:[],conversation:[],token:token,scope:"band");try Task.checkCancellation();preview=reply.musicPreview;if preview==nil{error="No catalog preview is available for this song."}}catch{if !Task.isCancelled{self.error=error.localizedDescription}}}}
 }
 
 @MainActor final class BookAudioController:ObservableObject {
     @Published var active=false
+    @Published var completed=false
+    @Published var preparingBook=false
+    @Published var preparedCount=0
+    @Published var preparationError:String?
+    @Published var playbackError:String?
     @Published var chapterTitle=""
     @Published var chapterNumber=0
     @Published var chapterCount=0
@@ -278,24 +285,57 @@ struct KnownSongRow:View {
     private var chapters:[EdizCore.Record]=[]
     private var index=0
     private var token:String?
+    private var cacheDirectory:URL {
+        let testing=ProcessInfo.processInfo.arguments.contains("-ui-testing")
+        let base=testing ? FileManager.default.temporaryDirectory:FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("EdizOS",isDirectory:true)
+        return base.appendingPathComponent(testing ? "BookAudioTests":"BookAudio",isDirectory:true)
+    }
+    func cacheURL(for chapter:EdizCore.Record,voice:String)->URL {
+        let input=Data(("v2-live-chunks\u{0}"+voice+"\u{0}"+chapter.title+"\u{0}"+chapter.body).utf8)
+        let hash=SHA256.hash(data:input).map{String(format:"%02x",$0)}.joined()
+        return cacheDirectory.appendingPathComponent(hash+".m4a")
+    }
+    func prepared(_ source:[EdizCore.Record],voice:String)->Int {source.filter{FileManager.default.fileExists(atPath:cacheURL(for:$0,voice:voice).path)}.count}
+    var chapterChoices:[String]{chapters.map(\.title)}
+    func selectChapter(_ selected:Int){guard chapters.indices.contains(selected) else{return};index=selected;playCurrent()}
     func start(_ source:[EdizCore.Record],at startIndex:Int,token:String?,voice:String){
-        stop()
-        guard let token,!source.isEmpty else{return}
+        stop();guard !source.isEmpty else{return}
         chapters=source;index=min(max(0,startIndex),source.count-1);self.token=token;voiceName=voice;chapterCount=source.count;active=true;playCurrent()
     }
     func playCurrent(){
-        guard active,chapters.indices.contains(index),let token else{stop();return}
-        chapterNumber=index+1;chapterTitle=chapters[index].title
+        guard active,chapters.indices.contains(index) else{stop();return}
+        completed=false;chapterNumber=index+1;chapterTitle=chapters[index].title;playbackError=nil
+        speaker.failed={[weak self] message in self?.playbackError=message}
         speaker.finished={[weak self] in self?.next()}
         speaker.setPlaybackRate(speed)
-        speaker.say(chapters[index].title+". "+chapters[index].body,token:token,natural:true,voice:voiceName)
+        let chapter=chapters[index],url=cacheURL(for:chapter,voice:voiceName)
+        if FileManager.default.fileExists(atPath:url.path){speaker.playRecorded([url],voice:voiceName);return}
+        guard let token else{playbackError="Connect your assistant to prepare this chapter. Already prepared chapters play offline.";return}
+        speaker.say(chapter.title+". "+chapter.body,token:token,natural:true,voice:voiceName,recordingURL:url,preferredSpeechModel:"live")
     }
-    func next(){if index+1<chapters.count{index+=1;playCurrent()}else{stop()}}
+    func prepareAll(_ source:[EdizCore.Record],token:String?,voice:String){
+        stop();guard let token,!source.isEmpty else{preparationError="Connect your assistant to prepare the book.";return}
+        chapters=source;self.token=token;voiceName=voice;chapterCount=source.count;preparedCount=0;preparationError=nil;preparingBook=true;index=0;prepareNext()
+    }
+    private func prepareNext(){
+        guard preparingBook else{return}
+        guard index<chapters.count else{preparingBook=false;speaker.stop();return}
+        let chapter=chapters[index],url=cacheURL(for:chapter,voice:voiceName)
+        if FileManager.default.fileExists(atPath:url.path){preparedCount+=1;index+=1;prepareNext();return}
+        guard let token else{preparingBook=false;preparationError="Assistant connection lost. Prepared chapters are kept.";return}
+        speaker.failed={[weak self] message in self?.preparingBook=false;self?.preparationError=message}
+        speaker.finished={[weak self] in guard let self,self.preparingBook else{return};self.preparedCount+=1;self.index+=1;self.prepareNext()}
+        speaker.say(chapter.title+". "+chapter.body,token:token,natural:true,voice:voiceName,recordingURL:url,playback:false,preferredSpeechModel:"live")
+    }
+    func next(){if index+1<chapters.count{index+=1;playCurrent()}else{speaker.stop();completed=true}}
+    func previous(){guard !chapters.isEmpty else{return};index=max(0,index-1);playCurrent()}
+    func retry(){playCurrent()}
     func setSpeed(_ value:Float){speed=value;speaker.setPlaybackRate(value)}
     func changeVoice(_ value:String){guard voiceName != value else{return};voiceName=value;playCurrent()}
     func cycleVoice(){let voices=["Aoede","Puck","Kore"];let next=(voices.firstIndex(of:voiceName) ?? 0)+1;changeVoice(voices[next % voices.count])}
-    func stop(){speaker.finished=nil;speaker.stop();active=false;chapterTitle="";chapterNumber=0;chapterCount=0;chapters=[];token=nil}
+    func stop(){speaker.finished=nil;speaker.failed=nil;speaker.stop();active=false;completed=false;preparingBook=false;chapterTitle="";chapterNumber=0;chapterCount=0;chapters=[];token=nil}
 }
+
 struct BookAudioBar:View {
     @ObservedObject var audio:BookAudioController
     @ObservedObject var speaker:NativeAssistantSpeaker
@@ -308,7 +348,7 @@ struct BookAudioBar:View {
                 Button{audio.stop()}label:{Image(systemName:"stop.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Design.background).frame(width:40,height:40).background(WorkspaceTheme.accent("moshia"),in:Circle())}.buttonStyle(.plain).accessibilityLabel("Stop audiobook")
             }
             HStack(spacing:10){
-                Button{if speaker.paused{speaker.resumePlayback()}else{speaker.pausePlayback()}}label:{Label(speaker.paused ? "Play":"Pause",systemImage:speaker.paused ? "play.fill":"pause.fill").frame(minHeight:40)}.buttonStyle(.plain).accessibilityIdentifier("book-audiobook-pause")
+                Button{if audio.completed{audio.selectChapter(0)}else if speaker.paused{speaker.resumePlayback()}else{speaker.pausePlayback()}}label:{Label(audio.completed ? "Replay":speaker.paused ? "Play":"Pause",systemImage:audio.completed ? "arrow.counterclockwise":speaker.paused ? "play.fill":"pause.fill").frame(minHeight:40)}.buttonStyle(.plain).accessibilityIdentifier("book-audiobook-pause")
                 Button{audio.setSpeed(max(0.75,audio.speed-0.25))}label:{Image(systemName:"minus").frame(width:32,height:40)}.buttonStyle(.plain).disabled(audio.speed<=0.75).accessibilityLabel("Slower audiobook").accessibilityIdentifier("book-audiobook-slower")
                 Text(String(format:"%g×",Double(audio.speed))).monospacedDigit().frame(minWidth:32).accessibilityIdentifier("book-audiobook-speed")
                 Button{audio.setSpeed(min(1.5,audio.speed+0.25))}label:{Image(systemName:"plus").frame(width:32,height:40)}.buttonStyle(.plain).disabled(audio.speed>=1.5).accessibilityLabel("Faster audiobook").accessibilityIdentifier("book-audiobook-faster")
@@ -316,6 +356,38 @@ struct BookAudioBar:View {
                 Spacer(minLength:0)
             }.font(.caption.weight(.semibold)).foregroundStyle(WorkspaceTheme.accent("moshia"))
         }.padding(.horizontal,16).padding(.vertical,8).background(Design.raised).accessibilityElement(children:.contain).accessibilityIdentifier("book-audiobook-controls").accessibilityValue("Audio level \(Int(speaker.level*100))")
+    }
+}
+struct BookListeningView:View {
+    @ObservedObject var audio:BookAudioController
+    @ObservedObject var speaker:NativeAssistantSpeaker
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    @State private var chapterPicker=false
+    @State private var chapterQuery=""
+    private let accent=WorkspaceTheme.accent("moshia")
+    var body:some View {
+        GeometryReader{geometry in
+            VStack(spacing:0){
+                HStack{Button{dismiss()}label:{Label("Back to book",systemImage:"chevron.down").frame(minHeight:44)}.accessibilityIdentifier("audiobook-back");Spacer();Text("MOSHIA AUDIOBOOK").font(.caption.weight(.semibold)).tracking(2).foregroundStyle(Design.muted)}.padding(.horizontal,24).padding(.top,12)
+                Spacer(minLength:20)
+                ZStack{
+                    RoundedRectangle(cornerRadius:36).fill(LinearGradient(colors:[Color(red:0.35,green:0.29,blue:0.23),Color(red:0.13,green:0.12,blue:0.11)],startPoint:.topLeading,endPoint:.bottomTrailing))
+                    RoundedRectangle(cornerRadius:36).strokeBorder(accent.opacity(0.35),lineWidth:1)
+                    VStack(spacing:25){Image(systemName:"book.closed.fill").font(.system(size:64,weight:.ultraLight)).foregroundStyle(accent);HStack(alignment:.center,spacing:5){ForEach(0..<17,id:\.self){index in Capsule().fill(accent.opacity(speaker.speaking ? 0.9:0.35)).frame(width:4,height:speaker.speaking ? 8+CGFloat((index*7)%19)+speaker.level*34:6+CGFloat(index%3)*3)}}.frame(height:64).animation(reducedMotion ? nil:.easeOut(duration:0.16),value:speaker.level)}
+                }.frame(width:max(160,min(geometry.size.width-72,380)),height:max(160,min(geometry.size.width-72,380))).shadow(color:.black.opacity(0.25),radius:22,y:15).accessibilityElement(children:.ignore).accessibilityLabel("Audiobook artwork").accessibilityValue("Audio level \(Int(speaker.level*100))").accessibilityIdentifier("book-listening-level")
+                Spacer(minLength:20)
+                VStack(alignment:.leading,spacing:12){Text(audio.chapterTitle).font(.system(.title,design:.serif).weight(.medium)).lineLimit(2).minimumScaleFactor(0.8);Text("Chapter \(audio.chapterNumber) of \(audio.chapterCount) · \(audio.voiceName)").font(.subheadline).foregroundStyle(Design.muted);GeometryReader{bar in ZStack(alignment:.leading){Capsule().fill(Design.muted.opacity(0.25));Capsule().fill(accent).frame(width:bar.size.width*CGFloat(audio.chapterNumber)/CGFloat(max(1,audio.chapterCount)))}}.frame(height:4);Text(audio.completed ? "Book complete · replay or choose a chapter":speaker.paused ? "Paused":speaker.voiceNote ?? (speaker.preparing ? "Preparing natural voice…":"Listening")).font(.caption).foregroundStyle(Design.muted).lineLimit(2)}.frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,32)
+                HStack(spacing:24){Button{audio.previous()}label:{Image(systemName:"backward.end.fill").frame(width:44,height:56)}.accessibilityLabel("Previous chapter");Button{if audio.completed{audio.selectChapter(0)}else if speaker.paused{speaker.resumePlayback()}else{speaker.pausePlayback()}}label:{Image(systemName:audio.completed ? "arrow.counterclockwise":speaker.paused ? "play.fill":"pause.fill").font(.title2).foregroundStyle(Design.background).frame(width:74,height:74).background(accent,in:Circle())}.accessibilityLabel(audio.completed ? "Replay audiobook":speaker.paused ? "Play audiobook":"Pause audiobook").accessibilityIdentifier("book-listening-pause");Button{audio.next()}label:{Image(systemName:"forward.end.fill").frame(width:44,height:56)}.accessibilityLabel("Next chapter")}.font(.title3).foregroundStyle(Design.ink).padding(.top,27)
+                HStack(spacing:20){Button{audio.setSpeed(audio.speed>=1.5 ? 0.75:audio.speed+0.25)}label:{Text(String(format:"%g×",Double(audio.speed))).font(.subheadline.monospacedDigit()).frame(minWidth:58,minHeight:44)}.accessibilityLabel("Audiobook speed").accessibilityValue(String(format:"%g×",Double(audio.speed))).accessibilityIdentifier("book-listening-speed");Button{audio.cycleVoice()}label:{Label(audio.voiceName,systemImage:"waveform").font(.subheadline).frame(minHeight:44)}.accessibilityLabel("Narrator voice").accessibilityValue(audio.voiceName).accessibilityIdentifier("book-listening-voice");Button{audio.stop();dismiss()}label:{Label("Stop",systemImage:"stop.fill").font(.subheadline).frame(minHeight:44)}.accessibilityIdentifier("book-listening-stop")}.foregroundStyle(Design.ink).padding(.top,10)
+                if let error=audio.playbackError{VStack(spacing:8){Text(error).font(.footnote).multilineTextAlignment(.center);Button("Retry this chapter"){audio.retry()}.buttonStyle(ActionStyle()).accessibilityIdentifier("book-listening-retry")}.foregroundStyle(Design.muted).padding(.horizontal,30).padding(.top,10)}
+                Button{chapterPicker=true}label:{Label("Chapters",systemImage:"list.bullet").frame(minHeight:44)}.font(.subheadline).foregroundStyle(Design.ink).padding(.top,8).accessibilityIdentifier("book-listening-chapters")
+                Text("Voice changes restart this chapter.").font(.caption2).foregroundStyle(Design.muted).padding(.top,16)
+                Spacer(minLength:20)
+            }.frame(maxWidth:.infinity,maxHeight:.infinity).background(AppBackdrop(scope:"moshia"))
+        }.preferredColorScheme(.dark).accessibilityIdentifier("book-listening-screen")
+            .sheet(isPresented:$chapterPicker){NavigationStack{List{ForEach(Array(audio.chapterChoices.enumerated()),id:\.offset){number,title in if chapterQuery.isEmpty || title.localizedCaseInsensitiveContains(chapterQuery){Button{audio.selectChapter(number);chapterPicker=false}label:{HStack{Text("\(number+1)").monospacedDigit().foregroundStyle(Design.muted);Text(title).font(.system(.body,design:.serif));Spacer();if number+1 == audio.chapterNumber{Image(systemName:"waveform").foregroundStyle(accent)}}}}}}.searchable(text:$chapterQuery,prompt:"Find a chapter").navigationTitle("Chapters").toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){chapterPicker=false}}}}}
+            .onChange(of:audio.active){_,active in if !active{dismiss()}}
     }
 }
 struct NativeFullBook:View {
@@ -326,6 +398,7 @@ struct NativeFullBook:View {
     @State private var textSize:Double=20
     @State private var paper="linen"
     @State private var contents=false
+    @State private var listening=false
     @State private var controls=true
     @StateObject private var audiobook=BookAudioController()
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
@@ -355,25 +428,30 @@ struct NativeFullBook:View {
                 }
             }.background(pageColor).task(id:"\(geometry.size.width)-\(geometry.size.height)-\(textSize)"){paginate(size:geometry.size)}
         }.navigationTitle("Moshia · Full Book").navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar).tint(WorkspaceTheme.accent("moshia"))
-            .safeAreaInset(edge:.bottom,spacing:0){if audiobook.active{BookAudioBar(audio:audiobook,speaker:audiobook.speaker)}}
+            .safeAreaInset(edge:.bottom,spacing:0){if audiobook.active && !listening{BookAudioBar(audio:audiobook,speaker:audiobook.speaker)}}
+            .fullScreenCover(isPresented:$listening){BookListeningView(audio:audiobook,speaker:audiobook.speaker)}
             .toolbar{ToolbarItem(placement:.topBarTrailing){HStack(spacing:6){Button{contents=true;store.walkthrough?.event("reader-contents")}label:{Image(systemName:"list.bullet").frame(width:36,height:36)}.accessibilityLabel("Book contents");Menu{Button("Larger text"){textSize=min(28,textSize+2)};Button("Smaller text"){textSize=max(16,textSize-2)};Picker("Page appearance",selection:$paper){Text("Warm linen").tag("linen");Text("Paper").tag("paper");Text("Night").tag("night")}}label:{Image(systemName:"textformat.size").frame(width:36,height:36)}.accessibilityLabel("Reader options")}.padding(.trailing,8)}}
             .sheet(isPresented:$contents){NavigationStack{List{ForEach(chapters){chapter in Button{if let index=pages.firstIndex(where:{$0.chapterID==chapter.id}){page=index};contents=false;store.walkthrough?.event("reader-chapter")}label:{VStack(alignment:.leading,spacing:6){Text(chapter.title).font(.system(.headline,design:.serif));if let index=pages.firstIndex(where:{$0.chapterID==chapter.id}){Text("Page \(index+1)").font(.caption).foregroundStyle(.secondary)}}.padding(.vertical,8)}}
                 Section("Audiobook"){
-                    Button{startAudiobook(fromCurrent:false)}label:{Label("Listen from the beginning",systemImage:"headphones")}.disabled(store.assistantToken == nil || chapters.isEmpty).accessibilityIdentifier("book-audiobook-start")
-                    Button{startAudiobook(fromCurrent:true)}label:{Label("Listen from this chapter",systemImage:"bookmark")}.disabled(store.assistantToken == nil || chapters.isEmpty).accessibilityIdentifier("book-audiobook-current")
-                    Text(store.assistantToken == nil ? "Connect your assistant in Settings to use the natural voice.":"Reads chapters in order. Pause, change speed or voice, or stop from the reader. Changing voice restarts the current chapter.").font(.caption).foregroundStyle(Design.muted)
+                    Button{startAudiobook(fromCurrent:false)}label:{Label("Listen from the beginning",systemImage:"headphones")}.disabled(chapters.isEmpty || (store.assistantToken == nil && audiobook.prepared(chapters,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")==0)).accessibilityIdentifier("book-audiobook-start")
+                    Button{startAudiobook(fromCurrent:true)}label:{Label("Listen from this chapter",systemImage:"bookmark")}.disabled(chapters.isEmpty || (store.assistantToken == nil && audiobook.prepared(chapters,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")==0)).accessibilityIdentifier("book-audiobook-current")
+                    Button{let voice=NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede";audiobook.prepareAll(chapters,token:store.assistantToken,voice:voice)}label:{Label(audiobook.preparingBook ? "Preparing \(audiobook.preparedCount) of \(chapters.count) chapters…":"Prepare book for offline listening",systemImage:"arrow.down.circle")}.disabled(store.assistantToken == nil || chapters.isEmpty || audiobook.preparingBook).accessibilityIdentifier("book-audiobook-prepare")
+                    if audiobook.preparingBook{ProgressView(value:Double(audiobook.preparedCount),total:Double(max(1,chapters.count)));Button("Stop preparing"){audiobook.stop()}}
+                    if let error=audiobook.preparationError{Text(error+" Already prepared chapters are kept. Try again later.").font(.caption).foregroundStyle(Design.muted)}
+                    let voice=NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede"
+                    Text("\(audiobook.prepared(chapters,voice:voice)) of \(chapters.count) chapters ready for offline listening. Changing voice or chapter text prepares a new recording. Preparation works while this book is open.").font(.caption).foregroundStyle(Design.muted)
                 }
             }.navigationTitle("Contents").toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){contents=false}}}}}
             .onAppear{if !store.isPractice{textSize=UserDefaults.standard.object(forKey:"moshia-reader-size") as? Double ?? 20;paper=UserDefaults.standard.string(forKey:"moshia-reader-paper") ?? "linen"};store.walkthrough?.event("reader-open")}
             .onChange(of:textSize){_,value in if !store.isPractice{UserDefaults.standard.set(value,forKey:"moshia-reader-size")}}
             .onChange(of:paper){_,value in if !store.isPractice{UserDefaults.standard.set(value,forKey:"moshia-reader-paper")}}
             .onChange(of:page){old,new in if old != new{store.walkthrough?.event("reader-turned")};if !store.isPractice,pages.indices.contains(new){UserDefaults.standard.set(pages[new].chapterID+"|"+String(pages[new].offset),forKey:"moshia-reader-bookmark")}}
-            .onDisappear{audiobook.stop()}
+            .onDisappear{if !listening{audiobook.stop()}}
     }
     func startAudiobook(fromCurrent:Bool){
         let selected=fromCurrent && pages.indices.contains(page) ? chapters.firstIndex(where:{$0.id == pages[page].chapterID}) ?? 0:0
         let voice=NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede"
-        audiobook.start(chapters,at:selected,token:store.assistantToken,voice:voice);contents=false
+        audiobook.start(chapters,at:selected,token:store.assistantToken,voice:voice);contents=false;listening=true
     }
     func turn(_ amount:Int){guard !pages.isEmpty else{return};withAnimation(reducedMotion ? nil:.easeInOut(duration:0.28)){page=min(max(0,page+amount),pages.count-1)}}
     func paginate(size:CGSize){

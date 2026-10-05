@@ -13,11 +13,18 @@ struct NativeSettings:View {
     @State private var testing=false
     @State private var modelStatus="Not tested. No records are sent by a connection test."
     @State private var checkedEndpoint=""
+    @AppStorage("ediz-reminders-enabled") private var remindersEnabled=false
+    @AppStorage("ediz-writing-nudge") private var writingNudge=false
     @AppStorage("tutorial-natural-voice-name",store:NativeVoicePreferences.defaults) private var tutorialVoice="Aoede"
     var body:some View {
         Form {
             Section("Look & feel"){Picker("Density",selection:Binding(get:{store.preferences.density},set:{var next=store.preferences;next.density=$0;store.setPreferences(next)})){Text("Comfortable").tag("comfortable");Text("Compact").tag("compact")}.pickerStyle(.segmented).walkthroughTarget("density",session:store.walkthrough);Text("Comfortable gives cards room to breathe. Compact uses shorter rows and smaller panels. Touch targets stay easy to reach.").font(.footnote).foregroundStyle(Design.muted)}
             Section("Your attention"){Picker("Current focus",selection:Binding(get:{store.preferences.focus},set:{store.setFocus($0)})){Text("Balanced").tag("all");ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Text("This gives the chosen space more weight. Deadlines still matter.").font(.footnote).foregroundStyle(Design.muted)}
+            Section("Reminders"){
+                Toggle("Notify me about saved dates",isOn:Binding(get:{remindersEnabled},set:{wanted in Task{@MainActor in let enabled=await NativeReminderScheduler.setEnabled(wanted,records:store.records);remindersEnabled=enabled;if wanted && !enabled{store.error="Notifications are off for Ediz OS. Enable them in iPhone Settings to receive reminders."}}})).accessibilityIdentifier("settings-reminders")
+                if remindersEnabled{Toggle("A daily Moshia writing nudge",isOn:$writingNudge).onChange(of:writingNudge){_,_ in Task{await NativeReminderScheduler.refresh(records:store.records)}}.accessibilityIdentifier("settings-writing-nudge")}
+                Text("Saved dates can remind you an hour ahead; school tests can remind you the day before. The optional writing nudge uses your latest saved Moshia chapter at 18:00. These are on-device reminders, available even when the assistant connection is offline.").font(.footnote).foregroundStyle(Design.muted)
+            }
             Section("Your data"){
                 Button("Export full backup"){do{file=FilePreview(url:try store.export())}catch{store.error=error.localizedDescription}}
                 Button("Export Ediz OS profile"){do{file=FilePreview(url:try store.exportProfile())}catch{store.error=error.localizedDescription}}

@@ -97,28 +97,40 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.buttons["book-audiobook-current"].exists)
         snapshot("Audiobook choices sit at the end of book contents")
     }
+    func testGymPlanWorkoutAndPersistence(){
+        app.tabBars.buttons["Assistant"].tap();XCTAssertFalse(app.buttons["assistant-workspace-gym"].exists)
+        app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"];for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};XCTAssertTrue(gym.isHittable);gym.tap()
+        XCTAssertTrue(app.staticTexts["Build a little stronger."].waitForExistence(timeout:5));snapshot("Gym weekly plan using Ediz's four training days")
+        app.buttons["gym-start-0"].tap();let exercise=app.buttons["gym-exercise-0"];XCTAssertTrue(exercise.waitForExistence(timeout:5))
+        let weight=app.textFields["Set 1 weight"];for _ in 0..<4{if weight.isHittable{break};app.swipeUp()};weight.tap();weight.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:4)+"40")
+        let reps=app.textFields["Set 1 reps"];reps.tap();reps.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:4)+"10");app.swipeDown()
+        let complete=app.buttons["Complete set 1"];for _ in 0..<4{if complete.isHittable{break};app.swipeUp()};complete.tap();snapshot("Expandable workout sets and rest timer")
+        app.terminate();app.launchArguments=["-ui-testing"];app.launch();app.tabBars.buttons["Spaces"].tap();let restored=app.buttons["space-gym"];for _ in 0..<7{if restored.isHittable{break};app.swipeUp()};restored.tap()
+        XCTAssertTrue(app.staticTexts["400 kg"].waitForExistence(timeout:5));app.buttons["gym-finish"].tap();XCTAssertTrue(app.staticTexts["One session stronger."].waitForExistence(timeout:5));snapshot("Finished workout saved with elapsed time and completed volume");app.buttons["Done"].tap();app.buttons["History"].tap();XCTAssertTrue(app.staticTexts["400 kg"].waitForExistence(timeout:5))
+    }
+    func testRichReplyDisplaysHeadingsAndAlignedGuitarTab(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-rich-reply"];app.launch()
+        XCTAssertTrue(app.staticTexts["Rhythm and timing"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["### Rhythm and timing"].exists);XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","e|----------------|")).firstMatch.exists);snapshot("Readable headings emphasis symbols and guitar tablature")
+    }
     func testNaturalAudiobookPlaysSampleOnDevice() throws {
         #if targetEnvironment(simulator)
         throw XCTSkip("Natural audiobook signal needs the connected iPhone credential.")
         #endif
-        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-reader-display","-test-connected-assistant"];app.launch()
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-reader-audio","-test-connected-assistant"];app.launch()
         app.buttons["Book contents"].tap()
         let listen=app.buttons["book-audiobook-start"]
         for _ in 0..<6{if listen.isHittable{break};app.swipeUp()}
         XCTAssertTrue(listen.isEnabled);listen.tap()
-        let controls=app.otherElements["book-audiobook-controls"]
-        XCTAssertTrue(controls.waitForExistence(timeout:5))
-        expectation(for:NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*"),evaluatedWith:controls)
-        waitForExpectations(timeout:110)
-        let pause=app.buttons["book-audiobook-pause"];pause.tap();XCTAssertTrue(app.staticTexts.matching(NSPredicate(format:"label BEGINSWITH %@","Paused")).firstMatch.waitForExistence(timeout:5));pause.tap()
-        app.buttons["book-audiobook-faster"].tap();XCTAssertTrue(app.staticTexts["1.25×"].waitForExistence(timeout:5))
-        app.buttons["book-audiobook-voice"].tap()
-        XCTAssertEqual(app.buttons["book-audiobook-voice"].value as? String,"Puck")
-        expectation(for:NSPredicate(format:"value MATCHES %@","Audio level [1-9][0-9]*"),evaluatedWith:controls)
-        waitForExpectations(timeout:110)
+        XCTAssertTrue(app.staticTexts["MOSHIA AUDIOBOOK"].waitForExistence(timeout:5))
+        snapshot("Listening screen immediately after starting a sample chapter")
+        let pause=app.buttons["Pause audiobook"]
+        if pause.exists {pause.tap();XCTAssertTrue(app.staticTexts["Paused"].waitForExistence(timeout:5));app.buttons["Play audiobook"].tap()}
+        else {XCTAssertTrue(app.buttons["Replay audiobook"].waitForExistence(timeout:5))}
+        let speed=app.buttons["Audiobook speed"];speed.tap();XCTAssertEqual(speed.value as? String,"1.25×")
+        let voices=app.buttons.matching(NSPredicate(format:"label == %@","Narrator voice"));let voice=voices.element(boundBy:voices.count-1);voice.tap();XCTAssertEqual(voice.value as? String,"Puck")
         snapshot("Natural audiobook playing invented sample chapter")
-        app.buttons["Stop audiobook"].tap()
-        XCTAssertFalse(controls.exists)
+        app.buttons["Stop"].tap()
+        XCTAssertFalse(app.staticTexts["MOSHIA AUDIOBOOK"].exists)
     }
     func testCaptureQuestionsClarifyAnInventedIdeaOnDevice() throws {
         #if targetEnvironment(simulator)

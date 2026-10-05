@@ -25,6 +25,9 @@ struct NativeRecordAssist:View {
     @State private var job:Task<Void,Never>?
     @State private var requestID=UUID()
     @StateObject private var speaker=NativeAssistantSpeaker()
+    @StateObject private var answerRecorder=NativeThoughtRecorder()
+    @State private var recordingQuestion:String?
+    @State private var transcribingAnswer=false
     var body:some View {
         NavigationStack{ScrollView{VStack(alignment:.leading,spacing:20){
             VStack(alignment:.leading,spacing:8){Text(record.title).font(.title2.weight(.medium)).fixedSize(horizontal:false,vertical:true);Text("Work with this item, one useful step at a time.").font(.subheadline).foregroundStyle(Design.muted)}
@@ -40,8 +43,10 @@ struct NativeRecordAssist:View {
                     VStack(alignment:.leading,spacing:14){
                         Text("Answer what you know").font(.headline)
                         ForEach(questions,id:\.self){question in
-                            VStack(alignment:.leading,spacing:6){Text(question).font(.subheadline);TextField("Your answer",text:Binding(get:{answers[question] ?? ""},set:{answers[question]=$0}),axis:.vertical).lineLimit(2...4).padding(10).background(Design.surface,in:RoundedRectangle(cornerRadius:10)).accessibilityIdentifier("record-ai-answer")}
+                            VStack(alignment:.leading,spacing:6){Text(question).font(.subheadline);HStack(alignment:.bottom,spacing:8){TextField("Your answer",text:Binding(get:{answers[question] ?? ""},set:{answers[question]=$0}),axis:.vertical).lineLimit(2...4).padding(10).background(Design.surface,in:RoundedRectangle(cornerRadius:10)).accessibilityIdentifier("record-ai-answer");Button{recordingQuestion == question ? finishAnswer(for:question):startAnswer(for:question)}label:{Image(systemName:recordingQuestion == question ? "stop.fill":"mic.fill").frame(width:44,height:44).background(Design.surface,in:RoundedRectangle(cornerRadius:12))}.disabled(transcribingAnswer || (recordingQuestion != nil && recordingQuestion != question)).accessibilityLabel(recordingQuestion == question ? "Stop and transcribe answer":"Speak answer").accessibilityIdentifier("record-ai-speak-answer")};if recordingQuestion == question{AudioWaveform(levels:answerRecorder.levels,color:WorkspaceTheme.accent(record.space),height:20);Text("Recording your answer…").font(.caption).foregroundStyle(Design.muted)}}
                         }
+                        if transcribingAnswer{ProgressView("Transcribing your answer…")}
+                        if let message=answerRecorder.message{Text(message).font(.caption).foregroundStyle(Design.muted)}
                         Button("Clarify using my answers"){clarifyAnswers()}.buttonStyle(ActionStyle()).disabled(!answers.values.contains(where:{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty})).accessibilityIdentifier("record-ai-clarify-answers")
                     }.padding(16).background(Design.raised,in:RoundedRectangle(cornerRadius:16))
                 } else {
@@ -51,9 +56,11 @@ struct NativeRecordAssist:View {
             }
         }.padding(20)}.background(AppBackdrop()).navigationTitle("Work with AI").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){cancel();dismiss()}}}}
         .onAppear{if initialTool == .review{tool = .review;run()}}
-        .environment(\.edizWorkspaceFocus,record.space).onDisappear{cancel();speaker.stop()}
+        .environment(\.edizWorkspaceFocus,record.space).onDisappear{cancel();speaker.stop();answerRecorder.discard()}
     }
     func cancel(){requestID=UUID();job?.cancel();job=nil;busy=false;speaker.stop()}
+    func startAnswer(for question:String){answerRecorder.discard();recordingQuestion=question;answerRecorder.toggle()}
+    func finishAnswer(for question:String){guard recordingQuestion==question else{return};transcribingAnswer=true;Task{@MainActor in let text=await answerRecorder.finish().trimmingCharacters(in:.whitespacesAndNewlines);if !text.isEmpty{answers[question]=[answers[question],text].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" ")};recordingQuestion=nil;transcribingAnswer=false}}
     func run(){
         cancel();error=nil;questions=[];answers=[:]
         if tool == .polish,record.body.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{error="Add a few notes first. Clarify improves your own words.";return}

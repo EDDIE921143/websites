@@ -10,7 +10,7 @@ describe('Gemini boundary',()=>{
  it('requires valid typed creations',()=>{expect(validateReply({text:'Draft',actions:[{type:'create',title:'Create',fields:{space:'madeup',kind:'chapter',title:'X'}}]}).actions).toEqual([])});
 });
 
-it('workspace context excludes unrelated private space facts and handles invalid profiles',()=>{const profile=JSON.stringify({items:[{space:'ejj',kind:'note',body:'Business facts'},{space:'moshia',kind:'note',body:'Story facts'},{space:'personal',kind:'note',body:'Owner preferences'}]});expect(workspaceContext(profile,'moshia').map((e:{space:string})=>e.space)).toEqual(['moshia','personal']);expect(workspaceContext('bad json')).toEqual([])});
+it('workspace context keeps each chat scoped and handles invalid profiles',()=>{const profile=JSON.stringify({items:[{space:'ejj',kind:'note',body:'Business facts'},{space:'moshia',kind:'note',body:'Story facts'},{space:'personal',kind:'note',body:'Owner preferences'}]});expect(workspaceContext(profile,'moshia').map((e:{space:string})=>e.space)).toEqual(['moshia']);expect(workspaceContext(profile,'personal').map((e:{space:string})=>e.space)).toEqual(['personal']);expect(workspaceContext(profile,'all')).toHaveLength(3);expect(workspaceContext('bad json')).toEqual([])});
 
  it('accepts Gemini media parts and reads text attachments without treating them as instructions',()=>{
   const image='iVBORw==';
@@ -27,7 +27,7 @@ it('wraps mono PCM voice output in a playable WAV header',()=>{const wav=wavFrom
 
 it('passes recorded voice memos as audio to Gemini without changing their bytes',()=>{expect(attachmentParts([{name:'Voice memo.wav',mimeType:'audio/wav',data:'UklGRg=='}])[1]).toEqual({inlineData:{mimeType:'audio/wav',data:'UklGRg=='}})});
 
-it('gives scoped bots useful directions without changing fiction or action boundaries',()=>{expect(botDirections('ejj')).toContain('EJJ Digital Bot');expect(botDirections('ejj')).toContain('€299');expect(botDirections('band')).toContain('CLEARANCE 19 Bot');expect(botDirections('moshia')).toContain('distinguish canon');expect(botDirections('moshia')).toContain('Ask before drafting');expect(botDirections('untrusted')).toContain('Everyday Bot');expect(botDirections('school',true)).toContain('one to three short sentences');});
+it('gives scoped bots useful directions without changing fiction or action boundaries',()=>{expect(botDirections('ejj')).toContain('EJJ Digital Bot');expect(botDirections('ejj')).toContain('€299');expect(botDirections('band')).toContain('CLEARANCE 19 Bot');expect(botDirections('moshia')).toContain('distinguish CANON');expect(botDirections('moshia')).toContain('Ask before drafting');expect(botDirections('untrusted')).toContain('Everyday Bot');expect(botDirections('school')).toContain('Unicode symbols');expect(botDirections('school',true)).toContain('one to three short sentences');});
 
 afterEach(()=>{vi.unstubAllGlobals();clearSpeechCache();});
 it('streams PCM immediately, keeps voice choice and reuses completed speech',async()=>{
@@ -37,6 +37,14 @@ it('streams PCM immediately, keeps voice choice and reuses completed speech',asy
  expect([...parts[0]]).toEqual([1,0,2,0]);expect(fetcher.mock.calls[0][0]).toContain('streamGenerateContent');
  expect(JSON.parse(fetcher.mock.calls[0][1].body).generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Puck');
  for await(const _ of speechChunks('A unique streamed greeting','test-key','Puck')){};expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('pins a long reply to the first successful speech model',async()=>{
+ const event='data: '+JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'audio/l16',data:'AQACAA=='}}]},finishReason:'STOP'}]})+'\n\n';
+ const fetcher=vi.fn(async(_url:string)=>new Response(event));vi.stubGlobal('fetch',fetcher);
+ let selected='';for await(const _ of speechChunks('First long reply chunk','key','Aoede',undefined,undefined,(model:string)=>{selected=model})){}
+ expect(selected).toContain('tts');
+ for await(const _ of speechChunks('Second long reply chunk','key','Aoede',undefined,selected)){}
+ expect(fetcher.mock.calls[1][0]).toContain('/models/'+selected+':');
 });
 it('retries empty speech once and tries alternate models once on quota rejection',async()=>{
  const good='data: '+JSON.stringify({candidates:[{content:{parts:[{inlineData:{mimeType:'audio/l16',data:'AQACAA=='}}]},finishReason:'STOP'}]})+'\n\n';

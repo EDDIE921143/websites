@@ -39,7 +39,7 @@ extension NativeStore {
     func openThread(scope:String,new:Bool=false)->UUID {
         var shelf=chatShelf(scope)
         if shelf.threads.isEmpty,!conversation(scope).isEmpty{var old=ChatThread();old.entries=conversation(scope);old.title="Earlier conversation";shelf.threads=[old];shelf.active=old.id}
-        if !new,let active=shelf.active,shelf.threads.contains(where:{$0.id == active}){saveShelf(shelf,scope:scope);return active}
+        if !new,let active=shelf.active,let thread=shelf.threads.first(where:{$0.id == active}),thread.entries.isEmpty || Date().timeIntervalSince(thread.updated)<300{saveShelf(shelf,scope:scope);return active}
         let thread=ChatThread();shelf.threads.append(thread);shelf.active=thread.id;saveShelf(shelf,scope:scope);return thread.id
     }
     func selectThread(_ id:UUID,scope:String){var shelf=chatShelf(scope);guard shelf.threads.contains(where:{$0.id == id}) else{return};shelf.active=id;saveShelf(shelf,scope:scope)}
@@ -67,14 +67,20 @@ struct NativeConversationHost:View {
     @State private var question=""
     @State private var titleJob:Task<Void,Never>?
     @State private var naming=Set<UUID>()
+    @State private var openedHistory=false
+    @Environment(\.scenePhase) private var scenePhase
     var thread:ChatThread?{store.chatShelf(scope).threads.first{$0.id == threadID}}
     var body:some View {
         Group {
             if let id=threadID {
-                NativeAssistantChat(entries:Binding(get:{thread?.entries ?? []},set:{store.saveThread($0,id:id,scope:scope)}),question:$question,scope:scope,threadID:id,selectThread:{id in question="";store.selectThread(id,scope:scope);threadID=id}).id(id)
+                NativeAssistantChat(entries:Binding(get:{thread?.entries ?? []},set:{store.saveThread($0,id:id,scope:scope)}),question:$question,scope:scope,threadID:id,selectThread:{id in question="";openedHistory=true;store.selectThread(id,scope:scope);threadID=id}).id(id)
                     .onChange(of:thread?.entries.count){_,_ in nameIfReady()}
             } else {ProgressView().frame(maxWidth:.infinity,maxHeight:.infinity)}
-        }.onAppear{if threadID == nil{if let initialID{store.selectThread(initialID,scope:scope);threadID=initialID}else{threadID=store.openThread(scope:scope,new:new)}};nameIfReady()}.onDisappear{titleJob?.cancel()}
+        }.onAppear{if threadID == nil{if let initialID{store.selectThread(initialID,scope:scope);threadID=initialID;openedHistory=true}else{threadID=store.openThread(scope:scope,new:new)}}else{rotateIfIdle()};nameIfReady()}.onChange(of:scenePhase){_,phase in if phase == .active{rotateIfIdle();nameIfReady()}else if phase == .background{titleJob?.cancel();naming=[]}}.onChange(of:question){_,value in if !value.isEmpty{rotateIfIdle()}}.onDisappear{titleJob?.cancel()}
+    }
+    func rotateIfIdle(){
+        guard initialID == nil,!openedHistory,let thread,!thread.entries.isEmpty,Date().timeIntervalSince(thread.updated)>=300 else{return}
+        threadID=store.openThread(scope:scope)
     }
     func nameIfReady(){
         guard let thread,!thread.titled,!naming.contains(thread.id),thread.entries.last?.role == "assistant",let token=store.assistantToken else{return}
@@ -185,11 +191,9 @@ struct AssistantSongPlayback:View {
     @State private var busy=false
     @State private var failure:String?
     @State private var job:Task<Void,Never>?
-    var spotify:URL{var url=URLComponents(string:"https://open.spotify.com")!;let record=item.recordId.flatMap{id in store.records.first{$0.id == id}};url.path="/search/"+item.title+" "+(record?.data["artist"] ?? "");return url.url!}
     var body:some View {
         VStack(alignment:.leading,spacing:10){
-            if let preview{NativeSongPreview(preview:preview,beforePlayback:onOpen)}else{Button(busy ? "Finding preview…":"Play preview"){onOpen();busy=true;failure=nil;job=Task{@MainActor in defer{busy=false};guard let token=store.assistantToken else{failure="Connect your assistant to find a preview.";return};do{let response=try await GeminiAssistant.answer(question:"Play "+item.title,records:store.records.filter{$0.space == "band"},conversation:[],token:token,scope:"band");try Task.checkCancellation();preview=response.musicPreview;if preview == nil{failure="No catalog preview is available. Try Spotify."}}catch{if !Task.isCancelled{failure=error.localizedDescription}}}}.disabled(busy)}
-            Link("Listen in Spotify",destination:spotify).simultaneousGesture(TapGesture().onEnded{onOpen();NativeMusicPlayback.shared.stop()}).font(.caption)
+            if let preview{NativeSongPreview(preview:preview,beforePlayback:onOpen)}else{Button(busy ? "Finding preview…":"Play preview"){onOpen();busy=true;failure=nil;job=Task{@MainActor in defer{busy=false};guard let token=store.assistantToken else{failure="Connect your assistant to find a preview.";return};do{let response=try await GeminiAssistant.answer(question:"Play "+item.title,records:store.records.filter{$0.space == "band"},conversation:[],token:token,scope:"band");try Task.checkCancellation();preview=response.musicPreview;if preview == nil{failure="No Apple preview is available for this recording. Try another title or artist."}}catch{if !Task.isCancelled{failure=error.localizedDescription}}}}.disabled(busy)}
             if let failure{Text(failure).font(.caption).foregroundStyle(Design.muted)}
         }.onDisappear{job?.cancel();busy=false}
     }

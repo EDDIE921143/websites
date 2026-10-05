@@ -1,3 +1,11 @@
+# 0.3.23
+
+Gym now has Ediz’s editable four-day plan, searchable exercises, workout logging, previous sets and rest timers. CLEARANCE 19 uses in-app Apple previews; assistant replies render headings and guitar tabs; background requests cancel. See docs/UPDATE-0.3.23.md for validation and limits.
+
+## Ediz OS 0.3.22
+
+Saved conversations rotate after five minutes idle, with older chats still available. Moshia's audiobook gains a separate listening screen and reusable chapter recordings; attachments remain openable in chats. Clarification answers accept speech, school replies use readable math, and reminders can be enabled in Settings. See [changes and limits](docs/UPDATE-0.3.22.md).
+
 ## Ediz OS 0.3.15
 
 Conversational natural voice tutorials with mute/replay, distinct workspace headers, pinned module controls and saved-item reveal, animated completion feedback, and branded pull-to-refresh. Xcode 26 voice drawing compilation and dependency lock metadata were repaired. See [verification and practical limits](docs/UPDATE-0.3.15.md).

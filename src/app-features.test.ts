@@ -70,3 +70,20 @@ it('record AI suggestions cannot save, show unsolicited cards or invoke search',
  await handler({method:'POST',headers:{host:'ediz-os.vercel.app',authorization:'Bearer '+token},body:{mode:'record-polish',question:'Improve this note',scope:'personal',records:[{id:'sample',space:'personal',kind:'note',title:'Guitar'}]}},res);
  expect(res.statusCode).toBe(200);expect(res.body.actions).toEqual([]);expect(res.body.cards).toBeUndefined();expect(JSON.parse((fetcher.mock.calls[0] as any)[1].body)).not.toHaveProperty('tools');
 });
+
+it('exercise description search accepts the catalogue and cannot invent or mutate exercises',async()=>{
+ const token='a'.repeat(64);vi.stubEnv('GEMINI_API_KEY','test');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',token);
+ const fetcher=vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'The seated chest press matches that movement.',recordIds:['press','invented'],actions:[{type:'delete',entityId:'press',title:'Delete'}]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
+ const res={statusCode:0,body:null as any,setHeader(){},status(code:number){this.statusCode=code;return this},json(body:any){this.body=body;return this}};
+ const records=[{id:'press',space:'gym',kind:'note',title:'Lever chest press'},...Array.from({length:901},(_,index)=>({id:'exercise-'+index,title:'Exercise '+index,space:'gym',kind:'note'}))];
+ await handler({method:'POST',headers:{host:'ediz-os.vercel.app',authorization:'Bearer '+token},body:{mode:'exercise-search',scope:'gym',question:'The seated machine where I push forward',records}},res);
+ expect(res.statusCode).toBe(200);expect(res.body.recordIds).toEqual(['press']);expect(res.body.actions).toEqual([]);const payload=JSON.parse((fetcher.mock.calls[0] as any)[1].body);expect(payload).not.toHaveProperty('tools');expect(payload.systemInstruction.parts[0].text).toContain('mechanical similarity');expect(botDirections('gym')).toContain('Gym Bot');expect(botDirections('band')).toContain('never offer Spotify');
+});
+it('client disconnection aborts a pending assistant provider request',async()=>{
+ const token='a'.repeat(64);vi.stubEnv('GEMINI_API_KEY','test');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',token);
+ let close:()=>void=()=>{};
+ const fetcher=vi.fn((_url:any,options:any)=>new Promise((_resolve,reject)=>{options.signal.addEventListener('abort',()=>reject(new DOMException('Closed','AbortError')));queueMicrotask(()=>close())}));vi.stubGlobal('fetch',fetcher);
+ const res={writableEnded:false,on(_event:string,cb:()=>void){close=cb},setHeader(){},status:vi.fn(),json:vi.fn()};
+ await handler({method:'POST',headers:{host:'ediz-os.vercel.app',authorization:'Bearer '+token},body:{scope:'personal',question:'Help me plan tomorrow',records:[]}},res);
+ expect(fetcher).toHaveBeenCalledTimes(1);expect((fetcher.mock.calls[0] as any)[1].signal.aborted).toBe(true);expect(res.status).not.toHaveBeenCalled();
+});

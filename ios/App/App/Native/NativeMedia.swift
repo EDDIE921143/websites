@@ -146,13 +146,13 @@ struct NativeFilePreview:UIViewControllerRepresentable {
     let player:AVPlayer
     private var observer:Any?
     private var statusObserver:NSKeyValueObservation?
-    init(url:URL){let item=AVPlayerItem(url:url);item.audioTimePitchAlgorithm = .spectral;player=AVPlayer(playerItem:item);observer=player.addPeriodicTimeObserver(forInterval:CMTime(seconds:0.1,preferredTimescale:600),queue:.main){[weak self] time in Task{@MainActor in guard let self else{return};self.seconds=time.seconds.isFinite ? time.seconds:0;if self.looping && self.loopEnd>self.loopStart && self.seconds>=self.loopEnd{self.seek(self.loopStart)}else if self.duration>0 && self.seconds>=self.duration{self.playing=false}}}
+    init(url:URL,maximumDuration:Double?=nil){let item=AVPlayerItem(url:url);item.audioTimePitchAlgorithm = .spectral;player=AVPlayer(playerItem:item);observer=player.addPeriodicTimeObserver(forInterval:CMTime(seconds:0.1,preferredTimescale:600),queue:.main){[weak self] time in Task{@MainActor in guard let self else{return};self.seconds=time.seconds.isFinite ? time.seconds:0;if self.looping && self.loopEnd>self.loopStart && self.seconds>=self.loopEnd{self.seek(self.loopStart)}else if self.duration>0 && self.seconds>=self.duration{self.player.pause();self.playing=false}}}
         statusObserver=player.observe(\.timeControlStatus,options:[.new]){[weak self] player,_ in let state=player.timeControlStatus;Task{@MainActor in guard let self else{return};self.playing=state == .playing;if state == .playing{self.starting=false};if player.currentItem?.status == .failed{self.starting=false;self.message="This audio file couldn’t be played."}}}
-        Task{do{let length=try await item.asset.load(.duration).seconds;duration=length.isFinite ? length:0;loopEnd=duration}catch{message="This audio file could not be opened."}}
+        Task{do{let length=try await item.asset.load(.duration).seconds;duration=length.isFinite ? min(length,maximumDuration ?? length):0;loopEnd=duration}catch{message="This audio file could not be opened."}}
     }
     func toggle(){
         if playing || starting {player.pause();playing=false;starting=false;return}
-        do {message=nil;try NativeAudioSession.activate(audioID,category:.playback,mode:.default,onReplacement:{[weak self] in self?.player.pause();self?.playing=false;self?.starting=false});starting=true;player.playImmediately(atRate:speed)}
+        do {message=nil;if duration>0 && seconds>=duration{seek(0)};try NativeAudioSession.activate(audioID,category:.playback,mode:.default,onReplacement:{[weak self] in self?.player.pause();self?.playing=false;self?.starting=false});starting=true;player.playImmediately(atRate:speed)}
         catch {starting=false;message="Sound couldn’t start. Check the audio output and try again."}
     }
     func seek(_ seconds:Double){player.seek(to:CMTime(seconds:seconds,preferredTimescale:600),toleranceBefore:.zero,toleranceAfter:.zero)}
@@ -346,11 +346,13 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     private var playbackID=UUID()
     private var tapInstalled=false
     private var pending=0
+    private var queuedSeconds:Double=0
     private var ended=false
     private var cache:[String:Data]=[:]
     var allowOfflineVoice:Bool{NativeVoicePreferences.defaults.bool(forKey:"assistant-offline-voice")}
     private let format=AVAudioFormat(standardFormatWithSampleRate:24000,channels:1)!
     var finished:(()->Void)?
+    var failed:((String)->Void)?
     var interrupted:((String)->Void)?
     private var interruptionRequest:SFSpeechAudioBufferRecognitionRequest?
     private var interruptionTask:SFSpeechRecognitionTask?
@@ -361,25 +363,37 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     private var recordedMeter:Task<Void,Never>?
     override init(){super.init();engine.attach(node);engine.attach(timePitch)}
     func setPlaybackRate(_ rate:Float){playbackRate=min(1.5,max(0.75,rate));timePitch.rate=playbackRate;recordedPlayer?.rate=playbackRate}
-    func pausePlayback(){guard speaking || preparing else{return};paused=true;node.pause();recordedPlayer?.pause();speaking=false;level=0}
+    func pausePlayback(){paused=true;node.pause();recordedPlayer?.pause();speaking=false;level=0}
     func resumePlayback(){guard paused else{return};paused=false;if engine.isRunning && pending>0{node.play();speaking=true};if let recordedPlayer,recordedPlayer.play(){speaking=true}}
-    func say(_ text:String,token:String?=nil,natural:Bool=true,voice:String="Aoede") {
+    func say(_ text:String,token:String?=nil,natural:Bool=true,voice:String="Aoede",recordingURL:URL?=nil,playback:Bool=true,preferredSpeechModel:String?="live") {
         stop();voiceNote=nil
         let text=text.trimmingCharacters(in:.whitespacesAndNewlines);guard !text.isEmpty else{return}
         guard natural,let token else{if !natural || allowOfflineVoice{deviceSay(text)}else{voiceNote="Connect your assistant to hear your chosen natural voice."};return}
         let key=voice+":"+text
-        if let audio=cache[key]{do{try queuePCM(audio);voiceNote="Natural voice · "+voice;ended=true;completeIfDrained()}catch{voiceNote="Audio couldn’t start. Check the output and try again."};return}
+        if recordingURL == nil,let audio=cache[key]{do{try queuePCM(audio);voiceNote="Natural voice · "+voice;ended=true;completeIfDrained()}catch{voiceNote="Audio couldn’t start. Check the output and try again."};return}
         preparing=true;let id=playbackID
         generation=Task{@MainActor in
-            var cacheAudio=Data();var cacheable=true;var heardAudio=false;var streamIssue:String?
+            var cacheAudio=Data();var cacheable=true;var heardAudio=false;var streamIssue:String?;var speechModel=preferredSpeechModel
+            let temporaryURL=recordingURL?.deletingPathExtension().appendingPathExtension("partial.m4a")
+            var recordingFile:AVAudioFile?
             do {
-                for chunk in SpeechText.chunks(text){
+                if let temporaryURL {
+                    try FileManager.default.createDirectory(at:temporaryURL.deletingLastPathComponent(),withIntermediateDirectories:true)
+                    try? FileManager.default.removeItem(at:temporaryURL)
+                    recordingFile=try AVAudioFile(forWriting:temporaryURL,settings:[AVFormatIDKey:Int(kAudioFormatMPEG4AAC),AVSampleRateKey:24000,AVNumberOfChannelsKey:1,AVEncoderBitRateKey:48000],commonFormat:.pcmFormatFloat32,interleaved:false)
+                }
+                for chunk in SpeechText.chunks(text,limit:speechModel == "live" ? 260:700){
+                    // Let the current audio play before requesting the next segment.
+                    // Immediate requests can exhaust one model's short rate window and change the voice.
+                    while speechModel != nil && (paused || queuedSeconds>10){try Task.checkCancellation();try await Task.sleep(for:.milliseconds(250))}
                     while paused{try Task.checkCancellation();try await Task.sleep(for:.milliseconds(150))}
                     try Task.checkCancellation();guard playbackID==id else{return}
                     var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!)
                     request.httpMethod="POST";request.timeoutInterval=110
                     request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
-                    request.httpBody=try JSONSerialization.data(withJSONObject:["mode":"speech-stream","text":chunk,"voice":voice])
+                    var payload:[String:Any]=["mode":"speech-stream","text":chunk,"voice":voice]
+                    if let speechModel{payload["speechModel"]=speechModel}
+                    request.httpBody=try JSONSerialization.data(withJSONObject:payload)
                     let (bytes,response)=try await URLSession.shared.bytes(for:request)
                     guard (response as? HTTPURLResponse)?.statusCode==200 else{throw URLError(.badServerResponse)}
                     var completed=false;var chunkBytes=0
@@ -388,22 +402,30 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
                         guard !line.isEmpty,let data=line.data(using:.utf8),let packet=try JSONSerialization.jsonObject(with:data) as? [String:Any] else{continue}
                         if let issue=packet["error"] as? String{streamIssue=issue;throw URLError(.cannotLoadFromNetwork)}
                         if let encoded=packet["audio"] as? String,let audio=Data(base64Encoded:encoded){
+                            if let model=packet["model"] as? String{if let speechModel,speechModel != model{throw URLError(.cannotDecodeContentData)};speechModel=model}
                             while paused{try Task.checkCancellation();try await Task.sleep(for:.milliseconds(150))}
                             guard packet["rate"] as? Int==24000,chunkBytes+audio.count<=4000000 else{throw URLError(.cannotDecodeContentData)}
                             chunkBytes+=audio.count;heardAudio=true
                             if cacheable,cacheAudio.count+audio.count<=1500000{cacheAudio.append(audio)}else{cacheable=false;cacheAudio.removeAll()}
-                            try queuePCM(audio);voiceNote="Natural voice · "+voice
+                            let buffer=try pcmBuffer(audio)
+                            try recordingFile?.write(from:buffer)
+                            if playback{try queue(buffer)}
+                            voiceNote="Natural voice · "+voice
                         }
                         if packet["done"] as? Bool==true{completed=true}
                     }
                     guard completed,chunkBytes>0 else{throw URLError(.networkConnectionLost)}
                 }
+                recordingFile=nil
+                if let temporaryURL,let recordingURL{try? FileManager.default.removeItem(at:recordingURL);try FileManager.default.moveItem(at:temporaryURL,to:recordingURL);try? FileManager.default.setAttributes([.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication],ofItemAtPath:recordingURL.path)}
                 if cacheable,!cacheAudio.isEmpty{if cache.count>=3{cache.removeAll()};cache[key]=cacheAudio}
+                if !playback{preparing=false;let completion=finished;Task{@MainActor in await Task.yield();completion?()};return}
                 ended=true;completeIfDrained()
             }catch {
                 guard !Task.isCancelled,playbackID==id else{return}
-                if !heardAudio{resetPlayback();preparing=false;if allowOfflineVoice{deviceSay(text)}else{voiceNote=streamIssue ?? "Your natural voice couldn’t play. Tap Read aloud to retry; your reply is still here."}}
-                else{voiceNote="Speech was interrupted. Tap Listen to replay the reply.";ended=true;completeIfDrained()}
+                recordingFile=nil;if let temporaryURL{try? FileManager.default.removeItem(at:temporaryURL)}
+                if !heardAudio{resetPlayback();preparing=false;if allowOfflineVoice && recordingURL == nil{deviceSay(text)}else{voiceNote=streamIssue ?? "Your natural voice couldn’t play. Tap Read aloud to retry; your reply is still here.";failed?(voiceNote ?? "Speech unavailable")}}
+                else{voiceNote="Speech stopped before this chapter finished. Retry from the start of this chapter.";finished=nil;failed?(voiceNote ?? "Speech interrupted");ended=true;completeIfDrained()}
             }
         }
     }
@@ -433,10 +455,13 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     }
     nonisolated func audioPlayerDidFinishPlaying(_ player:AVAudioPlayer,successfully flag:Bool){Task{@MainActor in guard self.recordedPlayer===player else{return};do{guard flag else{throw URLError(.cannotDecodeContentData)};try self.nextRecording()}catch{self.stop();self.voiceNote="The guide was interrupted. Replay this step."}}}
     private func queuePCM(_ bytes:Data) throws {
+        try queue(pcmBuffer(bytes))
+    }
+    private func pcmBuffer(_ bytes:Data) throws -> AVAudioPCMBuffer {
         guard !bytes.isEmpty,bytes.count%2==0,let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:AVAudioFrameCount(bytes.count/2)),let samples=buffer.floatChannelData?[0] else{throw URLError(.cannotDecodeContentData)}
         buffer.frameLength=buffer.frameCapacity
         bytes.withUnsafeBytes{raw in for index in 0..<Int(buffer.frameLength){samples[index]=Float(Int16(littleEndian:raw.loadUnaligned(fromByteOffset:index*2,as:Int16.self)))/32768}}
-        try queue(buffer)
+        return buffer
     }
     private func queue(_ buffer:AVAudioPCMBuffer) throws {
         let id=playbackID
@@ -456,7 +481,9 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
             };tapInstalled=true;engine.prepare();try engine.start();monitorOutput()
         }
         pending+=1
-        node.scheduleBuffer(buffer,completionCallbackType:.dataPlayedBack){[weak self] _ in Task{@MainActor in guard let self,self.playbackID==id else{return};self.pending=max(0,self.pending-1);self.completeIfDrained()}}
+        let duration=Double(buffer.frameLength)/buffer.format.sampleRate
+        queuedSeconds+=duration
+        node.scheduleBuffer(buffer,completionCallbackType:.dataPlayedBack){[weak self] _ in Task{@MainActor in guard let self,self.playbackID==id else{return};self.pending=max(0,self.pending-1);self.queuedSeconds=max(0,self.queuedSeconds-duration);self.completeIfDrained()}}
         if !node.isPlaying && !paused{node.play()}
         preparing=false;speaking = !paused
     }
@@ -496,7 +523,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     private func completeIfDrained(){guard ended,pending==0 else{return};resetPlayback();finished?()}
     func refreshOutput(){let session=AVAudioSession.sharedInstance();output=session.currentRoute.outputs.map(\.portName).joined(separator:", ");muted=session.outputVolume<0.01}
     private func monitorOutput(){meter?.cancel();meter=Task{@MainActor in while !Task.isCancelled{refreshOutput();try? await Task.sleep(for:.milliseconds(100))}}}
-    private func resetPlayback(){playbackID=UUID();interruptionTask?.cancel();interruptionTask=nil;interruptionRequest?.endAudio();interruptionRequest=nil;if inputTapInstalled{engine.inputNode.removeTap(onBus:0);inputTapInstalled=false};meter?.cancel();meter=nil;node.stop();if tapInstalled{engine.mainMixerNode.removeTap(onBus:0);tapInstalled=false};engine.stop();if voiceProcessing{try? engine.inputNode.setVoiceProcessingEnabled(false);voiceProcessing=false};pending=0;ended=false;preparing=false;speaking=false;paused=false;level=0;NativeAudioSession.release(audioID)}
+    private func resetPlayback(){playbackID=UUID();interruptionTask?.cancel();interruptionTask=nil;interruptionRequest?.endAudio();interruptionRequest=nil;if inputTapInstalled{engine.inputNode.removeTap(onBus:0);inputTapInstalled=false};meter?.cancel();meter=nil;node.stop();if tapInstalled{engine.mainMixerNode.removeTap(onBus:0);tapInstalled=false};engine.stop();if voiceProcessing{try? engine.inputNode.setVoiceProcessingEnabled(false);voiceProcessing=false};pending=0;queuedSeconds=0;ended=false;preparing=false;speaking=false;paused=false;level=0;NativeAudioSession.release(audioID)}
     func stop(){recordedMeter?.cancel();recordedMeter=nil;recordedPlayer?.stop();recordedPlayer=nil;recordedQueue=[];generation?.cancel();generation=nil;resetPlayback();utterance=nil;synthesizer.stopSpeaking(at:.immediate)}
 }
 private struct CallScrollOffset:PreferenceKey {static let defaultValue:CGFloat=0;static func reduce(value:inout CGFloat,nextValue:()->CGFloat){value=nextValue()}}
@@ -762,7 +789,7 @@ struct SongPreview:Codable,Identifiable {
     func prepare(_ preview:SongPreview){
         guard track?.id != preview.id else{return}
         stop();guard let url=URL(string:preview.audioURL),url.scheme=="https" else{return}
-        track=preview;player=PracticePlayer(url:url)
+        track=preview;player=PracticePlayer(url:url,maximumDuration:30)
     }
     func play(_ preview:SongPreview){prepare(preview);guard let player,!player.playing,!player.starting else{return};player.toggle()}
     func pause(){player?.player.pause();player?.playing=false;player?.starting=false}
@@ -775,14 +802,16 @@ struct NativeSongPreview:View {
     var playbackKey:UUID?
     @StateObject private var music=NativeMusicPlayback.shared
     @State private var started=false
+    @Environment(\.scenePhase) private var phase
     var body:some View {
         VStack(alignment:.leading,spacing:12){
-            Label("Music preview",systemImage:"music.note").font(.caption).foregroundStyle(Design.muted)
+            Label("Apple preview · up to 30 seconds",systemImage:"music.note").font(.caption).foregroundStyle(Design.muted)
             Text(preview.title).font(.title3.weight(.semibold)).fixedSize(horizontal:false,vertical:true)
             Text(preview.artist).font(.subheadline).foregroundStyle(Design.muted)
             if music.track?.id==preview.id,let player=music.player{SongPreviewTransport(player:player,beforePlayback:beforePlayback)}else{Button("Play preview"){beforePlayback();music.play(preview)}.buttonStyle(ActionStyle())}
             if let url=URL(string:preview.storeURL),url.scheme=="https"{Link("Open in Apple Music",destination:url).font(.footnote)}
         }.padding(18).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:18))
+        .onChange(of:phase){_,value in if value == .background{music.pause()}}
         .onAppear{guard !started else{return};started=true;if autoPlay,music.shouldAutoplay(playbackKey){beforePlayback();music.play(preview)}}
     }
 }

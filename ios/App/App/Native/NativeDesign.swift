@@ -24,6 +24,7 @@ enum WorkspaceTheme {
         case "moshia":return Color(red:0.14,green:0.105,blue:0.065)
         case "school":return Color(red:0.025,green:0.105,blue:0.09)
         case "personal":return Color(red:0.115,green:0.075,blue:0.12)
+        case "gym":return Color(red:0.075,green:0.090,blue:0.065)
         case "capture":return Color(red:0.090,green:0.078,blue:0.065)
         case "spaces":return Color(red:0.072,green:0.063,blue:0.055)
         default:return Design.background
@@ -35,6 +36,7 @@ enum WorkspaceTheme {
         case "band":return Color(red:0.78,green:0.49,blue:0.38)
         case "moshia":return Color(red:0.89,green:0.72,blue:0.43)
         case "school":return Color(red:0.40,green:0.85,blue:0.67)
+        case "gym":return Color(red:0.70,green:0.78,blue:0.52)
         case "personal":return Color(red:0.78,green:0.65,blue:0.95)
         default:return Design.ink
         }
