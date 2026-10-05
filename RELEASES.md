@@ -1,3 +1,7 @@
+# 0.3.27 — Request recovery and offline audiobook
+
+Recover malformed model replies and temporary failures, reduce context waiting, and download reusable audiobook recordings with full-book offline playback, total duration and seeking. Details: docs/UPDATE-0.3.27.md.
+
 # 0.3.26 — Safer, clearer assistant follow-ups
 
 Request validation, summary/greeting action guards, saved-context search routing, honest missing-attachment handling and stale-error protection. The main guide describes these changes under New additions. Details: docs/UPDATE-0.3.26.md.

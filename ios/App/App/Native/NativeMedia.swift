@@ -332,6 +332,8 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     @Published var paused=false
     @Published var voiceNote:String?
     @Published var level:CGFloat=0
+    @Published var recordedSeconds:Double=0
+    @Published var recordedDuration:Double=0
     @Published var output="iPhone"
     @Published var muted=false
     private let audioID=UUID()
@@ -363,6 +365,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     private var recordedMeter:Task<Void,Never>?
     override init(){super.init();engine.attach(node);engine.attach(timePitch)}
     func setPlaybackRate(_ rate:Float){playbackRate=min(1.5,max(0.75,rate));timePitch.rate=playbackRate;recordedPlayer?.rate=playbackRate}
+    func seekRecording(_ seconds:Double){guard let recordedPlayer else{return};recordedPlayer.currentTime=max(0,min(seconds,recordedPlayer.duration));recordedSeconds=recordedPlayer.currentTime}
     func pausePlayback(){paused=true;node.pause();recordedPlayer?.pause();speaking=false;level=0}
     func resumePlayback(){guard paused else{return};paused=false;if engine.isRunning && pending>0{node.play();speaking=true};if let recordedPlayer,recordedPlayer.play(){speaking=true}}
     func say(_ text:String,token:String?=nil,natural:Bool=true,voice:String="Aoede",recordingURL:URL?=nil,playback:Bool=true,preferredSpeechModel:String?="live") {
@@ -451,7 +454,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
         let next=try AVAudioPlayer(contentsOf:recordedQueue.removeFirst());next.delegate=self;next.isMeteringEnabled=true;next.enableRate=true;next.rate=playbackRate;next.volume=1;next.prepareToPlay();recordedPlayer=next
         guard next.play() else{throw URLError(.cannotDecodeContentData)}
         speaking=true;preparing=false;recordedMeter?.cancel()
-        recordedMeter=Task{@MainActor in while !Task.isCancelled,self.recordedPlayer===next{next.updateMeters();self.level=CGFloat(AudioMeter.level(decibels:next.averagePower(forChannel:0)));self.refreshOutput();try? await Task.sleep(for:.milliseconds(50))}}
+        recordedMeter=Task{@MainActor in while !Task.isCancelled,self.recordedPlayer===next{next.updateMeters();self.recordedSeconds=next.currentTime;self.recordedDuration=next.duration;self.level=CGFloat(AudioMeter.level(decibels:next.averagePower(forChannel:0)));self.refreshOutput();try? await Task.sleep(for:.milliseconds(50))}}
     }
     nonisolated func audioPlayerDidFinishPlaying(_ player:AVAudioPlayer,successfully flag:Bool){Task{@MainActor in guard self.recordedPlayer===player else{return};do{guard flag else{throw URLError(.cannotDecodeContentData)};try self.nextRecording()}catch{self.stop();self.voiceNote="The guide was interrupted. Replay this step."}}}
     private func queuePCM(_ bytes:Data) throws {
@@ -524,7 +527,7 @@ struct NativeAssistantMediaPicker:UIViewControllerRepresentable {
     func refreshOutput(){let session=AVAudioSession.sharedInstance();output=session.currentRoute.outputs.map(\.portName).joined(separator:", ");muted=session.outputVolume<0.01}
     private func monitorOutput(){meter?.cancel();meter=Task{@MainActor in while !Task.isCancelled{refreshOutput();try? await Task.sleep(for:.milliseconds(100))}}}
     private func resetPlayback(){playbackID=UUID();interruptionTask?.cancel();interruptionTask=nil;interruptionRequest?.endAudio();interruptionRequest=nil;if inputTapInstalled{engine.inputNode.removeTap(onBus:0);inputTapInstalled=false};meter?.cancel();meter=nil;node.stop();if tapInstalled{engine.mainMixerNode.removeTap(onBus:0);tapInstalled=false};engine.stop();if voiceProcessing{try? engine.inputNode.setVoiceProcessingEnabled(false);voiceProcessing=false};pending=0;queuedSeconds=0;ended=false;preparing=false;speaking=false;paused=false;level=0;NativeAudioSession.release(audioID)}
-    func stop(){recordedMeter?.cancel();recordedMeter=nil;recordedPlayer?.stop();recordedPlayer=nil;recordedQueue=[];generation?.cancel();generation=nil;resetPlayback();utterance=nil;synthesizer.stopSpeaking(at:.immediate)}
+    func stop(){recordedSeconds=0;recordedDuration=0;recordedMeter?.cancel();recordedMeter=nil;recordedPlayer?.stop();recordedPlayer=nil;recordedQueue=[];generation?.cancel();generation=nil;resetPlayback();utterance=nil;synthesizer.stopSpeaking(at:.immediate)}
 }
 private struct CallScrollOffset:PreferenceKey {static let defaultValue:CGFloat=0;static func reduce(value:inout CGFloat,nextValue:()->CGFloat){value=nextValue()}}
 struct NativeAssistantVoicePanel:View {

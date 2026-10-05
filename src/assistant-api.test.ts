@@ -80,3 +80,16 @@ it('summarizing a corrected plan cannot create an unasked task',async()=>{
  const res=response();await handler(request({question:'Summarize the corrected plan.',scope:'personal',records:[]}),res);expect((res.body as any).actions).toEqual([]);
  const save=response();await handler(request({question:'Summarize the plan and save a task.',scope:'personal',records:[]}),save);expect((save.body as any).actions).toHaveLength(1);
 });
+
+it('recovers from empty, truncated and malformed successful provider responses',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ for(const bad of [{candidates:[]},{candidates:[{content:{parts:[{text:'{"text":"cut off'}]},finishReason:'MAX_TOKENS'}]},{candidates:[{content:{parts:[{text:'{"text":'}]},finishReason:'STOP'}]}]){
+ const fetcher=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(bad))).mockResolvedValueOnce(new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Recovered once',actions:[]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
+ const res=response();await handler(request({question:'Hello',records:[]}),res);expect(res.statusCode).toBe(200);expect((res.body as any).text).toBe('Recovered once');expect(fetcher).toHaveBeenCalledTimes(2);
+ }
+});
+it('recovers once from a brief overload without changing models',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ const fetcher=vi.fn().mockResolvedValueOnce(new Response('{}',{status:503})).mockResolvedValueOnce(new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Recovered',actions:[]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
+ const res=response();await handler(request({question:'Hello',records:[]}),res);expect(res.statusCode).toBe(200);expect(fetcher.mock.calls[0][0]).toBe(fetcher.mock.calls[1][0]);
+});

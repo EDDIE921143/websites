@@ -531,9 +531,19 @@ enum GeminiAssistant {
         var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!);request.httpMethod="POST";request.timeoutInterval=90;request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
         let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(records.prefix(requestMode == "exercise-search" ? 1200:500))))
         request.httpBody=try JSONSerialization.data(withJSONObject:["mode":requestMode,"voiceMode":voiceMode,"question":question,"scope":scope,"records":encoded,"memories":memories.prefix(12).map{["title":$0.title,"space":$0.space,"body":String($0.body.suffix(6000))]},"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.contextText]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"earlierMedia":earlierMedia,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
-        let (data,response)=try await URLSession.shared.data(for:request)
-        guard let response=response as? HTTPURLResponse,(200...299).contains(response.statusCode) else{let detail=(try? JSONSerialization.jsonObject(with:data)) as? [String:String];throw NSError(domain:"EdizAssistant",code:1,userInfo:[NSLocalizedDescriptionKey:detail?["error"] ?? "Your assistant couldn’t answer. Please try again."])}
-        return try JSONDecoder().decode(GeminiResponse.self,from:data)
+        for attempt in 0...1 {
+            try Task.checkCancellation()
+            let data:Data,response:URLResponse
+            do{(data,response)=try await URLSession.shared.data(for:request)}catch{
+                if attempt==0,let issue=error as? URLError,[.networkConnectionLost,.cannotConnectToHost,.dnsLookupFailed].contains(issue.code){try await Task.sleep(for:.milliseconds(650));continue}
+                throw error
+            }
+            guard let http=response as? HTTPURLResponse else{throw URLError(.badServerResponse)}
+            if let delay=RequestRecovery.delay(status:http.statusCode,retryAfter:http.value(forHTTPHeaderField:"Retry-After"),attempt:attempt){try await Task.sleep(for:.seconds(delay));continue}
+            guard (200...299).contains(http.statusCode) else{let detail=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any];throw NSError(domain:"EdizAssistant",code:http.statusCode,userInfo:[NSLocalizedDescriptionKey:detail?["error"] as? String ?? "Your assistant couldn’t answer. Your message is kept; try again shortly."])}
+            do{return try JSONDecoder().decode(GeminiResponse.self,from:data)}catch{if attempt==0{try await Task.sleep(for:.milliseconds(500));continue};throw NSError(domain:"EdizAssistant",code:2,userInfo:[NSLocalizedDescriptionKey:"That reply couldn’t be read. Your message is kept; try again shortly."])}
+        }
+        throw URLError(.badServerResponse)
     }
 }
 struct NativeAssistantReview:View {

@@ -8,14 +8,17 @@ export async function slackContext({token=process.env.EDIZ_SLACK_BOT_TOKEN,chann
  const key=ids.join(',');
  if(cached?.key===key&&cached.token===token&&now-cached.at<86400000)return cached.value;
  const messages=[];let limited=false;
- for(const channel of ids){
-  const url=new URL('https://slack.com/api/conversations.history');url.searchParams.set('channel',channel);url.searchParams.set('oldest',String((now-7*86400000)/1000));url.searchParams.set('limit','15');
-  try{
+ try{
+  const feeds=await Promise.all(ids.map(async channel=>{
+   const url=new URL('https://slack.com/api/conversations.history');url.searchParams.set('channel',channel);url.searchParams.set('oldest',String((now-7*86400000)/1000));url.searchParams.set('limit','15');
    const response=await fetcher(url,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(6000)});const result=await response.json();
-   if(!response.ok||!result.ok)return {status:'unavailable',messages:[]};
+   if(!response.ok||!result.ok)throw new Error('Read-only context unavailable');
+   return {channel,result};
+  }));
+  for(const {channel,result} of feeds){
    limited ||= !!result.has_more;
    for(const item of result.messages||[]){if(item.bot_id||item.subtype||typeof item.text!=='string'||!/^\d+\.\d+$/.test(item.ts))continue;messages.push({channel,time:item.ts,text:item.text.slice(0,2000),url:`https://slack.com/archives/${channel}/p${item.ts.replace('.','')}`});}
-  }catch{return {status:'unavailable',messages:[]};}
- }
+  }
+ }catch{return {status:'unavailable',messages:[]};}
  const value={status:'connected',fetchedAt:new Date(now).toISOString(),windowDays:7,limited,messages:messages.slice(0,60),readOnly:true};cached={key,token,at:now,value};return value;
 }

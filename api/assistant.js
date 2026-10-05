@@ -46,7 +46,7 @@ export default async function handler(req,res) {
   const slack= !special && ['ejj','all',undefined].includes(body.scope) ? await slackContext():{status:'out_of_scope',messages:[]};
   const careful=['school','moshia'].includes(body.scope);
   const models=[...new Set((media.length||search)?[process.env.GEMINI_MEDIA_MODEL||'gemini-3.8-flash',model,'gemini-3.7-flash','gemini-3.5-flash-lite']:careful?[model,'gemini-3.7-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite']:['gemini-3.5-flash-lite',model,'gemini-3.7-flash','gemini-3.1-flash-lite'])];
-  let response,selectedModel;let quotaLimited=false,overloaded=false;const attempts=[];const deadline=Date.now()+65000;
+  let response,selectedModel,result,parsed,validated;let quotaLimited=false,overloaded=false;const attempts=[];const deadline=Date.now()+65000;
   for(const candidate of models){
    if(Date.now()>=deadline)throw new DOMException("Reply deadline exceeded","TimeoutError");
    selectedModel=candidate;
@@ -54,20 +54,27 @@ export default async function handler(req,res) {
    const request=()=>fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidate)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(Math.max(1,Math.min(20000,deadline-Date.now())))]),body:JSON.stringify(payload)});
    try{
     response=await request();
+    if(response.status===503){await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{controller.signal.removeEventListener('abort',abort);resolve()},350);const abort=()=>{clearTimeout(timer);reject(new DOMException('Closed','AbortError'))};if(controller.signal.aborted)abort();else controller.signal.addEventListener('abort',abort,{once:true})});response=await request()}
     if(response.status===400 && !search && payload.generationConfig.responseJsonSchema){delete payload.generationConfig.responseJsonSchema;response=await request()}
    }catch(error){if(controller.signal.aborted || candidate===models.at(-1))throw error;continue}
    if(!response.ok){const failure=await response.clone().json().catch(()=>({}));attempts.push({model:candidate,status:response.status,reason:String(failure.error?.message||'').replaceAll(apiKey,'[redacted]').slice(0,300)})}
    if(response.status===429)quotaLimited=true;
    if(response.status===503)overloaded=true;
+   if(response.ok){
+    try{
+     result=await response.json();
+     if(result.promptFeedback?.blockReason||['SAFETY','PROHIBITED_CONTENT','RECITATION'].includes(result.candidates?.[0]?.finishReason))return res.status(422).json({error:'The provider couldn’t answer this request. Try rephrasing it.'});
+     const answerText=result.candidates?.[0]?.content?.parts?.filter(p=>!p.thought).map(p=>p.text||'').join('');
+     if(!answerText||result.candidates?.[0]?.finishReason==='MAX_TOKENS')throw new Error('Incomplete provider reply');
+     parsed=parseModelText(answerText);validated=validateReply(parsed,body.records);break;
+    }catch(error){attempts.push({model:candidate,status:200,reason:'Incomplete or unreadable provider reply'});if(candidate===models.at(-1))throw error;continue}
+   }
    if(![400,429,500,502,503,504,404].includes(response.status))break;
   }
   if(!response.ok){if(overloaded&&!quotaLimited){res.setHeader('Retry-After','3');return res.status(503).json({error:'Google is temporarily busy. Your message is saved; try again shortly.',...(body.diagnostics===true?{attempts}:{})})};const status=quotaLimited?429:response.status;return res.status(status===429?429:502).json({error:status===429?'Google’s quota is temporarily unavailable. Please try again shortly.':status===401||status===403?'The cloud connection was rejected. Check the assistant connection in Settings.':'The assistant provider couldn’t answer. Please try again.',...(body.diagnostics===true?{attempts}:{})});}
   res.setHeader('X-Ediz-Model',selectedModel);
-  const result=await response.json();const text=result.candidates?.[0]?.content?.parts?.filter(p=>!p.thought).map(p=>p.text||'').join('');
-  if(!text)return res.status(502).json({error:'Google returned no usable answer. Your saved data is unchanged.'});
-  if(result.candidates?.[0]?.finishReason==='MAX_TOKENS')return res.status(502).json({error:'That reply was cut short. Try a more focused question.'});
   const metadata=result.candidates?.[0]?.groundingMetadata;
-  const parsed=parseModelText(text);const reply=validateReply(parsed,body.records);
+  const reply=validated;
   if(body.mode==='song-recommendations'){reply.actions=[];}
   if(body.mode==='song-recommendations')reply.songSuggestions=(Array.isArray(parsed.songSuggestions)?parsed.songSuggestions:[]).filter(item=>item&&typeof item.title==='string'&&typeof item.artist==='string'&&typeof item.reason==='string').slice(0,20).map(item=>({title:item.title.slice(0,160),artist:item.artist.slice(0,160),reason:item.reason.slice(0,400)}));if(special){reply.actions=[];delete reply.cards;}
   if(greeting||readOnlyRequest(body.question))reply.actions=[];

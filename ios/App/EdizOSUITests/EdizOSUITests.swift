@@ -143,6 +143,40 @@ final class EdizOSUITests:XCTestCase {
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-rich-reply"];app.launch()
         XCTAssertTrue(app.staticTexts["Rhythm and timing"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["### Rhythm and timing"].exists);XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","e|----------------|")).firstMatch.exists);snapshot("Readable headings emphasis symbols and guitar tablature")
     }
+    func testJoinedOfflineBookRecordingHasWorkingTimeline(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-reader-joined"];app.launch();app.buttons["Book contents"].tap()
+        let play=app.buttons["book-audiobook-start"]
+        for _ in 0..<7{if play.isHittable{break};app.swipeUp()}
+        expectation(for:NSPredicate(format:"enabled == true"),evaluatedWith:play);waitForExpectations(timeout:30);play.tap()
+        let timeline=app.sliders["book-listening-seek"];XCTAssertTrue(timeline.waitForExistence(timeout:10))
+        app.buttons["Pause audiobook"].tap();timeline.adjust(toNormalizedSliderPosition:0.75)
+        XCTAssertTrue(app.staticTexts["Joined Practice chapter 2"].exists);XCTAssertTrue(app.staticTexts["Paused"].exists)
+        snapshot("Joined offline book preserves pause across chapter seeking")
+    }
+    func testDownloadedBookPlaysOfflineWithTotalLength() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("This test downloads natural audio using the paired device connection.")
+        #endif
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-reader-audio","-test-connected-assistant"];app.launch()
+        app.buttons["Book contents"].tap()
+        let download=app.buttons["book-audiobook-prepare"]
+        for _ in 0..<7{if download.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(download.isEnabled);download.tap()
+        let play=app.buttons["book-audiobook-start"]
+        let ready=NSPredicate(format:"enabled == true")
+        expectation(for:ready,evaluatedWith:play);waitForExpectations(timeout:240)
+        snapshot("Downloaded audiobook ready for local playback")
+        // Reopen without access to the assistant credential. Any cloud request would fail.
+        app.terminate();app.launchArguments=["-ui-testing","-test-reader-audio"];app.launch();app.buttons["Book contents"].tap()
+        for _ in 0..<7{if app.buttons["book-audiobook-start"].isHittable{break};app.swipeUp()}
+        XCTAssertTrue(app.buttons["book-audiobook-start"].isEnabled);app.buttons["book-audiobook-start"].tap()
+        XCTAssertTrue(app.sliders["book-listening-seek"].waitForExistence(timeout:10))
+        XCTAssertTrue(app.descendants(matching:.any).matching(identifier:"book-listening-duration").firstMatch.exists)
+        app.buttons["Pause audiobook"].tap();XCTAssertTrue(app.staticTexts["Paused"].exists)
+        app.sliders["book-listening-seek"].adjust(toNormalizedSliderPosition:0.7)
+        XCTAssertTrue(app.staticTexts["Practice chapter 2"].exists)
+        snapshot("Offline full-book player with duration and seek controls")
+    }
     func testNaturalAudiobookPlaysSampleOnDevice() throws {
         #if targetEnvironment(simulator)
         throw XCTSkip("Natural audiobook signal needs the connected iPhone credential.")

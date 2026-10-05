@@ -43,7 +43,7 @@ export function validateReply(value,records=[]) {
  return {...presentationReply(value,ids),text:value.text.slice(0,20000),actions,recordIds:(Array.isArray(value.recordIds)?value.recordIds:[]).filter(id=>ids.has(id)).slice(0,12)};
 }
 export function groundedSources(metadata) {
- const seen=new Set();return (metadata?.groundingChunks||[]).flatMap(chunk=>{
+ const seen=new Set();return (Array.isArray(metadata?.groundingChunks)?metadata.groundingChunks:[]).flatMap(chunk=>{
   const web=chunk?.web;if(!web||typeof web.uri!=='string')return [];
   try{const url=new URL(web.uri);if(url.protocol!=='https:'||seen.has(url.href))return [];seen.add(url.href);return [{url:url.href,title:typeof web.title==='string'?web.title.slice(0,200):url.hostname}]}catch{return []}
  }).slice(0,12);

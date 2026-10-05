@@ -16,3 +16,9 @@ it('never claims a connected feed when Slack rejects its credentials or permissi
  const fetcher=vi.fn(async()=>new Response(JSON.stringify({ok:false,error:'missing_scope'})));
  expect(await slackContext({token:'missing-permission',channels:'C87654321',fetcher})).toEqual({status:'unavailable',messages:[]});
 });
+
+it('reads configured channels together so a slow channel does not multiply waiting time',async()=>{
+ const finish:Array<()=>void>=[];const fetcher=vi.fn(()=>new Promise<Response>(resolve=>finish.push(()=>resolve(new Response(JSON.stringify({ok:true,messages:[]}))))));
+ const pending=slackContext({token:'parallel-test',channels:'C11111111,C22222222,C33333333',now:3000000000,fetcher});
+ expect(fetcher).toHaveBeenCalledTimes(3);finish.forEach(done=>done());expect((await pending).status).toBe('connected');
+});

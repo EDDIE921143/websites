@@ -7,7 +7,7 @@ export async function musicPreview(query){
  const response=await fetch(url,{signal:AbortSignal.timeout(10000)});
  if(!response.ok)throw new Error('The music catalog couldn’t be reached. Try again shortly.');
  const result=await response.json();
- const songs=(result.results||[]).filter(item=>item.kind==='song'&&typeof item.previewUrl==='string'&&item.previewUrl.startsWith('https://')&&new URL(item.previewUrl).hostname.endsWith('.itunes.apple.com'));
+ const songs=(Array.isArray(result.results)?result.results:[]).filter(item=>{if(!item||item.kind!=='song'||typeof item.trackName!=='string'||typeof item.artistName!=='string'||typeof item.previewUrl!=='string')return false;try{const clip=new URL(item.previewUrl);return clip.protocol==='https:'&&clip.hostname.endsWith('.itunes.apple.com')}catch{return false}});
  const normalize=value=>value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
  const attribution=query.match(/^(.*)\s+by\s+(.+)$/i);const title=attribution?.[1]||query,artist=attribution?.[2];
  const wholeTitle=songs.find(item=>normalize(item.trackName)===normalize(query));

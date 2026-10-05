@@ -18,3 +18,8 @@ it('does not substitute a different artist for a requested known song',async()=>
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({results:[{kind:'song',trackId:1,trackName:'Last Resort',artistName:'Different artist',previewUrl:'https://audio-ssl.itunes.apple.com/preview.m4a',trackViewUrl:'https://music.apple.com/track/1'}]}))));
  expect(await musicPreview('Last Resort by Papa Roach')).toBeNull();
 });
+
+it('ignores broken catalogue entries while keeping a valid preview',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({results:[null,{kind:'song',previewUrl:'https://%'},{kind:'song',trackId:123,trackName:'Seven Nation Army',artistName:'The White Stripes',previewUrl:'https://audio-ssl.itunes.apple.com/preview.m4a'}]}))));
+ expect((await musicPreview('Seven Nation Army')).id).toBe('123');
+});
