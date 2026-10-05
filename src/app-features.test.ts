@@ -96,3 +96,8 @@ it('drawn music cards validate strings and fret ranges and trigger explicit pres
  expect(requestsVoicePresentation('Generate a guitar tab')).toBe(true);
  expect(botDirections('band')).toContain('original practice');expect(botDirections('personal')).toContain('Avoid generic motivational speeches');
 });
+
+it('keeps private recall off the public web and grounds changing facts',()=>{
+ for(const q of ['Find our saved guitar tabs','Search my previous school notes','We discussed the latest version in our saved notes'])expect(needsWebSearch(q)).toBe(false);
+ for(const q of ['What is the latest version of iOS?','Find guitar tabs online','What is the weather today?'])expect(needsWebSearch(q)).toBe(true);
+});

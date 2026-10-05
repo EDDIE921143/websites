@@ -1,7 +1,7 @@
 import {requestedSong,musicPreview} from '../server/music-preview.js';
 import {slackContext} from '../server/slack-context.js';
 import {authorized,validateReply,systemPrompt,workspaceContext,groundedSources,parseModelText,attachmentParts,generatedSpeech,botDirections,speechChunks} from '../server/gemini.js';
-import {featureInstructions,generateImage,replySchema,needsWebSearch,requestsPresentation,requestsVoicePresentation} from '../server/app-features.js';
+import {featureInstructions,generateImage,replySchema,needsWebSearch,requestsPresentation,requestsVoicePresentation,readOnlyRequest} from '../server/app-features.js';
 const requests=new Map();
 export default async function handler(req,res) {
  const apiKey=process.env.GEMINI_API_KEY||process.env.geminiapi;
@@ -14,6 +14,7 @@ export default async function handler(req,res) {
  if(!apiKey)return res.status(503).json({error:'Gemini isn’t configured yet. Your on-device assistant still works.'});
  if(!authorized(req.headers.authorization?.replace(/^Bearer /,''),process.env.EDIZ_ASSISTANT_TOKEN))return res.status(401).json({error:'Connect this device using your private assistant link.'});
  let body;try{body=typeof req.body==='string'?JSON.parse(req.body):req.body}catch{return res.status(400).json({error:'That request couldn’t be read.'})}
+ if(!body||typeof body!=='object'||Array.isArray(body)||(body.mode!=null&&typeof body.mode!=='string'))return res.status(400).json({error:'That request couldn’t be read.'});
  const bucket=(typeof body?.mode==='string'&&body.mode.startsWith('speech'))?'speech':'chat',window=Math.floor(Date.now()/60000);
  for(const [key,value] of requests){if(value.window!==window)requests.delete(key)}
  const count=requests.get(bucket)?.count||0;requests.set(bucket,{window,count:count+1});
@@ -41,6 +42,7 @@ export default async function handler(req,res) {
   }
   const special=['semantic-search','exercise-search','chat-title','capture-polish'].includes(body.mode)||body.mode?.startsWith('record-');
   const search=!special && needsWebSearch(body.question);
+  const greeting=/^(hello|hi|hey|hallo|thanks|thank you|danke)[.!?\s]*$/i.test(body.question.trim());
   const slack= !special && ['ejj','all',undefined].includes(body.scope) ? await slackContext():{status:'out_of_scope',messages:[]};
   const careful=['school','moshia'].includes(body.scope);
   const models=[...new Set((media.length||search)?[process.env.GEMINI_MEDIA_MODEL||'gemini-3.8-flash',model,'gemini-3.7-flash','gemini-3.5-flash-lite']:careful?[model,'gemini-3.7-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite']:['gemini-3.5-flash-lite',model,'gemini-3.7-flash','gemini-3.1-flash-lite'])];
@@ -68,6 +70,7 @@ export default async function handler(req,res) {
   const parsed=parseModelText(text);const reply=validateReply(parsed,body.records);
   if(body.mode==='song-recommendations'){reply.actions=[];}
   if(body.mode==='song-recommendations')reply.songSuggestions=(Array.isArray(parsed.songSuggestions)?parsed.songSuggestions:[]).filter(item=>item&&typeof item.title==='string'&&typeof item.artist==='string'&&typeof item.reason==='string').slice(0,20).map(item=>({title:item.title.slice(0,160),artist:item.artist.slice(0,160),reason:item.reason.slice(0,400)}));if(special){reply.actions=[];delete reply.cards;}
+  if(greeting||readOnlyRequest(body.question))reply.actions=[];
   if(!special){const present=body.voiceMode===true?requestsVoicePresentation(body.question):requestsPresentation(body.question,body.conversation);reply.presentResults=present;if(!present){delete reply.cards;reply.recordIds=[]}}
   return res.status(200).json({...reply,sources:groundedSources(metadata),searchSuggestions:metadata?.searchEntryPoint?.renderedContent||null});
  }catch(error){if(controller.signal.aborted)return;return res.status(502).json({error:['TimeoutError','AbortError'].includes(error?.name)?'The assistant took too long to reply. Please try again.':'That reply couldn’t be completed. Please try again.'});}

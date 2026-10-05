@@ -1,3 +1,7 @@
+# 0.3.26 — Safer, clearer assistant follow-ups
+
+Request validation, summary/greeting action guards, saved-context search routing, honest missing-attachment handling and stale-error protection. The main guide describes these changes under New additions. Details: docs/UPDATE-0.3.26.md.
+
 # 0.3.25 — Assistant tools, real demonstrations and New additions
 
 Native tablature/chord cards, clearer bot personalities, live Gym plan actions, five cached video demonstrations, calmer Gym styling and a main-guide New additions section with natural narration. See docs/UPDATE-0.3.25.md for checks and limits.

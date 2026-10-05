@@ -412,7 +412,7 @@ struct NativeAssistantChat:View {
                     guard !Task.isCancelled,activeRequest==requestID,(!inCall || voiceWanted) else{return}
                     attachments.removeAll{file in outgoing.contains{$0.id == file.id}}
                     let newReply=ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:WorkspaceBot.name(scope),cards:answer.cards,spokenText:answer.spokenText,musicPreview:answer.musicPreview,presentResults:answer.presentResults);latestPreviewID=newReply.id;entries.append(newReply)
-                }catch{guard !Task.isCancelled else{return};message=error.localizedDescription;failedQuestion=q}
+                }catch{guard !Task.isCancelled,activeRequest==requestID else{return};message=error.localizedDescription;failedQuestion=q}
             };return
         }
         guard mode == "local" else{entries.append(ConversationEntry(role:"assistant",text:reply.text,records:reply.records,draft:reply.draft,provider:"Saved context"));store.walkthrough?.event("assistant-replied");return}
@@ -432,7 +432,7 @@ struct NativeAssistantChat:View {
         let recent=conversation.suffix(4).contains{$0.id == prior.id}
         guard asksAboutMedia || recent else{return (false,[])}
         do {let files=try (prior.attachments ?? []).map{file in AssistantAttachment(name:file.name,mimeType:file.mimeType,bytes:try Data(contentsOf:store.memoURL(file)))};return (true,files)}
-        catch{return (asksAboutMedia,[])}
+        catch{return (true,[])}
     }
 }
 

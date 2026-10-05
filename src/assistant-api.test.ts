@@ -7,7 +7,7 @@ function request(body:unknown,authorization='Bearer '+credential){return {method
 afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals()});
 it('rejects malformed mode and conversation fields without calling the provider',async()=>{
  vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
- for(const body of [{mode:{},question:1},{question:'Hello',records:[],conversation:{}},{question:'Hello',records:[null]}]){const res=response();await handler(request(body),res);expect(res.statusCode).toBe(400)}
+ for(const body of [{mode:{},question:1},{mode:42,question:"Hello",records:[]},{mode:{},question:"Hello",records:[]},{question:'Hello',records:[],conversation:{}},{question:'Hello',records:[null]}]){const res=response();await handler(request(body),res);expect(res.statusCode).toBe(400)}
 });
 it('requires authentication before any speech stream starts',async()=>{
  vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
@@ -66,4 +66,17 @@ it('reports a temporary provider overload instead of treating all failures as an
  vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({error:{message:'Temporarily busy'}}),{status:503})));
  const res=response();await handler(request({question:'Hello',records:[]}),res);expect(res.statusCode).toBe(503);expect(res.headers['Retry-After']).toBe('3');expect((res.body as any).error).toContain('message is saved');
+});
+
+it('never offers record mutations in response to a greeting',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Hello!',actions:[{type:'create',title:'Unasked task',fields:{space:'personal',kind:'task',title:'Call someone'}}]})}]},finishReason:'STOP'}]}))));
+ const res=response();await handler(request({question:'Hello',scope:'personal',records:[]}),res);expect(res.statusCode).toBe(200);expect((res.body as any).actions).toEqual([]);
+});
+
+it('summarizing a corrected plan cannot create an unasked task',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Wednesday, 20 minutes.',actions:[{type:'create',title:'Practice',fields:{space:'personal',kind:'task',title:'Practice'}}]})}]},finishReason:'STOP'}]}))));
+ const res=response();await handler(request({question:'Summarize the corrected plan.',scope:'personal',records:[]}),res);expect((res.body as any).actions).toEqual([]);
+ const save=response();await handler(request({question:'Summarize the plan and save a task.',scope:'personal',records:[]}),save);expect((save.body as any).actions).toHaveLength(1);
 });
