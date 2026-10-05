@@ -104,6 +104,34 @@ final class EdizOSUITests:XCTestCase {
         let music=app.buttons["new-music-tools"];XCTAssertTrue(music.waitForExistence(timeout:5));music.tap();XCTAssertTrue(app.descendants(matching:.any)["music-tab-grid"].waitForExistence(timeout:5));snapshot("Native original tab grid and visual follow-along controls")
         app.swipeUp();XCTAssertTrue(app.descendants(matching:.any)["music-chord-diagrams"].exists);snapshot("Drawn guitar chord shapes with open and muted strings")
     }
+    func testFiveDayPlanAndTenStepGuide(){
+        app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"]
+        for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};gym.tap()
+        let titles=["Day 1 · Chest","Day 2 · Back","Day 3 · Legs","Day 4 · Back & chest","Day 5 · Arms"]
+        let counts=[6,6,5,5,8]
+        let weekdays=[0,1,3,4,5]
+        for index in 0..<5 {
+            let weekday=app.buttons["gym-weekday-\(weekdays[index])"]
+            for _ in 0..<4{if weekday.isHittable{break};app.swipeDown()};weekday.tap()
+            XCTAssertTrue(app.staticTexts[titles[index]].waitForExistence(timeout:5))
+            XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","\(counts[index]) exercises")).firstMatch.exists)
+        }
+        snapshot("Corrected fifth training day with eight arm exercises")
+        for index in [2,6]{let button=app.buttons["gym-weekday-\(index)"];button.tap();XCTAssertTrue(app.staticTexts["Recovery day · or add your own exercises"].waitForExistence(timeout:5))}
+        app.buttons["gym-weekday-0"].tap()
+        app.buttons["gym-settings"].tap();XCTAssertTrue(app.buttons["gym-tutorial-start"].waitForExistence(timeout:5));app.buttons["gym-tutorial-start"].tap()
+        let lessons=["Your five training days","Move a training day","Find and add a movement","Watch the demonstration","Adjust sets and targets","Log a working set","Rest and supersets","Finish and check History","Ask Gym Bot for a change","Ready to train"]
+        for (index,title) in lessons.enumerated(){
+            XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout:5))
+            XCTAssertTrue(app.staticTexts["Step \(index+1) of 10 · Practice space"].exists)
+            let skip=app.buttons["gym-guide-skip"]
+            let next=index==9 ? app.buttons["Finish walkthrough"]:app.buttons["Continue"]
+            for _ in 0..<6{if skip.exists && skip.isHittable || next.exists && next.isHittable{break};app.scrollViews.firstMatch.swipeUp()}
+            if index==0{XCTAssertTrue(app.buttons["gym-guide-speed"].exists);snapshot("Shorter Gym guide with replay and adjustable natural narration speed")}
+            if skip.exists{skip.tap()}else{next.tap()}
+        }
+        XCTAssertTrue(app.buttons["gym-tutorial-start"].waitForExistence(timeout:5))
+    }
     func testGymDemonstrationOpensRealVideo(){
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-gym-video"];app.launch()
         XCTAssertTrue(app.descendants(matching:.any)["gym-video-player"].waitForExistence(timeout:35));XCTAssertTrue(app.staticTexts["gym-video-playing"].waitForExistence(timeout:35));snapshot("Matching pec-deck movement opens in the native video player")
@@ -111,7 +139,7 @@ final class EdizOSUITests:XCTestCase {
     func testGymPlanWorkoutAndPersistence(){
         app.tabBars.buttons["Assistant"].tap();XCTAssertFalse(app.buttons["assistant-workspace-gym"].exists)
         app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"];for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};XCTAssertTrue(gym.isHittable);gym.tap()
-        XCTAssertTrue(app.staticTexts["Build a little stronger."].waitForExistence(timeout:5));snapshot("Gym weekly plan using Ediz's four training days")
+        XCTAssertTrue(app.staticTexts["Build a little stronger."].waitForExistence(timeout:5));snapshot("Gym weekly plan using Ediz's five training days")
         app.buttons["gym-start-0"].tap();let exercise=app.buttons["gym-exercise-0"];XCTAssertTrue(exercise.waitForExistence(timeout:5))
         let weight=app.textFields["Set 1 weight"];for _ in 0..<4{if weight.isHittable{break};app.swipeUp()};weight.tap();weight.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:4)+"40")
         let reps=app.textFields["Set 1 reps"];reps.tap();reps.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:4)+"10");app.swipeDown()
@@ -133,11 +161,15 @@ final class EdizOSUITests:XCTestCase {
     func testGymRemoveExercisePersistsAndTutorialOpens(){
         app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"];for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};gym.tap();snapshot("Weekday selector focuses the plan on one workout")
         app.buttons["gym-edit-day-0"].tap()
+        let down=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","gym-move-down-")).firstMatch
+        for _ in 0..<5{if down.isHittable{break};app.swipeUp()};XCTAssertTrue(down.isHittable);down.tap()
+        let headings=app.staticTexts["Lever chest press"]
+        XCTAssertTrue(headings.exists);snapshot("Visible exercise reorder buttons and move-to-day menu")
         let remove=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","gym-remove-")).firstMatch
         for _ in 0..<5{if remove.isHittable{break};app.swipeUp()};XCTAssertTrue(remove.isHittable);snapshot("Workout editor with stable exercise sections and visible removal");remove.tap();app.buttons["Remove from this day"].tap();app.buttons["Done"].tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","5 exercises")).firstMatch.waitForExistence(timeout:5))
         app.terminate();app.launchArguments=["-ui-testing"];app.launch();app.tabBars.buttons["Spaces"].tap();let restored=app.buttons["space-gym"];for _ in 0..<7{if restored.isHittable{break};app.swipeUp()};restored.tap();XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","5 exercises")).firstMatch.waitForExistence(timeout:5))
-        app.buttons["gym-settings"].tap();app.buttons["gym-tutorial-start"].tap();XCTAssertTrue(app.staticTexts["Welcome to your training space"].waitForExistence(timeout:5));snapshot("Eight-part Gym tutorial with voice-reactive guide and safe practice controls")
+        app.buttons["gym-settings"].tap();XCTAssertTrue(app.buttons["gym-tutorial-start"].waitForExistence(timeout:5));app.buttons["gym-tutorial-start"].tap();XCTAssertTrue(app.staticTexts["Your five training days"].waitForExistence(timeout:5));snapshot("Ten-part Gym tutorial with voice-reactive guide and safe practice controls")
     }
     func testRichReplyDisplaysHeadingsAndAlignedGuitarTab(){
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-rich-reply"];app.launch()

@@ -1,3 +1,7 @@
+# 0.3.28 — Exact five-day Gym plan and clearer guide
+
+Apply Ediz’s corrected five-day split to existing plans, preserve workout data, and explain ten Gym features with fresh natural recordings and adjustable guide speed. Details: docs/UPDATE-0.3.28.md.
+
 # 0.3.27 — Request recovery and offline audiobook
 
 Recover malformed model replies and temporary failures, reduce context waiting, and download reusable audiobook recordings with full-book offline playback, total duration and seeking. Details: docs/UPDATE-0.3.27.md.

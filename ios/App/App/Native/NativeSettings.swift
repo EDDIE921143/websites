@@ -15,6 +15,7 @@ struct NativeSettings:View {
     @State private var checkedEndpoint=""
     @AppStorage("ediz-reminders-enabled") private var remindersEnabled=false
     @AppStorage("ediz-writing-nudge") private var writingNudge=false
+    @AppStorage("guide-playback-speed",store:NativeVoicePreferences.defaults) private var guideSpeed=1.15
     @AppStorage("tutorial-natural-voice-name",store:NativeVoicePreferences.defaults) private var tutorialVoice="Aoede"
     var body:some View {
         Form {
@@ -66,6 +67,7 @@ struct NativeSettings:View {
                 }
             }
             Section("Guide voice"){
+                Picker("Guide speed",selection:$guideSpeed){Text("Normal · 1×").tag(1.0);Text("Brisk · 1.15×").tag(1.15);Text("Faster · 1.3×").tag(1.3)}
                 Picker("Recorded natural voice",selection:$tutorialVoice){ForEach(RecordedGuide.voices,id:\.self){Text($0).tag($0)}}.disabled(RecordedGuide.voices.count<2).accessibilityIdentifier("tutorial-voice-choice")
                 Text("Aoede’s complete guide plays directly from your app, including offline. More recorded narrators need provider capacity; your call offers three natural voices.").font(.footnote).foregroundStyle(Design.muted)
             }
@@ -273,7 +275,7 @@ enum GuideNarration {
         if let step{if step.event.hasPrefix("learn-"){clips += GuideNarration.parts(kind.lesson).indices.map{"course-"+kind.id+"-lesson-"+String($0)}}else{clips.append("course-"+kind.id+"-"+step.event)}}else{clips.append("course-"+kind.id+"-complete")}
         let urls=clips.compactMap{Bundle.main.url(forResource:$0,withExtension:"m4a",subdirectory:"GuideAudio/"+voice)}
         guard urls.count==clips.count else{narrator.voiceNote="This recorded guide isn’t available yet. Your interactive steps are ready.";return}
-        narrator.playRecorded(urls,voice:voice)
+        narrator.setPlaybackRate(Float(defaults.object(forKey:"guide-playback-speed") as? Double ?? 1.15));narrator.playRecorded(urls,voice:voice)
     }
     func close(){celebrationJob?.cancel();narrator.stop();onExit?()}
 }
@@ -400,7 +402,7 @@ struct NativeNewFeatures:View {
         Text("A few useful things to try next.").foregroundStyle(Design.muted)
         feature("Music practice cards","CLEARANCE 19 can prepare original tab grids and chord shapes. Tabs keep strings aligned; a visual beat guide helps you follow a short pattern. Copy the notation or ask for a different instrument, tuning or difficulty. Song-tab searches use source links.","guitars")
         NavigationLink{NativeMusicPracticeRoom()}label:{Label("Try the music tools",systemImage:"play.rectangle")}.buttonStyle(ActionStyle()).accessibilityIdentifier("new-music-tools")
-        feature("Your week in the gym","Choose a weekday, edit the exercise sections and log sets. Matching movements now have actual video demonstrations; others have clear still references. Gym Bot can prepare plan edits for you to review and apply.","dumbbell.fill")
+        feature("Your week in the gym","Your five days are chest, back, legs, back and chest, then arms. Choose a weekday, edit the exercise sections and log sets. Matching movements now have actual video demonstrations; others have clear still references. Gym Bot can prepare plan edits for you to review and apply.","dumbbell.fill")
         NavigationLink{GymTutorial(token:store.assistantToken)}label:{Label("Practise the Gym flow",systemImage:"hand.tap")}.buttonStyle(ActionStyle())
         feature("Clearer thoughts","AI notes tools can polish a thought, ask a clarification, summarize it or prepare next steps. Review the result before changing your saved notes.","note.text")
         NavigationLink{ScrollView{NativeAINotes().padding(20)}.background(AppBackdrop()).navigationTitle("AI notes")}label:{Label("Open your AI notes",systemImage:"sparkles")}.buttonStyle(ActionStyle())
@@ -411,7 +413,7 @@ struct NativeNewFeatures:View {
         if let note=narrator.voiceNote,!note.hasPrefix("Recorded natural voice"){Text(note).font(.caption).foregroundStyle(Design.muted)}
     }.padding(22)}.background(AppBackdrop()).navigationTitle("New additions").navigationBarTitleDisplayMode(.inline).onAppear{if spoken{read()}}.onDisappear{narrator.stop()}.onChange(of:scenePhase){_,phase in if phase != .active{narrator.stop()}}}
     func feature(_ title:String,_ detail:String,_ symbol:String)->some View{VStack(alignment:.leading,spacing:12){Label(title,systemImage:symbol).font(.headline);Text(detail).font(.subheadline).foregroundStyle(Design.muted)}.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}
-    func read(){if let url=Bundle.main.url(forResource:"new-additions",withExtension:"m4a",subdirectory:"GuideAudio/Aoede"){narrator.playRecorded([url],voice:"Aoede")}else{narrator.voiceNote="This guide recording isn't available on this build."}}
+    func read(){narrator.setPlaybackRate(Float(NativeVoicePreferences.defaults.object(forKey:"guide-playback-speed") as? Double ?? 1.15));if let url=Bundle.main.url(forResource:"new-additions",withExtension:"m4a",subdirectory:"GuideAudio/Aoede"){narrator.playRecorded([url],voice:"Aoede")}else{narrator.voiceNote="This guide recording isn't available on this build."}}
 }
 struct NativeMusicPracticeRoom:View {
     let tab=AssistantCard(type:"tablature",title:"An original warm-up",subtitle:"Guitar · standard tuning · one quarter-note per step",items:[AssistantCardItem(title:"e",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"B",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"G",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"D",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"A",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"E",detail:"0,1,2,3,3,2,1,0")])

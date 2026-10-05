@@ -132,6 +132,6 @@ struct NativeAIWorkshop:View {
             }
         }.background(Design.background).toolbar(.hidden,for:.navigationBar)}.onAppear{play("intro-ai-lab")}.onDisappear{narrator.stop()}
     }
-    func play(_ clip:String){guard narrationEnabled,!muted,let url=Bundle.main.url(forResource:clip,withExtension:"m4a",subdirectory:"GuideAudio/Aoede") else{return};narrator.playRecorded([url],voice:"Aoede")}
+    func play(_ clip:String){guard narrationEnabled,!muted,let url=Bundle.main.url(forResource:clip,withExtension:"m4a",subdirectory:"GuideAudio/Aoede") else{return};narrator.setPlaybackRate(Float(NativeVoicePreferences.defaults.object(forKey:"guide-playback-speed") as? Double ?? 1.15));narrator.playRecorded([url],voice:"Aoede")}
 
 }
