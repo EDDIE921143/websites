@@ -87,3 +87,12 @@ it('client disconnection aborts a pending assistant provider request',async()=>{
  await handler({method:'POST',headers:{host:'ediz-os.vercel.app',authorization:'Bearer '+token},body:{scope:'personal',question:'Help me plan tomorrow',records:[]}},res);
  expect(fetcher).toHaveBeenCalledTimes(1);expect((fetcher.mock.calls[0] as any)[1].signal.aborted).toBe(true);expect(res.status).not.toHaveBeenCalled();
 });
+it('drawn music cards validate strings and fret ranges and trigger explicit presentation',()=>{
+ const rows=['e','B','G','D','A','E'].map(title=>({title,detail:'0,-,2,-'}));
+ const good=presentationReply({cards:[{type:'tablature',title:'Original practice',items:rows},{type:'chords',title:'Chord shapes',items:[{title:'Em',detail:'0,2,2,0,0,0'},{title:'Invalid span',detail:'0,1,12,0,0,0'}]}]},new Set());
+ expect(good.cards).toHaveLength(2);expect(good.cards[1].items).toHaveLength(1);
+ expect(presentationReply({cards:[{type:'tablature',title:'Broken',items:rows.map((r,i)=>({...r,detail:i===0?'99,-':'0,-,2,-'}))}]},new Set()).cards).toBeUndefined();
+ expect(needsWebSearch('Find guitar tabs for Last Resort')).toBe(true);
+ expect(requestsVoicePresentation('Generate a guitar tab')).toBe(true);
+ expect(botDirections('band')).toContain('original practice');expect(botDirections('personal')).toContain('Avoid generic motivational speeches');
+});

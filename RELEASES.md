@@ -1,3 +1,7 @@
+# 0.3.25 — Assistant tools, real demonstrations and New additions
+
+Native tablature/chord cards, clearer bot personalities, live Gym plan actions, five cached video demonstrations, calmer Gym styling and a main-guide New additions section with natural narration. See docs/UPDATE-0.3.25.md for checks and limits.
+
 # 0.3.24 — Gym editing and spoken walkthrough
 
 Visual exercise selection, stable exercise editing/removal, reviewed Gym Bot schedule/exercise changes, and eight prerecorded natural Gym lessons with practice controls. Backend rollout and device checks are tracked in docs/UPDATE-0.3.24.md.

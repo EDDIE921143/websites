@@ -65,7 +65,7 @@ struct AppBackdrop:View {
     var body:some View {
         ZStack {
             WorkspaceTheme.base(palette)
-            LinearGradient(colors:[accent.opacity(palette == "all" ? 0.035:0.07),.clear,Color.black.opacity(0.34)],startPoint:.topLeading,endPoint:.bottomTrailing)
+            LinearGradient(colors:[accent.opacity(palette == "gym" ? 0.015:palette == "all" ? 0.035:0.07),.clear,Color.black.opacity(palette == "gym" ? 0.12:0.34)],startPoint:.topLeading,endPoint:.bottomTrailing)
             Canvas { context,size in
                 var pattern=Path()
                 switch palette {
@@ -96,6 +96,9 @@ struct AppBackdrop:View {
                 case "capture":
                     for y in stride(from:CGFloat(140),through:size.height,by:180){pattern.move(to:CGPoint(x:24,y:y));pattern.addLine(to:CGPoint(x:size.width-24,y:y))}
                     context.stroke(pattern,with:.color(accent.opacity(0.07)),lineWidth:1)
+                case "gym":
+                    for y in stride(from:CGFloat(80),through:size.height,by:160){pattern.move(to:CGPoint(x:24,y:y));pattern.addLine(to:CGPoint(x:size.width-24,y:y))}
+                    context.stroke(pattern,with:.color(accent.opacity(0.025)),lineWidth:0.6)
                 case "spaces":
                     for y in stride(from:CGFloat(0),through:size.height,by:120){for x in stride(from:CGFloat(0),through:size.width,by:120){pattern.addRoundedRect(in:CGRect(x:x+14,y:y+14,width:92,height:92),cornerSize:CGSize(width:20,height:20))}}
                     context.stroke(pattern,with:.color(accent.opacity(0.04)),lineWidth:1)

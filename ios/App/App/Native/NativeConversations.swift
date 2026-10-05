@@ -131,6 +131,9 @@ struct AssistantResultCard:View {
     var saved:Bool{!card.items.isEmpty && card.items.allSatisfy{$0.recordId != nil}}
     var category:String{saved ? "From your saved work":card.type == "songs" ? "Song suggestions":card.type == "practice" ? "Generated practice plan":card.type == "outline" ? "Draft outline":"Generated list"}
     var body:some View {
+        Group {if card.type == "tablature" || card.type == "chords"{NativeMusicNotation(card:card,scope:scope)}else{standard}}
+    }
+    var standard:some View {
         VStack(alignment:.leading,spacing:14){
             HStack(spacing:12){Image(systemName:card.type == "songs" ? "music.note.list":card.type == "practice" ? "metronome":card.type == "outline" ? "book.pages":"list.bullet.rectangle").font(.title3).foregroundStyle(WorkspaceTheme.accent(scope));VStack(alignment:.leading,spacing:5){Text(category).font(.caption).foregroundStyle(Design.muted);Text(card.title).font(.headline.weight(.medium));if let subtitle=card.subtitle{Text(subtitle).font(.caption).foregroundStyle(Design.muted)}};Spacer(minLength:0)}
             ForEach(Array(card.items.enumerated()),id:\.offset){index,item in
@@ -197,4 +200,46 @@ struct AssistantSongPlayback:View {
             if let failure{Text(failure).font(.caption).foregroundStyle(Design.muted)}
         }.onDisappear{job?.cancel();busy=false}
     }
+}
+
+/// Native string/fret drawing keeps music aligned independently of chat typography.
+struct NativeMusicNotation:View {
+    let card:AssistantCard
+    let scope:String
+    @State private var copied=false
+    @State private var tempo=80
+    @State private var following=false
+    @State private var beat=0
+    @Environment(\.scenePhase) private var scenePhase
+    var accent:Color{WorkspaceTheme.accent(scope)}
+    func cells(_ item:AssistantCardItem)->[String]{(item.detail ?? "").split(separator:",",omittingEmptySubsequences:false).map{String($0).trimmingCharacters(in:.whitespaces)}}
+    var steps:Int{cells(card.items.first ?? AssistantCardItem(title:"",detail:"-")).count}
+    var body:some View {VStack(alignment:.leading,spacing:16){
+        Label(card.type == "chords" ? "Chord shapes":"Practice tablature",systemImage:"music.note").font(.caption.weight(.semibold)).foregroundStyle(accent)
+        Text(card.title).font(.title3.weight(.semibold));if let subtitle=card.subtitle{Text(subtitle).font(.subheadline).foregroundStyle(Design.muted)}
+        if card.type == "tablature"{ScrollView(.horizontal){VStack(spacing:0){HStack(spacing:0){Text("STEP").font(.caption2).frame(width:32);ForEach(0..<steps,id:\.self){index in Text("\(index+1)").font(.caption2.monospacedDigit()).frame(width:36,height:28)}}.foregroundStyle(Design.muted)
+            ForEach(Array(card.items.enumerated()),id:\.offset){_,item in HStack(spacing:0){Text(item.title).font(.system(.subheadline,design:.monospaced).weight(.semibold)).frame(width:32);ForEach(Array(cells(item).enumerated()),id:\.offset){index,fret in ZStack{Rectangle().fill(accent.opacity(0.35)).frame(height:1);if fret != "-"{Text(fret).font(.system(.body,design:.monospaced).weight(.medium)).frame(width:25,height:26).background(Design.surface,in:RoundedRectangle(cornerRadius:5))}}.frame(width:36,height:34).background(following && beat == index ? accent.opacity(0.16):.clear)}}}
+        }.padding(.vertical,5)}.accessibilityIdentifier("music-tab-grid")
+            Stepper("Follow-along tempo · \(tempo) BPM",value:$tempo,in:40...200,step:5).font(.subheadline)
+            Button{following.toggle();beat=0}label:{Label(following ? "Stop following":"Follow the steps",systemImage:following ? "stop.fill":"play.fill")}.buttonStyle(ActionStyle())
+            Text("Visual timing guide. Each column is one step; use the stated subdivision. No synthetic instrument audio.").font(.caption).foregroundStyle(Design.muted)
+        }else{ScrollView(.horizontal){HStack(alignment:.top,spacing:20){ForEach(Array(card.items.enumerated()),id:\.offset){_,item in VStack(spacing:10){Text(item.title).font(.headline);ChordFretboard(frets:cells(item),color:accent).frame(width:130,height:160);Text("E  A  D  G  B  e").font(.caption.monospaced()).foregroundStyle(Design.muted);if let meta=item.meta{Text(meta).font(.caption).foregroundStyle(Design.muted)}}}}}.accessibilityIdentifier("music-chord-diagrams")}
+        Button{UIPasteboard.general.string=copyText;copied=true;UIImpactFeedbackGenerator(style:.light).impactOccurred()}label:{Label(copied ? "Copied":"Copy notation",systemImage:copied ? "checkmark":"doc.on.doc")}.font(.subheadline)
+    }.padding(18).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20)).overlay{RoundedRectangle(cornerRadius:20).strokeBorder(accent.opacity(0.15),lineWidth:1)}
+        .task(id:"\(following)-\(tempo)"){guard following else{return};while !Task.isCancelled{try? await Task.sleep(for:.seconds(60.0/Double(tempo)));guard !Task.isCancelled else{return};beat=(beat+1)%max(1,steps)}}.onChange(of:scenePhase){_,phase in if phase != .active{following=false}}.onDisappear{following=false}
+    }
+    var copyText:String{card.title+"\n"+(card.subtitle ?? "")+"\n"+card.items.map{item in card.type == "tablature" ? item.title+"|"+cells(item).map{$0 == "-" ? "---":$0.padding(toLength:3,withPad:"-",startingAt:0)}.joined()+"|":item.title+": "+cells(item).joined(separator:" ")}.joined(separator:"\n")}
+}
+struct ChordFretboard:View {
+    let frets:[String]
+    let color:Color
+    var startingFret:Int{let values=frets.compactMap(Int.init).filter{$0>0};return (values.max() ?? 0)>5 ? values.min() ?? 1:1}
+    var body:some View {Canvas{context,size in
+        let left:CGFloat=16,right=size.width-12,top:CGFloat=28,bottom=size.height-8
+        let dx=(right-left)/5,dy=(bottom-top)/5
+        for row in 0...5{var line=Path();line.move(to:CGPoint(x:left,y:top+CGFloat(row)*dy));line.addLine(to:CGPoint(x:right,y:top+CGFloat(row)*dy));context.stroke(line,with:.color(color.opacity(0.45)),lineWidth:row == 0 && startingFret == 1 ? 3:1)}
+        for index in 0..<6{let x=left+CGFloat(index)*dx;var line=Path();line.move(to:CGPoint(x:x,y:top));line.addLine(to:CGPoint(x:x,y:bottom));context.stroke(line,with:.color(color.opacity(0.45)),lineWidth:1);let value=frets.indices.contains(index) ? frets[index]:"x"
+            if let fret=Int(value),fret>0{let y=top+(CGFloat(fret-startingFret)+0.5)*dy;context.fill(Path(ellipseIn:CGRect(x:x-6,y:y-6,width:12,height:12)),with:.color(color))}else{context.draw(Text(value == "0" ? "○":"×").font(.caption).foregroundStyle(color),at:CGPoint(x:x,y:12))}}
+        if startingFret>1{context.draw(Text("\(startingFret)").font(.caption2).foregroundStyle(color),at:CGPoint(x:3,y:top+dy/2))}
+    }.accessibilityLabel("Chord frets from low E to high e: "+frets.joined(separator:", "))}
 }

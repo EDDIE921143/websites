@@ -49,6 +49,8 @@ struct NativeRoot:View {
             .animation(reducedMotion ? nil:.easeInOut(duration:0.18),value:store.preferences.density)
             #if DEBUG
             .onAppear{if ProcessInfo.processInfo.arguments.contains("-ui-testing"){UIApplication.shared.isIdleTimerDisabled=true}}
+            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-settings"))){NavigationStack{NativeSettings()}.environmentObject(store)}
+            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-gym-video"))){if let video=GymVideo.clips.first{GymVideoPlayer(video:video)}}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-gym-change"))){GymChangeReview(action:gymChangeFixture).environmentObject(store)}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-rich-reply"))){ScrollView{NativeRichText(text:"### Rhythm and timing\n\n**Deftones** practice notes: start slowly.\n\n- Keep eighth notes even.\n- Use ×, ♭ and ♯ when useful.\n\n```tab\ne|----------------|\nB|----------------|\nG|----------------|\nD|-----2-----2----|\nA|-----2-----2----|\nE|-0-0---0-0------|\n```\n\n| Tempo | Goal |\n|---|---|\n| 80 BPM | Even timing |").padding(24)}.background(AppBackdrop(scope:"band"))}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-complete-recording"))){NativeRecordingDiagnostics()}

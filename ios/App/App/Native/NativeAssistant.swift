@@ -272,7 +272,7 @@ struct NativeAssistantChat:View {
     var prompts:[String] {
         switch scope {
         case "ejj": return ["Which leads need attention?", "Help me plan my next website", "What should I focus on?"]
-        case "band": return ["Plan my next practice session", "Help me build a setlist", "Any loose ends?"]
+        case "band": return ["Create an original guitar practice tab", "Show me easy guitar chord shapes", "Find a song tab for me"]
         case "moshia": return ["Help me outline a chapter", "What have I saved about Moshia?", "Any loose ends?"]
         case "school": return ["What homework should I start?", "Plan tomorrow", "What should I focus on?"]
         default: return ["What should I focus on?", "Plan tomorrow", "Any loose ends?"]

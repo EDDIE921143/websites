@@ -97,6 +97,17 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.buttons["book-audiobook-current"].exists)
         snapshot("Audiobook choices sit at the end of book contents")
     }
+    func testGuideNewAdditionsAndNativeMusicTools(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-settings"];app.launch()
+        let guide=app.buttons["settings-tutorial"];XCTAssertTrue(guide.waitForExistence(timeout:5));XCTAssertTrue(guide.isHittable);guide.tap()
+        let additions=app.buttons["tutorial-new-additions"];for _ in 0..<12{if additions.isHittable{break};app.swipeUp()};XCTAssertTrue(additions.isHittable);additions.tap()
+        let music=app.buttons["new-music-tools"];XCTAssertTrue(music.waitForExistence(timeout:5));music.tap();XCTAssertTrue(app.descendants(matching:.any)["music-tab-grid"].waitForExistence(timeout:5));snapshot("Native original tab grid and visual follow-along controls")
+        app.swipeUp();XCTAssertTrue(app.descendants(matching:.any)["music-chord-diagrams"].exists);snapshot("Drawn guitar chord shapes with open and muted strings")
+    }
+    func testGymDemonstrationOpensRealVideo(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-gym-video"];app.launch()
+        XCTAssertTrue(app.descendants(matching:.any)["gym-video-player"].waitForExistence(timeout:35));XCTAssertTrue(app.staticTexts["gym-video-playing"].waitForExistence(timeout:35));snapshot("Matching pec-deck movement opens in the native video player")
+    }
     func testGymPlanWorkoutAndPersistence(){
         app.tabBars.buttons["Assistant"].tap();XCTAssertFalse(app.buttons["assistant-workspace-gym"].exists)
         app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"];for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};XCTAssertTrue(gym.isHittable);gym.tap()

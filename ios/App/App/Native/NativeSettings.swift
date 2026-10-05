@@ -18,6 +18,15 @@ struct NativeSettings:View {
     @AppStorage("tutorial-natural-voice-name",store:NativeVoicePreferences.defaults) private var tutorialVoice="Aoede"
     var body:some View {
         Form {
+            Section {
+                NavigationLink { NativeTutorial() } label: {
+                    HStack(spacing:14) {
+                        Image(systemName:"book.pages.fill").font(.title2).foregroundStyle(Design.ink)
+                            .frame(width:48,height:48).background(Design.raised,in:RoundedRectangle(cornerRadius:14))
+                        VStack(alignment:.leading,spacing:5){Text("Your guide to Ediz OS").font(.headline);Text("Spoken walkthroughs · practise on the real screens").font(.subheadline).foregroundStyle(Design.muted)}
+                    }.padding(.vertical,8)
+                }.accessibilityIdentifier("settings-tutorial").disabled(store.isPractice)
+            } header:{Text("Getting started")}
             Section("Look & feel"){Picker("Density",selection:Binding(get:{store.preferences.density},set:{var next=store.preferences;next.density=$0;store.setPreferences(next)})){Text("Comfortable").tag("comfortable");Text("Compact").tag("compact")}.pickerStyle(.segmented).walkthroughTarget("density",session:store.walkthrough);Text("Comfortable gives cards room to breathe. Compact uses shorter rows and smaller panels. Touch targets stay easy to reach.").font(.footnote).foregroundStyle(Design.muted)}
             Section("Your attention"){Picker("Current focus",selection:Binding(get:{store.preferences.focus},set:{store.setFocus($0)})){Text("Balanced").tag("all");ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Text("This gives the chosen space more weight. Deadlines still matter.").font(.footnote).foregroundStyle(Design.muted)}
             Section("Reminders"){
@@ -61,15 +70,7 @@ struct NativeSettings:View {
                 Text("Aoede’s complete guide plays directly from your app, including offline. More recorded narrators need provider capacity; your call offers three natural voices.").font(.footnote).foregroundStyle(Design.muted)
             }
             Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition "+(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")+" · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
-            Section {
-                NavigationLink { NativeTutorial() } label: {
-                    HStack(spacing:14) {
-                        Image(systemName:"book.pages.fill").font(.title2).foregroundStyle(Design.ink)
-                            .frame(width:48,height:48).background(Design.raised,in:RoundedRectangle(cornerRadius:14))
-                        VStack(alignment:.leading,spacing:5){Text("Your guide to Ediz OS").font(.headline);Text("Learn by using the app").font(.subheadline).foregroundStyle(Design.muted)}
-                    }.padding(.vertical,8)
-                }.accessibilityIdentifier("settings-tutorial").disabled(store.isPractice)
-            } header:{Text("Getting started")}
+
         }.onAppear{if !RecordedGuide.voices.contains(tutorialVoice){tutorialVoice="Aoede"};store.walkthrough?.event("settings-open")}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Settings")
             .sheet(item:$file){shared in NativeShare(url:shared.url){completed in if completed && shared.url.lastPathComponent.hasPrefix("ediz-os-"){store.markBackupShared()}}}
     }
@@ -377,12 +378,41 @@ struct NativeTutorial:View {
                 Text("A recorded natural voice guides you through each step. Choose your narrator in Settings. Mute or replay anytime, even offline.").font(.subheadline).foregroundStyle(Design.muted)
             }}
             Button{aiLab=true}label:{HStack(alignment:.top,spacing:16){Image(systemName:"sparkles").font(.title2);VStack(alignment:.leading,spacing:7){Text("AI notes lab").font(.headline);Text("Try clarity, summaries, next steps and questions. Review the result, then apply it to a sample draft.").font(.subheadline).foregroundStyle(Design.muted);Label("4 tools · Hands-on practice",systemImage:"hand.tap").font(.caption).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}.buttonStyle(.plain).accessibilityIdentifier("tutorial-ai-lab")
+            NavigationLink{GymTutorial(token:store.assistantToken)}label:{HStack(spacing:16){Image(systemName:"dumbbell.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("gym"));VStack(alignment:.leading,spacing:7){Text("Your Gym, step by step").font(.headline);Text("Eight recorded lessons · plan, exercises, sets and rest").font(.subheadline).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.right")}.padding(20).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}.buttonStyle(.plain).accessibilityIdentifier("tutorial-gym")
             ForEach(Array(WalkthroughKind.allCases.enumerated()),id:\.element.id){position,kind in
                 if position == 0{Text("Start with the essentials").font(.title3.weight(.medium))};if position == 6{Text("Go a little further").font(.title3.weight(.medium))}
                 Button{let next=WalkthroughSession(kind:kind,narration:spokenGuide,token:store.assistantToken);practiceStore=next.practice;session=next}label:{HStack(alignment:.top,spacing:16){Image(systemName:kind.symbol).font(.title2).foregroundStyle(kind.accent).frame(width:48,height:48).background(kind.accent.opacity(0.12),in:RoundedRectangle(cornerRadius:14));VStack(alignment:.leading,spacing:7){Text(kind.title).font(.headline);Text(kind.summary).font(.subheadline).foregroundStyle(Design.muted);Label(NativeVoicePreferences.defaults.bool(forKey:"guide-completed-"+kind.id) ? "Explored · Try again":"\(kind.steps.count) steps · About \(max(3,kind.steps.count)) min",systemImage:NativeVoicePreferences.defaults.bool(forKey:"guide-completed-"+kind.id) ? "checkmark.circle.fill":"hand.point.up.left").font(.caption).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.right").font(.subheadline)}.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}.buttonStyle(.plain).accessibilityIdentifier("tutorial-start-"+kind.id)
             }
+            NavigationLink{NativeNewFeatures()}label:{HStack(spacing:16){Image(systemName:"sparkles.rectangle.stack").font(.title2);VStack(alignment:.leading,spacing:7){Text("New additions").font(.headline);Text("Explore the latest tools and improvements").font(.subheadline).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.right")}.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}.buttonStyle(.plain).accessibilityIdentifier("tutorial-new-additions")
         }.padding(22)}.background(AppBackdrop()).navigationTitle("Your guide").sheet(isPresented:$aiLab){NativeAIWorkshop(narrationEnabled:spokenGuide).presentationDetents([.large])}.navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar)
             .fullScreenCover(item:$session,onDismiss:{practiceStore?.discardPractice();practiceStore=nil}){active in NativeRoot(store:active.practice).onAppear{active.onExit={session=nil};active.startGuidance()}.onDisappear{active.narrator.stop()}}
             .onChange(of:scenePhase){_,phase in if phase != .active{session?.narrator.stop()}}
     }
+}
+
+struct NativeNewFeatures:View {
+    @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject var store:NativeStore
+    @StateObject private var narrator=NativeAssistantSpeaker()
+    @AppStorage("tutorial-spoken-guide",store:NativeVoicePreferences.defaults) private var spoken=true
+    var body:some View {ScrollView{VStack(alignment:.leading,spacing:22){
+        HStack(spacing:12){GuideVoiceMark(accent:Design.ink,level:narrator.level,speaking:narrator.speaking);Text("New in your Ediz OS").font(.title2.weight(.semibold));Spacer();Button{if narrator.speaking{narrator.stop()}else{read()}}label:{Image(systemName:narrator.speaking ? "stop.fill":"speaker.wave.2.fill").frame(width:44,height:44)}}
+        Text("A few useful things to try next.").foregroundStyle(Design.muted)
+        feature("Music practice cards","CLEARANCE 19 can prepare original tab grids and chord shapes. Tabs keep strings aligned; a visual beat guide helps you follow a short pattern. Copy the notation or ask for a different instrument, tuning or difficulty. Song-tab searches use source links.","guitars")
+        NavigationLink{NativeMusicPracticeRoom()}label:{Label("Try the music tools",systemImage:"play.rectangle")}.buttonStyle(ActionStyle()).accessibilityIdentifier("new-music-tools")
+        feature("Your week in the gym","Choose a weekday, edit the exercise sections and log sets. Matching movements now have actual video demonstrations; others have clear still references. Gym Bot can prepare plan edits for you to review and apply.","dumbbell.fill")
+        NavigationLink{GymTutorial(token:store.assistantToken)}label:{Label("Practise the Gym flow",systemImage:"hand.tap")}.buttonStyle(ActionStyle())
+        feature("Clearer thoughts","AI notes tools can polish a thought, ask a clarification, summarize it or prepare next steps. Review the result before changing your saved notes.","note.text")
+        NavigationLink{ScrollView{NativeAINotes().padding(20)}.background(AppBackdrop()).navigationTitle("AI notes")}label:{Label("Open your AI notes",systemImage:"sparkles")}.buttonStyle(ActionStyle())
+        feature("More thoughtful bots","Each space has its own role. The bots are instructed to answer your actual message, use saved context carefully, avoid repetitive greetings and generic speeches, and admit what they don't know. Context and instructions guide responses; they do not guarantee every answer.","bubble.left.and.bubble.right")
+        feature("Speech, reading and playback","Your guide recordings work offline. Replies have Read aloud and Copy controls; the audiobook has its own player. Apple song previews play inside Ediz OS for up to thirty seconds.","speaker.wave.2")
+        if let note=narrator.voiceNote,!note.hasPrefix("Recorded natural voice"){Text(note).font(.caption).foregroundStyle(Design.muted)}
+    }.padding(22)}.background(AppBackdrop()).navigationTitle("New additions").navigationBarTitleDisplayMode(.inline).onAppear{if spoken{read()}}.onDisappear{narrator.stop()}.onChange(of:scenePhase){_,phase in if phase != .active{narrator.stop()}}}
+    func feature(_ title:String,_ detail:String,_ symbol:String)->some View{VStack(alignment:.leading,spacing:12){Label(title,systemImage:symbol).font(.headline);Text(detail).font(.subheadline).foregroundStyle(Design.muted)}.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:20))}
+    func read(){if let url=Bundle.main.url(forResource:"new-additions",withExtension:"m4a",subdirectory:"GuideAudio/Aoede"){narrator.playRecorded([url],voice:"Aoede")}else{narrator.voiceNote="This guide recording isn't available on this build."}}
+}
+struct NativeMusicPracticeRoom:View {
+    let tab=AssistantCard(type:"tablature",title:"An original warm-up",subtitle:"Guitar · standard tuning · one quarter-note per step",items:[AssistantCardItem(title:"e",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"B",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"G",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"D",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"A",detail:"-,-,-,-,-,-,-,-"),AssistantCardItem(title:"E",detail:"0,1,2,3,3,2,1,0")])
+    let chords=AssistantCard(type:"chords",title:"Two starting shapes",subtitle:"Guitar · standard tuning · low E to high e",items:[AssistantCardItem(title:"Em",detail:"0,2,2,0,0,0"),AssistantCardItem(title:"Am",detail:"x,0,2,2,1,0")])
+    var body:some View{ScrollView{VStack(alignment:.leading,spacing:22){Text("Music you can see.").font(.largeTitle.weight(.semibold));Text("Try these original examples. In CLEARANCE 19, ask for a pattern, chord shapes or a verified song-tab source.").foregroundStyle(Design.muted);NativeMusicNotation(card:tab,scope:"band");NativeMusicNotation(card:chords,scope:"band");NavigationLink{NativeConversationHost(scope:"band")}label:{Label("Ask CLEARANCE 19",systemImage:"sparkles")}.buttonStyle(ActionStyle())}.padding(20)}.background(AppBackdrop(scope:"band")).navigationTitle("Music tools").navigationBarTitleDisplayMode(.inline)}
 }

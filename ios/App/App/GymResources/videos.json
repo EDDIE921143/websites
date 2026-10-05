@@ -1,0 +1,27 @@
+[
+  {
+    "exerciseID": "lever-seated-fly",
+    "title": "Pec Deck Fly",
+    "url": "https://ymove.app/api/free/4d197e26-766c-4c5c-b937-9918e56c5b9b"
+  },
+  {
+    "exerciseID": "lever-reverse-fly",
+    "title": "Machine Reverse Fly",
+    "url": "https://ymove.app/api/free/31fa8cba-bf48-4c16-9cf9-6a3627ee9bea"
+  },
+  {
+    "exerciseID": "leg-extension",
+    "title": "Leg Extension",
+    "url": "https://ymove.app/api/free/af0c3d19-5ee2-4a19-8688-f8504bb33e3c"
+  },
+  {
+    "exerciseID": "cable-pushdown",
+    "title": "Cable Tricep Pushdown",
+    "url": "https://ymove.app/api/free/3875dae4-14a6-4533-84d3-ef9acbadbaea"
+  },
+  {
+    "exerciseID": "hammer-curl",
+    "title": "Hammer Curls",
+    "url": "https://ymove.app/api/free/b11e6c6f-b2e8-44ca-95dc-adf0dcd34426"
+  }
+]

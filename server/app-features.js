@@ -2,26 +2,31 @@ export function presentationReply(value,ids) {
  const text=(v,n)=>typeof v==='string'?v.trim().slice(0,n):undefined;
  const seen=new Set();
  const cards=(Array.isArray(value.cards)?value.cards:[]).slice(0,3).flatMap(card=>{
-  if(!card||!['songs','practice','outline','list'].includes(card.type)||!text(card.title,100))return [];
+  if(!card||!['songs','practice','outline','list','tablature','chords'].includes(card.type)||!text(card.title,100))return [];
   const key=card.type+text(card.title,100);if(seen.has(key))return [];seen.add(key);
-  const items=(Array.isArray(card.items)?card.items:[]).slice(0,24).flatMap(item=>{
+  let items=(Array.isArray(card.items)?card.items:[]).slice(0,24).flatMap(item=>{
    if(!item||!text(item.title,160))return [];
    return [{title:text(item.title,160),...(text(item.detail,400)?{detail:text(item.detail,400)}:{}),...(text(item.meta,80)?{meta:text(item.meta,80)}:{}),...(ids.has(item.recordId)?{recordId:item.recordId}:{})}];
   });
+  if(['tablature','chords'].includes(card.type)){
+   const valid=items.filter(item=>typeof item.detail==='string'&&item.detail.split(',').every(v=>/^(?:-|x|0|[1-9]|1[0-9]|2[0-4])$/.test(v.trim())));
+   if(card.type==='tablature') {if(valid.length!==items.length||![4,6].includes(valid.length))return [];const widths=valid.map(i=>i.detail.split(',').length);if(widths.some(n=>n!==widths[0])||widths[0]<1||widths[0]>32)return [];}
+   else{items=valid.filter(i=>{const cells=i.detail.split(',');const frets=cells.map(Number).filter(n=>n>0);return cells.length===6&&(!frets.length||Math.max(...frets)-Math.min(...frets)<5)}).slice(0,8);if(!items.length)return [];}
+  }
   return items.length?[{type:card.type,title:text(card.title,100),purpose:items.every(item=>item.recordId)?'saved':'generated',...(text(card.subtitle,200)?{subtitle:text(card.subtitle,200)}:{}),items}]:[];
  });
  return {...(cards.length?{cards}:{}),...(text(value.spokenText,700)?{spokenText:text(value.spokenText,700)}:{})};
 }
-export const presentationInstructions=`Default to a conversational text reply with no cards and no recordIds. Only include cards when Ediz explicitly requests a list, selection, plan, outline, or asks to show or find saved work. Relevant context alone is never a reason to show a card. For such an explicit request, use: "cards":[{"type":"songs|practice|outline|list","title":"A clear heading","subtitle":"Optional short explanation","items":[{"title":"Song or step name","detail":"Artist, practice goal or useful detail","meta":"BPM, minutes, key or status when actually known","recordId":"Only when referring to a supplied saved record"}]}]. Put structured lists in these cards, not a wall of markdown. Use at most three cards and 24 items each. Keep unknown song BPM/key/tuning unknown. For music recommendations, distinguish suggestions from the band's existing repertoire. For rehearsal plans, group warm-up, focused work and a run-through, with realistic minutes and specific goals.`;
+export const presentationInstructions=`Default to a conversational text reply with no cards and no recordIds. Only include cards when Ediz explicitly requests a list, selection, plan, outline, or asks to show or find saved work. Relevant context alone is never a reason to show a card. For such an explicit request, use: "cards":[{"type":"songs|practice|outline|list","title":"A clear heading","subtitle":"Optional short explanation","items":[{"title":"Song or step name","detail":"Artist, practice goal or useful detail","meta":"BPM, minutes, key or status when actually known","recordId":"Only when referring to a supplied saved record"}]}]. Put structured lists in these cards, not a wall of markdown. Use at most three cards and 24 items each. For original guitar/bass practice patterns use type "tablature": items ordered high string to low string (six guitar strings or four bass strings), title is string label such as "e" or "E", detail is comma-separated equal-length steps such as "0,-,2,-". Use 1–32 steps; each cell is -, x or fret 0–24. Each column is one equal beat/subdivision; describe timing, tuning and instrument in subtitle. For guitar chord diagrams use type "chords": each item title is the chord name and detail is six comma-separated frets in LOW E to HIGH e order, e.g. "0,2,2,0,0,0" for Em; x means muted. All diagrams/patterns must be playable and reflect the stated tuning. Do not duplicate the grid as raw text. Label generated patterns as original practice; a found song tab gets verified cited links, not an invented transcription. Keep unknown song BPM/key/tuning unknown. For music recommendations, distinguish suggestions from the band's existing repertoire. For rehearsal plans, group warm-up, focused work and a run-through, with realistic minutes and specific goals.`;
 export function needsWebSearch(question) {
- return /\b(search|look up|browse|internet|latest|current news|research online|weather|forecast|wetter|nachrichten|recherchier|suche im|im internet)\b/i.test(question);
+ return /\b(find|look for|get)\b.{0,80}\b(tabs?|tablature|sheet music|chord chart)\b/i.test(question) || /\b(search|look up|browse|internet|latest|current news|research online|weather|forecast|wetter|nachrichten|recherchier|suche im|im internet)\b/i.test(question);
 }
 export function replySchema(mode='chat') {
  const string={type:'string'};
  const root={type:'object',properties:{text:string,recordIds:{type:'array',items:string,maxItems:12},actions:{type:'array',items:{type:'object',properties:{type:{type:'string',enum:['create','update','delete','gym']},entityId:string,title:string,fields:{type:'object',properties:{space:{type:'string',enum:['ejj','band','moshia','school','personal']},kind:{type:'string',enum:['task','note','idea','event','lead','song','rehearsal','character','chapter','thread','location','organization','assignment','exam','subject','grade','website']},title:string,body:string,status:string,due:string,duration:{type:'integer'},importance:{type:'integer'},data:{type:'object',additionalProperties:string}}}},required:['type','title']},maxItems:5}},required:['text','recordIds','actions']};
  if(['chat-title','semantic-search','exercise-search','capture-polish'].includes(mode)){root.properties.actions={type:'array',items:string,maxItems:0};return root;}
  root.properties.spokenText=string;
- root.properties.cards={type:'array',maxItems:3,items:{type:'object',properties:{type:{type:'string',enum:['songs','practice','outline','list']},title:string,subtitle:string,items:{type:'array',maxItems:24,items:{type:'object',properties:{title:string,detail:string,meta:string,recordId:string},required:['title']}}},required:['type','title','items']}};
+ root.properties.cards={type:'array',maxItems:3,items:{type:'object',properties:{type:{type:'string',enum:['songs','practice','outline','list','tablature','chords']},title:string,subtitle:string,items:{type:'array',maxItems:24,items:{type:'object',properties:{title:string,detail:string,meta:string,recordId:string},required:['title']}}},required:['type','title','items']}};
  return root;
 }
 export function featureInstructions(mode) {
@@ -58,12 +63,12 @@ export async function generateImage(apiKey,prompt) {
 export function requestsPresentation(question,conversation=[]){
  const q=question.trim();
  if(/^(hello|hi|hey|hallo|thanks|thank you|danke)[.!?\s]*$/i.test(q))return false;
- const explicit=/\b(list|liste|setlist|playlist|plan|outline|chapter outline|recommend|suggest|empfiehl|vorschlag|vorschläge|zeig|show|find|suche|songs|lieder|steps|schritte)\b/i;
+ const explicit=/\b(list|liste|setlist|playlist|plan|outline|chapter outline|recommend|suggest|empfiehl|vorschlag|vorschläge|zeig|show|find|suche|songs|lieder|steps|schritte|tabs?|tablature|chords?|notation|sheet music)\b/i;
  if(explicit.test(q) && (/^(list|plan|outline|songs|lieder|playlist|setlist)\b/i.test(q) || /\b(make|create|give|show|find|recommend|suggest|can you|could you|what|which|i need|i want|zeig|mach|erstelle|gib|suche|empfiehl|welche|ich brauche|ich möchte)\b/i.test(q)))return true;
  if(/\b(more|another|add|change|remove|mehr|noch|änder|ergänz)\b/i.test(q))return conversation.slice(-6).some(item=>item.role==='user'&&explicit.test(item.text||''));
  return false;
 }
 
 export function requestsVoicePresentation(question){
- return /\b(show|display|let me see|look at|zeig)\b/i.test(question) || /\b(play|preview|spiel)\b/i.test(question) || /\b(make|create|generate|give me|build|write|erstelle|gib mir)\b.{0,60}\b(list|setlist|playlist|plan|outline|table|chart|image|picture|liste|bild)\b/i.test(question);
+ return /\b(show|display|let me see|look at|zeig)\b/i.test(question) || /\b(play|preview|spiel)\b/i.test(question) || /\b(make|create|generate|give me|build|write|erstelle|gib mir)\b.{0,60}\b(list|setlist|playlist|plan|outline|table|chart|image|picture|tabs?|tablature|chords?|notation|sheet music|liste|bild)\b/i.test(question);
 }
