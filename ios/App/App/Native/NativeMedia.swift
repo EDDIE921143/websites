@@ -611,7 +611,7 @@ struct NativeAssistantVoicePanel:View {
         .onChange(of:entry?.id){_,_ in showingResults=true}
         .onDisappear{UIApplication.shared.isIdleTimerDisabled=false}
         .onAppear{UIApplication.shared.isIdleTimerDisabled=true;naturalVoice=true;speaker.refreshOutput();if !began{began=true;listen()}}
-        .sheet(item:$proposal){NativeAssistantReview(action:$0,inCall:true)}
+        .sheet(item:$proposal){action in if action.type == "gym"{GymChangeReview(action:action)}else{NativeAssistantReview(action:action,inCall:true)}}
         .sheet(item:$recordPreview){record in NavigationStack{NativeEditor(record:record)}}
         .sheet(isPresented:$settings){NavigationStack{Form{
             Section("Natural voice"){

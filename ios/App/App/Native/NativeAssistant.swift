@@ -168,7 +168,7 @@ struct NativeAssistantChat:View {
                 .onChange(of:entries.count){_,_ in scrollToBottom(reader)}
                 .onChange(of:busy){_,_ in scrollToBottom(reader)}
                 .safeAreaInset(edge:.bottom,spacing:0){composer.background(Design.background)}
-        }.sheet(item:$proposal){action in NativeAssistantReview(action:action)}
+        }.sheet(item:$proposal){action in if action.type == "gym"{GymChangeReview(action:action)}else{NativeAssistantReview(action:action)}}
             .sheet(isPresented:$historyOpen){NavigationStack{NativeChatHistory(scope:scope,current:threadID,select:{id in endVoice();historyOpen=false;selectThread?(id)})}}
             .sheet(isPresented:$attachmentOptions,onDismiss:{let choice=attachmentChoice;attachmentChoice=nil;mediaError=nil;if choice == "media"{choosingMedia=true}else if choice == "file"{importingFiles=true}}){
                 VStack(alignment:.leading,spacing:18){

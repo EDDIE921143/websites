@@ -114,6 +114,20 @@ final class EdizOSUITests:XCTestCase {
         let search=app.searchFields.firstMatch;XCTAssertTrue(search.waitForExistence(timeout:5));search.tap();search.typeText("incline dumbbell curl");XCTAssertTrue(app.buttons["gym-ai-search"].waitForExistence(timeout:5));snapshot("Exercise library searches the full catalogue from a day's Add exercise button")
         let result=app.buttons.containing(NSPredicate(format:"label CONTAINS[c] %@","incline dumbbell curl")).firstMatch;XCTAssertTrue(result.waitForExistence(timeout:5));result.tap();let save=app.buttons["gym-add-exercise"];for _ in 0..<6{if save.isHittable{break};app.swipeUp()};XCTAssertTrue(save.isHittable);save.tap();XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","7 exercises")).firstMatch.waitForExistence(timeout:5));snapshot("Exercise added to the selected day without starting a workout")
     }
+    func testReviewedGymChangeSavesPlan(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-gym-change"];app.launch()
+        let apply=app.buttons["gym-apply-change"];XCTAssertTrue(apply.waitForExistence(timeout:5));apply.tap();XCTAssertTrue(app.buttons["Changes saved"].waitForExistence(timeout:5));snapshot("Reviewed Gym Bot change saves four sets and two-minute rest")
+        app.terminate();app.launchArguments=["-ui-testing"];app.launch();app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"];for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};gym.tap();app.buttons["gym-edit-day-0"].tap();XCTAssertTrue(app.steppers["4 sets"].waitForExistence(timeout:5));XCTAssertTrue(app.steppers["Rest 120 seconds"].exists)
+    }
+    func testGymRemoveExercisePersistsAndTutorialOpens(){
+        app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"];for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};gym.tap();snapshot("Weekday selector focuses the plan on one workout")
+        app.buttons["gym-edit-day-0"].tap()
+        let remove=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","gym-remove-")).firstMatch
+        for _ in 0..<5{if remove.isHittable{break};app.swipeUp()};XCTAssertTrue(remove.isHittable);snapshot("Workout editor with stable exercise sections and visible removal");remove.tap();app.buttons["Remove from this day"].tap();app.buttons["Done"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","5 exercises")).firstMatch.waitForExistence(timeout:5))
+        app.terminate();app.launchArguments=["-ui-testing"];app.launch();app.tabBars.buttons["Spaces"].tap();let restored=app.buttons["space-gym"];for _ in 0..<7{if restored.isHittable{break};app.swipeUp()};restored.tap();XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","5 exercises")).firstMatch.waitForExistence(timeout:5))
+        app.buttons["gym-settings"].tap();app.buttons["gym-tutorial-start"].tap();XCTAssertTrue(app.staticTexts["Welcome to your training space"].waitForExistence(timeout:5));snapshot("Eight-part Gym tutorial with voice-reactive guide and safe practice controls")
+    }
     func testRichReplyDisplaysHeadingsAndAlignedGuitarTab(){
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-rich-reply"];app.launch()
         XCTAssertTrue(app.staticTexts["Rhythm and timing"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["### Rhythm and timing"].exists);XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","e|----------------|")).firstMatch.exists);snapshot("Readable headings emphasis symbols and guitar tablature")

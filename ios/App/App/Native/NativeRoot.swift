@@ -5,6 +5,7 @@ struct NativeRoot:View {
     @StateObject private var store: NativeStore
     init(store: NativeStore) { _store = StateObject(wrappedValue: store) }
     #if DEBUG
+    var gymChangeFixture:GeminiProposal {let gym=GymStore();gym.load(store);let day=gym.state.days[0];return GeminiProposal(type:"gym",title:"Make chest press four sets",fields:GeminiFields(data:["operation":"edit","dayID":day.id.uuidString,"entryID":day.exercises[0].id.uuidString,"sets":"4","rest":"120"]))}
     static var readerFixture:[EdizCore.Record]{(1...2).map{number in var chapter=EdizCore.Record(space:"moshia",kind:"chapter",title:"Practice chapter \(number)");chapter.data["binderOrder"]=String(number);chapter.body=(1...35).map{"Sample paragraph \($0). A quiet reading page gives the words enough room. This is demonstration text for checking page navigation, not the private manuscript."}.joined(separator:"\n\n");return chapter}}
     static var readerAudioFixture:[EdizCore.Record]{(1...2).map{number in var chapter=EdizCore.Record(space:"moshia",kind:"chapter",title:"Practice chapter \(number)");chapter.data["binderOrder"]=String(number);chapter.body=(1...4).map{_ in "A quiet reading page gives the words enough room. This short demonstration chapter checks natural audiobook playback, chapter selection, and saved recordings."}.joined(separator:"\n\n");return chapter}}
     #endif
@@ -48,6 +49,7 @@ struct NativeRoot:View {
             .animation(reducedMotion ? nil:.easeInOut(duration:0.18),value:store.preferences.density)
             #if DEBUG
             .onAppear{if ProcessInfo.processInfo.arguments.contains("-ui-testing"){UIApplication.shared.isIdleTimerDisabled=true}}
+            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-gym-change"))){GymChangeReview(action:gymChangeFixture).environmentObject(store)}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-rich-reply"))){ScrollView{NativeRichText(text:"### Rhythm and timing\n\n**Deftones** practice notes: start slowly.\n\n- Keep eighth notes even.\n- Use ×, ♭ and ♯ when useful.\n\n```tab\ne|----------------|\nB|----------------|\nG|----------------|\nD|-----2-----2----|\nA|-----2-----2----|\nE|-0-0---0-0------|\n```\n\n| Tempo | Goal |\n|---|---|\n| 80 BPM | Even timing |").padding(24)}.background(AppBackdrop(scope:"band"))}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-complete-recording"))){NativeRecordingDiagnostics()}
             .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-reader-display"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerFixture)}.environmentObject(store)}

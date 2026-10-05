@@ -66,3 +66,10 @@ it('samples video more frequently while keeping audio and image parts intact',()
 it('accepts common audio file formats without discarding the soundtrack',()=>{for(const mimeType of ['audio/mpeg','audio/mp4','audio/aac','audio/aiff','audio/flac','audio/ogg'])expect(attachmentParts([{name:'Recording',mimeType,data:'AQACAA=='}])[1]).toEqual({inlineData:{mimeType,data:'AQACAA=='}})});
 
 vi.mock('../server/natural-live.js',()=>({naturalLiveSpeech:async function*(){throw new Error('Speech quota reached');}}));
+
+it('Gym changes use real day and exercise IDs and never edit unrelated records',()=>{
+ const records=[{id:'mon',space:'gym',body:'entryID=set-1, exerciseID=press',data:{gymKind:'day'}},{id:'fri',space:'gym',data:{gymKind:'day'}},{id:'press',space:'gym',data:{gymKind:'exercise'}},{id:'personal',space:'personal'}];
+ const action=(data:Record<string,string>)=>({type:'gym',title:'Change workout',fields:{data}});
+ const reply=validateReply({text:'Review these changes',actions:[action({operation:'swap',dayID:'mon',otherDayID:'fri'}),action({operation:'add',dayID:'mon',exerciseID:'press'}),action({operation:'remove',dayID:'mon',entryID:'invented'}),action({operation:'add',dayID:'personal',exerciseID:'press'}),action({operation:'replace',dayID:'mon',entryID:'set-1',exerciseID:'invented'})]},records);
+ expect(reply.actions).toHaveLength(2);expect(reply.actions[0].type).toBe('gym');expect(botDirections('gym')).toContain('entryID');
+});

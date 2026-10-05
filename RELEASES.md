@@ -1,3 +1,7 @@
+# 0.3.24 — Gym editing and spoken walkthrough
+
+Visual exercise selection, stable exercise editing/removal, reviewed Gym Bot schedule/exercise changes, and eight prerecorded natural Gym lessons with practice controls. Backend rollout and device checks are tracked in docs/UPDATE-0.3.24.md.
+
 # 0.3.23
 
 Gym now has Ediz’s editable four-day plan, searchable exercises, workout logging, previous sets and rest timers. CLEARANCE 19 uses in-app Apple previews; assistant replies render headings and guitar tabs; background requests cancel. See docs/UPDATE-0.3.23.md for validation and limits.

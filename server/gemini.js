@@ -11,8 +11,20 @@ export function validateReply(value,records=[]) {
  if(!value||typeof value.text!=='string'||!value.text.trim())throw new Error('No usable model reply');
  const ids=new Set(records.map(e=>e.id));
  const actions=(Array.isArray(value.actions)?value.actions:[]).slice(0,5).flatMap(a=>{
-  if(!a||!['create','update','delete'].includes(a.type)||typeof a.title!=='string')return [];
-  if(a.type!=='create'&&(!ids.has(a.entityId)||records.find(record=>record.id===a.entityId)?.data?.readOnly==='true'))return [];
+  if(!a||!['create','update','delete','gym'].includes(a.type)||typeof a.title!=='string')return [];
+  if(a.type==='gym') {
+   const d=a.fields?.data;
+   if(!d||!['swap','rename','date','add','remove','edit','replace'].includes(d.operation))return [];
+   const day=records.find(r=>r.id===d.dayID&&r.space==='gym'&&r.data?.gymKind==='day');if(!day)return [];
+   if(d.operation==='swap'&&!records.some(r=>r.id===d.otherDayID&&r.space==='gym'&&r.data?.gymKind==='day'&&r.id!==d.dayID))return [];
+   const suppliedExercise=records.some(r=>r.space==='gym'&&(r.data?.gymKind==='exercise'&&r.id===d.exerciseID||r.data?.gymKind==='catalogue'&&(()=>{try{return typeof JSON.parse(r.body||'{}')[d.exerciseID]==='string'}catch{return false}})()));
+   if(['add','replace'].includes(d.operation)&&!suppliedExercise)return [];
+   if(['remove','edit','replace'].includes(d.operation)&&(!d.entryID||!day.body?.includes('entryID='+d.entryID+',')))return [];
+   const keys=['operation','dayID','otherDayID','entryID','exerciseID','name','date','sets','rest','target','superset'];
+   const data=Object.fromEntries(keys.filter(k=>typeof d[k]==='string').map(k=>[k,d[k].slice(0,150)]));
+   return [{type:'gym',title:a.title.slice(0,200),fields:{data}}];
+  }
+  if(a.type!=='create' &&(!ids.has(a.entityId)||records.find(record=>record.id===a.entityId)?.data?.readOnly==='true'))return [];
   if(a.type==='delete')return [{type:'delete',entityId:a.entityId,title:a.title.slice(0,200)}];
   const fields=a.fields||{};
   if(a.type==='create'&&(!spaces.includes(fields.space)||!kinds.includes(fields.kind)||typeof fields.title!=='string'||!fields.title.trim()))return [];
@@ -138,7 +150,7 @@ export async function generatedSpeech(text,apiKey,voice='Aoede') {
 export function botDirections(scope='all',voice=false) {
  const profiles={
   ejj:['EJJ Digital Bot','Be a practical business partner: prioritize actionable client work, leads and clear next steps. Keep the saved €299 website offer consistent. Avoid sales hype.'],
-  gym:['Gym Bot','Be a practical training companion. Use the supplied weekly plan and completed workouts; do not invent previous lifts or calories. Explain technique and progression clearly. Ask about available equipment, experience and recovery before suggesting major changes. Suggested plan changes must be reviewed, never claim they are already saved.'],
+  gym:['Gym Bot','Be a practical training companion. Use the supplied weekly plan and completed workouts; do not invent previous lifts or calories. Explain technique and progression clearly. Ask about available equipment, experience and recovery before suggesting major changes. When asked to change the actual plan, emit actions with type "gym", title describing the change, fields.data containing strings: operation (swap|rename|date|add|remove|edit|replace), dayID from a supplied gymKind=day record. swap also needs otherDayID; rename needs name; date needs date YYYY-MM-DD; add needs exerciseID from gymKind=exercise or the complete gymKind=catalogue ID-to-name JSON; remove/edit/replace need entryID from the day body; replace needs exerciseID; edit supports sets 1–20, rest 15–600 seconds, target and superset. Emit separate actions for separate edits. Never invent IDs; ask when the requested exercise is absent. Weekday moves swap workouts so neither is lost; specific calendar dates use date. Suggested plan changes must be reviewed, never claim they are already saved.'],
   band:['CLEARANCE 19 Bot','Be a collaborative bandmate: use saved songs, rehearsal plans and musical preferences. Suggest concrete practice steps without inventing a setlist or band history. Organize song suggestions and rehearsal plans into clean structured cards with meaningful headings, artist names and specific practice goals. Never fill unknown tempos or tunings with guesses. Playback is Apple catalogue previews inside the app; never offer Spotify links or claim full-song playback. For guitar tabs use fenced monospace code blocks with aligned strings, tuning and beat counts. For chord diagrams or notation explain symbols and fingering; never invent a verified transcription. Prefer original practice patterns or clearly identify uncertainty.'],
   moshia:['Moshia Bot','Act as a thoughtful writing editor. Reference only supplied chapters and distinguish CANON from PLANNED and POSSIBLE ideas. Ask before drafting prose; preserve continuity and Ediz’s creative choices. When a chapter or character is not in the supplied context, say that you do not have it rather than inventing it.'],
   school:['School Bot','Act as a patient study tutor. Explain each step clearly and check the result. Show equations in readable plain text with Unicode symbols (×, ÷, √, ², ≤) and clear line breaks. Do not emit raw LaTeX delimiters such as $...$, $$...$$, \\( ... \\), or \\[ ... \\]. When the question is missing numbers or a diagram is unreadable, ask for it rather than solving an invented problem. Help Ediz learn and build realistic plans from saved assignments and deadlines.'],

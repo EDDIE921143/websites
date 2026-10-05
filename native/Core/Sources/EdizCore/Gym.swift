@@ -23,6 +23,7 @@ public struct GymPlanExercise: Codable, Identifiable, Sendable {
 public struct GymDay: Codable, Identifiable, Sendable {
     public var id=UUID()
     public var title:String
+    public var scheduledDate:String?
     public var exercises:[GymPlanExercise]
     public init(_ title:String,exercises:[GymPlanExercise]=[]){self.title=title;self.exercises=exercises}
 }
@@ -66,4 +67,43 @@ public struct GymState: Codable, Sendable {
     public init(){}
     public func previousSets(for exerciseID:String)->[GymSet]{history.sorted{($0.ended ?? $0.started)>($1.ended ?? $1.started)}.first{$0.exercises.contains{$0.exerciseID == exerciseID && $0.sets.contains(where:\.done)}}?.exercises.first{$0.exerciseID == exerciseID}?.sets.filter(\.done) ?? []}
     public mutating func finish(at now:Date=Date()){guard var workout=active else{return};workout.ended=now;workout.restEnds=nil;history.insert(workout,at:0);active=nil}
+}
+
+/// Apply one reviewed change atomically; stale IDs never target a different exercise.
+extension GymState {
+    public mutating func applyPlanChange(_ data:[String:String],allowedExerciseIDs:Set<String>) throws {
+        guard let dayID=data["dayID"],let day=days.firstIndex(where:{$0.id.uuidString == dayID}) else{throw GymChangeError.stale}
+        var updated=self
+        switch data["operation"] {
+        case "swap":
+            guard let otherID=data["otherDayID"],let other=days.firstIndex(where:{$0.id.uuidString == otherID}),other != day else{throw GymChangeError.stale}
+            updated.days[day].title=days[other].title;updated.days[day].exercises=days[other].exercises
+            updated.days[other].title=days[day].title;updated.days[other].exercises=days[day].exercises
+        case "rename":
+            guard let title=data["name"],!title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw GymChangeError.invalid}
+            updated.days[day].title=String(title.prefix(100))
+        case "date":
+            guard let date=data["date"],date.range(of:#"^\d{4}-\d{2}-\d{2}$"#,options:.regularExpression) != nil,ISO8601DateFormatter().date(from:date+"T12:00:00Z") != nil else{throw GymChangeError.invalid}
+            updated.days[day].scheduledDate=date
+        case "add":
+            guard let exercise=data["exerciseID"],allowedExerciseIDs.contains(exercise) else{throw GymChangeError.invalid}
+            updated.days[day].exercises.append(GymPlanExercise(exercise))
+        case "remove","edit","replace":
+            guard let entryID=data["entryID"],let entry=days[day].exercises.firstIndex(where:{$0.id.uuidString == entryID}) else{throw GymChangeError.stale}
+            if data["operation"] == "remove"{updated.days[day].exercises.remove(at:entry)}
+            else if data["operation"] == "replace"{guard let exercise=data["exerciseID"],allowedExerciseIDs.contains(exercise) else{throw GymChangeError.invalid};updated.days[day].exercises[entry].exerciseID=exercise}
+            else {
+                if let value=data["sets"]{guard let count=Int(value),(1...20).contains(count) else{throw GymChangeError.invalid};updated.days[day].exercises[entry].sets=count}
+                if let value=data["rest"]{guard let seconds=Int(value),(15...600).contains(seconds) else{throw GymChangeError.invalid};updated.days[day].exercises[entry].rest=seconds}
+                if let value=data["target"]{updated.days[day].exercises[entry].target=String(value.prefix(100))}
+                if let value=data["superset"]{updated.days[day].exercises[entry].superset=String(value.prefix(100))}
+            }
+        default:throw GymChangeError.invalid
+        }
+        self=updated
+    }
+}
+public enum GymChangeError:LocalizedError {
+    case stale,invalid
+    public var errorDescription:String?{self == .stale ? "This plan has changed. Ask Gym Bot for an updated suggestion.":"This change has an unavailable exercise or invalid setting. Ask Gym Bot to revise it."}
 }
