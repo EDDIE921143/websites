@@ -108,6 +108,12 @@ final class EdizOSUITests:XCTestCase {
         app.terminate();app.launchArguments=["-ui-testing"];app.launch();app.tabBars.buttons["Spaces"].tap();let restored=app.buttons["space-gym"];for _ in 0..<7{if restored.isHittable{break};app.swipeUp()};restored.tap()
         XCTAssertTrue(app.staticTexts["400 kg"].waitForExistence(timeout:5));app.buttons["gym-finish"].tap();XCTAssertTrue(app.staticTexts["One session stronger."].waitForExistence(timeout:5));snapshot("Finished workout saved with elapsed time and completed volume");app.buttons["Done"].tap();app.buttons["History"].tap();XCTAssertTrue(app.staticTexts["400 kg"].waitForExistence(timeout:5))
     }
+    func testGymLibraryAddsExerciseBelowTheDay(){
+        app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"];for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};gym.tap()
+        let add=app.buttons["gym-add-day-0"];for _ in 0..<4{if add.isHittable{break};app.swipeUp()};XCTAssertTrue(add.waitForExistence(timeout:5));add.tap()
+        let search=app.searchFields.firstMatch;XCTAssertTrue(search.waitForExistence(timeout:5));search.tap();search.typeText("incline dumbbell curl");XCTAssertTrue(app.buttons["gym-ai-search"].waitForExistence(timeout:5));snapshot("Exercise library searches the full catalogue from a day's Add exercise button")
+        let result=app.buttons.containing(NSPredicate(format:"label CONTAINS[c] %@","incline dumbbell curl")).firstMatch;XCTAssertTrue(result.waitForExistence(timeout:5));result.tap();let save=app.buttons["gym-add-exercise"];for _ in 0..<6{if save.isHittable{break};app.swipeUp()};XCTAssertTrue(save.isHittable);save.tap();XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","7 exercises")).firstMatch.waitForExistence(timeout:5));snapshot("Exercise added to the selected day without starting a workout")
+    }
     func testRichReplyDisplaysHeadingsAndAlignedGuitarTab(){
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-rich-reply"];app.launch()
         XCTAssertTrue(app.staticTexts["Rhythm and timing"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["### Rhythm and timing"].exists);XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","e|----------------|")).firstMatch.exists);snapshot("Readable headings emphasis symbols and guitar tablature")

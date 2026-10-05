@@ -22,7 +22,7 @@ it('uses the stronger model for media and the faster model for ordinary chat',as
  vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);vi.stubEnv('GEMINI_MODEL','gemini-3.8-flash');
  const fetcher=vi.fn(async(_url:string)=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'A checked reply',actions:[]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
  const media=response();await handler(request({question:'Describe this recording',records:[],attachments:[{name:'practice.wav',mimeType:'audio/wav',data:'AQACAA=='}]}),media);expect(media.statusCode).toBe(200);expect(fetcher.mock.calls[0][0]).toContain('gemini-3.8-flash');
- const chat=response();await handler(request({question:'Hello',records:[]}),chat);expect(chat.statusCode).toBe(200);expect(fetcher.mock.calls[1][0]).toContain('gemini-3.1-flash-lite');
+ const chat=response();await handler(request({question:'Hello',records:[]}),chat);expect(chat.statusCode).toBe(200);expect(fetcher.mock.calls[1][0]).toContain('gemini-3.5-flash-lite');
 });
 
 it('tries the next configured model after a transport timeout',async()=>{
@@ -54,11 +54,16 @@ it('returns bounded song suggestions and drops incomplete catalog entries',async
 it('recovers through a stable Gemini model when the first models are unavailable',async()=>{
  vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);vi.stubEnv('GEMINI_MODEL','gemini-3.8-flash');
  const fetcher=vi.fn().mockResolvedValueOnce(new Response('{}',{status:429})).mockResolvedValueOnce(new Response('{}',{status:404})).mockResolvedValueOnce(new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Recovered reply',actions:[]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
- const res=response();await handler(request({question:'Hello',scope:'personal',records:[]}),res);expect(res.statusCode).toBe(200);expect(res.headers['X-Ediz-Model']).toBe('gemini-2.5-flash');
+ const res=response();await handler(request({question:'Hello',scope:'personal',records:[]}),res);expect(res.statusCode).toBe(200);expect(res.headers['X-Ediz-Model']).toBe('gemini-3.7-flash');
 });
 it('passes prior messages in separate user and model roles',async()=>{
  vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
  const fetcher=vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Continue the band plan',actions:[]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
  const res=response();await handler(request({question:'Continue',scope:'band',records:[],conversation:[{role:'user',text:'Plan a rehearsal'},{role:'assistant',text:'Start with a warm-up'}]}),res);
  const body=JSON.parse((fetcher.mock.calls[0] as any)[1].body);expect(body.contents.map((item:any)=>item.role)).toEqual(['user','model','user']);expect(body.contents[1].parts[0].text).toBe('Start with a warm-up');
+});
+it('reports a temporary provider overload instead of treating all failures as an app error',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({error:{message:'Temporarily busy'}}),{status:503})));
+ const res=response();await handler(request({question:'Hello',records:[]}),res);expect(res.statusCode).toBe(503);expect(res.headers['Retry-After']).toBe('3');expect((res.body as any).error).toContain('message is saved');
 });
