@@ -93,3 +93,10 @@ it('recovers once from a brief overload without changing models',async()=>{
  const fetcher=vi.fn().mockResolvedValueOnce(new Response('{}',{status:503})).mockResolvedValueOnce(new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Recovered',actions:[]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
  const res=response();await handler(request({question:'Hello',records:[]}),res);expect(res.statusCode).toBe(200);expect(fetcher.mock.calls[0][0]).toBe(fetcher.mock.calls[1][0]);
 });
+it('blocks foreign records and cross-workspace creations at the API boundary',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ const fetcher=vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'A story suggestion',actions:[{type:'create',title:'Foreign task',fields:{space:'ejj',kind:'task',title:'Business task'}},{type:'update',entityId:'foreign',title:'Foreign edit',fields:{body:'Changed'}}]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
+ const res=response();await handler(request({question:'Review my story',scope:'moshia',records:[{id:'own',space:'moshia',body:'Story'},{id:'foreign',space:'ejj',body:'BUSINESS SECRET'}],memories:[{id:'foreign-chat',space:'ejj',title:'Client',body:'PRIVATE CLIENT'}]}),res);
+ expect(res.statusCode).toBe(200);expect((res.body as any).actions).toEqual([]);
+ expect((fetcher.mock.calls[0] as any)[1].body).not.toContain('BUSINESS SECRET');expect((fetcher.mock.calls[0] as any)[1].body).not.toContain('PRIVATE CLIENT');
+});

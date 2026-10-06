@@ -69,7 +69,7 @@ struct NativeAssistant:View {
             VStack(alignment:.leading,spacing:24) {
                 if section == "chats"{VStack(alignment:.leading,spacing:10) {
                     Text("Here with you, Ediz.").font(Design.font(28,relativeTo:.title))
-                    Text("Choose a space. Each conversation starts with your saved context.")
+                    Text("Choose a space. Each bot has its own workspace. Everyday finds context when you ask.")
                         .font(Design.font(16,weight:"Regular")).foregroundStyle(Design.muted)
                 }.padding(.top,12)}
                 Picker("Assistant section",selection:$section){Text("Chats").tag("chats");Text("AI notes").tag("notes")}.pickerStyle(.segmented).accessibilityIdentifier("assistant-section").onChange(of:section){_,value in if value=="notes"{store.walkthrough?.event("ai-notes-open")}}
@@ -197,8 +197,8 @@ struct NativeAssistantChat:View {
                     if store.preferences.labs { Text("Local model").tag("local") }
                     Text("Saved context").tag("saved")
                 }
-                NavigationLink("Review saved context"){NativeAssistantContext()}
-                Text("Context: \(scopedRecords.count) saved records")
+                NavigationLink("Review saved context"){NativeAssistantContext(scope:scope)}
+                Text(scope == "all" ? "Relevant context is retrieved when you ask":"Context stays within this workspace")
             } label: { Image(systemName:"info.circle").frame(width:44,height:44) }.accessibilityLabel("Chat context") }.padding(.trailing,4) } }
     }
     func scrollToBottom(_ reader:ScrollViewProxy) {
@@ -209,15 +209,8 @@ struct NativeAssistantChat:View {
             NativeChatHeader(scope:scope).opacity(chatAppeared ? 1:0).offset(y:reducedMotion || chatAppeared ? 0:10)
             if entries.isEmpty {
                 Text(opening).font(scope == "moshia" ? .system(.title2,design:.serif):.title3.weight(.medium)).padding(.top,4)
-                Surface {
-                    VStack(alignment:.leading,spacing:9) {
-                        Label(contextTitle,systemImage:scope == "moshia" ? "book.closed":"tray.full.fill").font(.subheadline.weight(.medium)).foregroundStyle(accent)
-                        if let brief=scopedRecords.first(where:{$0.data["contextType"] == "workspace-brief" && (scope != "all" || $0.space == "personal")}) {
-                            Text(brief.body).font(.subheadline).foregroundStyle(Design.muted).lineLimit(3)
-                        } else {Text("Ask a question or capture something you want to keep.").font(.subheadline).foregroundStyle(Design.muted)}
-                        NavigationLink("Review context"){NativeAssistantContext()}.font(.subheadline)
-                    }
-                }
+                HStack(alignment:.top,spacing:12){Image(systemName:scope == "moshia" ? "book.closed":scope == "band" ? "music.note":scope == "gym" ? "dumbbell":"sparkles").foregroundStyle(accent).frame(width:38,height:38).background(accent.opacity(0.12),in:RoundedRectangle(cornerRadius:12));VStack(alignment:.leading,spacing:5){Text(scope == "all" ? "A little help, when you need it":contextTitle).font(.subheadline.weight(.semibold));Text(scope == "all" ? "I find relevant memories when you ask. Your other spaces stay separate.":"This conversation uses only this workspace’s notes and chats.").font(.caption).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)}}.padding(.vertical,14)
+
                 if scope == "band" || scope == "school" {
                     HStack(alignment:.top,spacing:10){ForEach(Array(prompts.prefix(2)),id:\.self){prompt in
                         Button{question=prompt;send()}label:{VStack(alignment:.leading,spacing:12){Image(systemName:scope == "band" ? "music.note":"pencil").foregroundStyle(accent);Text(prompt).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading).foregroundStyle(Design.ink)}.padding(16).frame(maxWidth:.infinity,minHeight:104,alignment:.topLeading).background{WorkspacePanel(scope:scope).clipShape(RoundedRectangle(cornerRadius:corners))}}.buttonStyle(.plain)
@@ -404,14 +397,14 @@ struct NativeAssistantChat:View {
         let reply=AssistantRules.reply(to:q,records:scopedRecords,history:store.activity.filter{scope == "all" || Set(scopedRecords.map(\.id)).contains($0.entityId)},focus:scope,previous:prior)
         let conversation=entries;callEnded=nil;entries.append(ConversationEntry(role:"user",text:q,attachments:outgoing.isEmpty ? nil:outgoingInfo));question="";typing=false;message=nil;failedQuestion=nil
         if mode == "cloud",let token=store.assistantToken{
-            busy=true;let context=scopedRecords+((scope == "moshia" || scope == "all") ? store.originalManuscript:[]);let inCall=voiceWanted;callRequest=inCall;let requestID=UUID();activeRequest=requestID
+            busy=true;let gymRecords=scope == "all" && q.range(of:"\\b(gym|workout|training|exercise)\\b",options:[.regularExpression,.caseInsensitive]) != nil ? store.gymContext:[];let needsContext=q.range(of:"^(hello|hi|hey|thanks|thank you|what time is it|how are you)[.!?\\s]*$",options:[.regularExpression,.caseInsensitive]) == nil;let context=needsContext ? scopedRecords+gymRecords+((scope == "moshia" || (scope == "all" && q.range(of:"moshia|manuscript|my book|my novel",options:[.regularExpression,.caseInsensitive]) != nil)) ? store.originalManuscript:[]):[];let inCall=voiceWanted;callRequest=inCall;let requestID=UUID();activeRequest=requestID
             responseTask=Task{@MainActor in
                 defer{if activeRequest==requestID{busy=false;callRequest=false}}
                 do{
                     let memories=store.searchableMemories().filter{$0.data["_chatID"] != nil && $0.data["_chatID"] != threadID?.uuidString && (scope == "all" || $0.space == scope)}
                     let earlier=outgoing.isEmpty ? earlierMedia(for:q,in:conversation):(requested:false,files:[])
                     if earlier.requested && earlier.files.isEmpty {throw NSError(domain:"EdizAssistant",code:2,userInfo:[NSLocalizedDescriptionKey:"I can’t reopen that earlier attachment. Please attach it again so I can answer without guessing."])}
-                    let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing+earlier.files,voiceMode:inCall,memories:Array(memories.prefix(12)),earlierMedia:earlier.files.map(\.name))
+                    let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing+earlier.files,voiceMode:inCall,memories:needsContext ? Array(memories.prefix(12)):[],earlierMedia:earlier.files.map(\.name))
                     guard !Task.isCancelled,activeRequest==requestID,(!inCall || voiceWanted) else{return}
                     attachments.removeAll{file in outgoing.contains{$0.id == file.id}}
                     let newReply=ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:WorkspaceBot.name(scope),cards:answer.cards,spokenText:answer.spokenText,musicPreview:answer.musicPreview,presentResults:answer.presentResults);latestPreviewID=newReply.id;entries.append(newReply)
@@ -533,7 +526,7 @@ enum GeminiAssistant {
     static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String,attachments:[AssistantAttachment]=[],voiceMode:Bool=false,requestMode:String="chat",memories:[EdizCore.Record]=[],earlierMedia:[String]=[]) async throws -> GeminiResponse {
         var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!);request.httpMethod="POST";request.timeoutInterval=90;request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
         let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(records.prefix(requestMode == "exercise-search" ? 1200:500))))
-        request.httpBody=try JSONSerialization.data(withJSONObject:["mode":requestMode,"voiceMode":voiceMode,"question":question,"scope":scope,"records":encoded,"memories":memories.prefix(12).map{["title":$0.title,"space":$0.space,"body":String($0.body.suffix(6000))]},"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.contextText]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"earlierMedia":earlierMedia,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
+        request.httpBody=try JSONSerialization.data(withJSONObject:["mode":requestMode,"voiceMode":voiceMode,"question":question,"scope":scope,"records":encoded,"memories":memories.prefix(12).map{["title":$0.title,"space":$0.space,"id":$0.id,"body":String($0.body.suffix(6000))]},"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.contextText]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"earlierMedia":earlierMedia,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
         for attempt in 0...1 {
             try Task.checkCancellation()
             let data:Data,response:URLResponse

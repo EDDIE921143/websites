@@ -761,6 +761,17 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["Our fresh rehearsal discussion"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Our old rehearsal discussion"].exists)
         app.buttons["workspace-chats"].tap();XCTAssertEqual(rows.count,1)
     }
+    func testSearchVoiceEntryAndGymIdentity(){
+        snapshot("Warm Today with assistant entry")
+        app.tabBars.buttons["Search"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        XCTAssertTrue(app.buttons["search-microphone"].waitForExistence(timeout:5))
+        XCTAssertTrue(app.textFields["search-query"].exists)
+        snapshot("Search by meaning and voice entry")
+        app.tabBars.buttons["Spaces"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        let gym=app.buttons["space-gym"];XCTAssertTrue(gym.waitForExistence(timeout:5))
+        if !gym.isHittable{app.swipeUp()};snapshot("Dedicated Gym training card")
+        gym.tap();XCTAssertTrue(app.buttons["gym-assistant"].waitForExistence(timeout:5))
+    }
     func testSavedChatsAppearInSearch(){
         app.tabBars.buttons["Assistant"].tap();app.buttons["assistant-workspace-band"].tap();ask("Our acoustic bridge needs a slower run-through")
         app.tabBars.buttons["Search"].tap();let field=app.textFields["search-query"];XCTAssertTrue(field.waitForExistence(timeout:5));field.tap();field.typeText("acoustic bridge\n")

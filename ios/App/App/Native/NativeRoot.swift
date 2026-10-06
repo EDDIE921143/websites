@@ -118,6 +118,7 @@ struct NativeToday:View {
                 Text(greeting+", Ediz.").font(.system(.largeTitle,design:.rounded).weight(.medium)).fixedSize(horizontal:false,vertical:true)
                 Text("Your ideas, your music, your next chapter. Make yourself at home.").font(.subheadline).foregroundStyle(Design.muted).fixedSize(horizontal:false,vertical:true)
                 Button{store.capture()}label:{HStack{Text("Capture a thought").font(.subheadline.weight(.semibold));Image(systemName:"plus").font(.subheadline.weight(.semibold))}.padding(.horizontal,18).frame(minHeight:46).foregroundStyle(Design.background).background(Design.ink,in:Capsule())}.buttonStyle(.plain).accessibilityIdentifier("capture-from-today")
+                NavigationLink{NativeConversationHost(scope:"all")}label:{Label("Talk it through",systemImage:"bubble.left.and.bubble.right").font(.subheadline).foregroundStyle(Design.muted).frame(minHeight:44)}.buttonStyle(.plain)
             } else {Text("A little room to focus.").font(.title2.weight(.medium))}
         }.padding(.vertical,store.preferences.density == "compact" ? 12:22).frame(maxWidth:.infinity,alignment:.leading)
     }
@@ -159,18 +160,32 @@ struct NativeSpaces:View {
     var body:some View {
         ScrollViewReader{proxy in ScrollView { VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:24) {
             Text("Your spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
+            NavigationLink{NativeGym()}label:{GymSpaceCard()}.buttonStyle(.plain).accessibilityIdentifier("space-gym").id("gym")
             ForEach(Catalog.spaces){space in
                 VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink{NativeSpace(route:SpaceRoute(id:space.id))}label:{HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain).accessibilityIdentifier("space-"+space.id)
                     HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink{NativeSpace(route:SpaceRoute(id:space.id,kind:module.kind))}label:{Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44).walkthroughTarget(module.kind == "chapter" ? "chapters":"",session:store.walkthrough)}}}}
                 }.padding(store.preferences.density == "compact" ? 12:24).background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(space.id).opacity(0.18),lineWidth:1)}.id(space.id)
             }
-            NavigationLink{NativeGym()}label:{HStack(spacing:15){Image(systemName:"dumbbell.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("gym")).frame(width:46,height:46).background(WorkspaceTheme.accent("gym").opacity(0.12),in:RoundedRectangle(cornerRadius:13));VStack(alignment:.leading,spacing:4){Text("Gym").font(Design.font(19,weight:"DemiBold"));Text("Your plan · Workouts · Progress").font(.subheadline).foregroundStyle(Design.muted)};Spacer();Image(systemName:"chevron.right").foregroundStyle(Design.muted)}.foregroundStyle(Design.ink).padding(20).background(Design.surface,in:RoundedRectangle(cornerRadius:22))}.buttonStyle(.plain).accessibilityIdentifier("space-gym").id("gym")
         }.padding(20) }.modifier(BrandedRefresh()).background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces").onAppear{if let kind=store.walkthrough?.kind{let target=kind == .gym ? "gym":kind == .rehearsal ? "band":"moshia";DispatchQueue.main.asyncAfter(deadline:.now()+0.35){proxy.scrollTo(target,anchor:.center)}}}}
+    }
+}
+struct GymSpaceCard:View {
+    @EnvironmentObject var store:NativeStore
+    @StateObject private var gym=GymStore()
+    var day:GymDay?{gym.state.days.indices.contains((Calendar.current.component(.weekday,from:Date())+5)%7) ? gym.state.days[(Calendar.current.component(.weekday,from:Date())+5)%7]:nil}
+    var body:some View {
+        VStack(alignment:.leading,spacing:20){
+            HStack(alignment:.top){VStack(alignment:.leading,spacing:7){Text("TRAINING CLUB").font(.caption2.weight(.bold)).tracking(2).foregroundStyle(WorkspaceTheme.accent("gym"));Text("Gym").font(.system(.largeTitle,design:.rounded).weight(.bold))};Spacer();Image(systemName:"dumbbell.fill").font(.system(size:32,weight:.semibold)).rotationEffect(.degrees(-20)).foregroundStyle(WorkspaceTheme.accent("gym")).padding(8)}
+            HStack(alignment:.bottom){VStack(alignment:.leading,spacing:6){Text(gym.state.active != nil ? "WORKOUT IN PROGRESS":"TODAY").font(.caption2.weight(.semibold)).foregroundStyle(Design.muted);Text(gym.state.active?.title ?? day?.title ?? "Your training plan").font(.headline);Text(day?.exercises.isEmpty == false ? "\(day!.exercises.count) exercises · Your pace":"Recovery is part of the plan").font(.caption).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.up.right").font(.headline).frame(width:44,height:44).background(WorkspaceTheme.accent("gym").opacity(0.18),in:Circle())}
+            HStack(spacing:6){ForEach(0..<7){index in Capsule().fill((gym.state.days.indices.contains(index) && gym.state.days[index].exercises.isEmpty) ? Design.muted.opacity(0.18):WorkspaceTheme.accent("gym").opacity(0.65)).frame(height:4)}}.accessibilityHidden(true)
+        }.foregroundStyle(Design.ink).padding(24).background(Color(red:0.10,green:0.12,blue:0.085),in:RoundedRectangle(cornerRadius:24)).overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent("gym").opacity(0.22),lineWidth:1)}.onAppear{gym.load(store)}
     }
 }
 struct NativeSearch:View {
     @EnvironmentObject var store:NativeStore
     @State private var query=""
+    @StateObject private var searchSpeech=NativeSpeech()
+    @State private var finishingSpeech=false
     @State private var space="all"
     @State private var ranked:[String]?
     @State private var reasoning:String?
@@ -183,11 +198,14 @@ struct NativeSearch:View {
     var body:some View {
         List {
             Section {
-                HStack(spacing:10){Image(systemName:"magnifyingglass").foregroundStyle(Design.muted);TextField("A name, a phrase, or what you remember…",text:$query).focused($searching).textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search).onSubmit{searching=false;findByMeaning()}.accessibilityIdentifier("search-query");if !query.isEmpty{Button{query=""}label:{Image(systemName:"xmark.circle.fill").foregroundStyle(Design.muted)}.accessibilityLabel("Clear search")}}.padding(.vertical,8).walkthroughTarget("search-query",session:store.walkthrough)
+                VStack(alignment:.leading,spacing:6){Text("Find the thought, not just the words.").font(.title3.weight(.semibold));Text("Describe what you remember. Search can look through notes, chapters and past chats by meaning.").font(.subheadline).foregroundStyle(Design.muted)}.padding(.vertical,10)
+                HStack(spacing:10){Image(systemName:"magnifyingglass").foregroundStyle(Design.muted);TextField("A name, a phrase, or what you remember…",text:$query).focused($searching).textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search).onSubmit{searching=false;findByMeaning()}.accessibilityIdentifier("search-query");Button{toggleSearchSpeech()}label:{Image(systemName:searchSpeech.listening ? "stop.fill":"mic.fill").frame(width:44,height:44).foregroundStyle(searchSpeech.listening ? WorkspaceTheme.accent("school"):Design.ink).background(Design.raised,in:Circle())}.disabled(finishingSpeech || searchSpeech.requesting).accessibilityLabel(searchSpeech.listening ? "Finish voice search":"Speak your search").accessibilityIdentifier("search-microphone");if !query.isEmpty{Button{query=""}label:{Image(systemName:"xmark.circle.fill").foregroundStyle(Design.muted)}.accessibilityLabel("Clear search")}}.padding(.vertical,8).walkthroughTarget("search-query",session:store.walkthrough)
                 if !query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,store.assistantConnected {
                     Button{searching=false;findByMeaning()}label:{HStack{if finding{ProgressView()}else{Image(systemName:"sparkle.magnifyingglass")};Text(finding ? "Looking through your memories…":"Find by meaning");Spacer()}}.disabled(finding).accessibilityIdentifier("search-by-meaning")
                 }
             }
+            if searchSpeech.listening || finishingSpeech{Section{HStack(spacing:4){ForEach(0..<20){index in Capsule().fill(WorkspaceTheme.accent("school")).frame(width:4,height:CGFloat(8)+searchSpeech.level*CGFloat(12+(index%5)*7))};Spacer();Text(finishingSpeech ? "Finishing…":"Listening…").font(.subheadline)}.frame(height:40).animation(.easeOut(duration:0.12),value:searchSpeech.level)}}
+            if let message=searchSpeech.message{Section{Text(message).font(.footnote).foregroundStyle(Design.muted)}}
             Section {Picker("Space",selection:$space){Text("Everything").tag("all");ForEach(Catalog.spaces){Text($0.name).tag($0.id)}}}
             if let reasoning{Section{Text(reasoning).font(.subheadline).foregroundStyle(Design.muted)}}
             if let searchError{Section{Text(searchError).font(.footnote).foregroundStyle(Design.muted)}}
@@ -202,11 +220,15 @@ struct NativeSearch:View {
             }
         }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop()).listRowSpacing(store.preferences.density == "compact" ? 4:12).modifier(BrandedRefresh()).navigationTitle("Search")
             .onChange(of:query){_,value in resetSearch();scheduleMeaningSearch();if value.localizedCaseInsensitiveContains("guitar"){store.walkthrough?.event("searched")}}
-            .onChange(of:space){_,_ in resetSearch();scheduleMeaningSearch()}.onDisappear{searchJob?.cancel();finding=false}
+            .onChange(of:space){_,_ in resetSearch();scheduleMeaningSearch()}.onDisappear{searchJob?.cancel();searchSpeech.stop();finding=false}
+    }
+    func toggleSearchSpeech(){
+        searching=false
+        if searchSpeech.listening{finishingSpeech=true;Task{@MainActor in let text=await searchSpeech.finish();finishingSpeech=false;if !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{query=text}}}else{searchJob?.cancel();finding=false;searchSpeech.toggle()}
     }
     func resetSearch(){searchJob?.cancel();finding=false;ranked=nil;reasoning=nil;searchError=nil}
     func scheduleMeaningSearch(){
-        guard query.trimmingCharacters(in:.whitespacesAndNewlines).count>=3,store.assistantConnected else{return}
+        guard !searchSpeech.listening,!finishingSpeech,query.trimmingCharacters(in:.whitespacesAndNewlines).count>=3,store.assistantConnected else{return}
         searchJob=Task{@MainActor in
             try? await Task.sleep(for:.milliseconds(650));guard !Task.isCancelled else{return};findByMeaning()
         }

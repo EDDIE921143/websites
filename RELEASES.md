@@ -1,3 +1,7 @@
+# 0.3.30 — Context boundaries, voice search and training identity
+
+Retrieve context with a bounded Gemini tool instead of sharing every space. Enforce workspace boundaries on records, chat memories and proposed changes. Add voice search, a dedicated Gym card, quieter chat openings, a Today assistant entry, workspace reminder artwork and a Gym rest chime. Details: docs/UPDATE-0.3.30.md.
+
 # 0.3.29 — Guide, downloads and notes polish
 
 Restore the Ediz OS welcome and flowing guide transitions; add distinct AI Notes and offline-audio lessons and real-screen Gym practice. Correct toolbar, composer and coach spacing. Add resumable audio-part progress, clearer offline status, title-only AI Notes, workspace filters, easier Capture saving and subtle assistant identities. Details: docs/UPDATE-0.3.29.md.

@@ -84,18 +84,19 @@ struct NativeShare:UIViewControllerRepresentable {
     func updateUIViewController(_ controller:UIActivityViewController,context:Context){}
 }
 struct NativeAssistantContext:View {
+    var scope="all"
     @EnvironmentObject var store:NativeStore
     @State private var syncing=false
     var body:some View {
         List {
             Section {
-                Text("Saved context belongs to you. Each chat uses its workspace records; Everyday can use every space.").font(.subheadline).foregroundStyle(Design.muted)
+                Text("Saved context belongs to you. Each bot retrieves relevant records only from its own workspace. Everyday retrieves context for the subject you ask about.").font(.subheadline).foregroundStyle(Design.muted)
                 Button(syncing ? "Refreshing…":"Refresh context") {
                     syncing=true
                     Task{@MainActor in await store.refresh();syncing=false}
                 }.disabled(syncing).accessibilityIdentifier("refresh-assistant-context")
             }
-            ForEach(Catalog.spaces) { space in
+            ForEach(Catalog.spaces.filter{scope == "all" || $0.id == scope}) { space in
                 Section(space.name) {
                     let briefs=store.records.filter{$0.space == space.id && $0.data["contextType"] == "workspace-brief"}
                     ForEach(briefs) { brief in

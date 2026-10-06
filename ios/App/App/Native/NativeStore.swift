@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Combine
 import UIKit
 import Security
@@ -222,6 +223,19 @@ import EdizCore
 
 @MainActor enum NativeReminderScheduler {
     static let prefix="edizos-reminder-"
+    static func identify(_ content:UNMutableNotificationContent,space:String){
+        content.threadIdentifier="edizos-"+space
+        content.userInfo=["workspace":space]
+        content.subtitle=space == "gym" ? "Gym":Catalog.space(space).name
+        let symbol=space == "moshia" ? "moon.stars.fill":space == "gym" ? "dumbbell.fill":space == "band" ? "music.note":space == "school" ? "graduationcap.fill":space == "ejj" ? "briefcase.fill":"sparkles"
+        let renderer=UIGraphicsImageRenderer(size:CGSize(width:160,height:160))
+        let image=renderer.image{context in
+            UIColor(WorkspaceTheme.base(space)).setFill();context.fill(CGRect(x:0,y:0,width:160,height:160))
+            UIImage(systemName:symbol,withConfiguration:UIImage.SymbolConfiguration(pointSize:64,weight:.medium))?.withTintColor(UIColor(WorkspaceTheme.accent(space)),renderingMode:.alwaysOriginal).draw(in:CGRect(x:40,y:40,width:80,height:80))
+        }
+        let url=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".png")
+        if let data=image.pngData(){do{try data.write(to:url);content.attachments=[try UNNotificationAttachment(identifier:space,url:url)]}catch{try? FileManager.default.removeItem(at:url)}}
+    }
     static func setEnabled(_ enabled:Bool,records:[EdizCore.Record]) async -> Bool {
         let center=UNUserNotificationCenter.current()
         if enabled {
@@ -252,12 +266,12 @@ import EdizCore
             let reminder=record.kind == "exam" ? due.addingTimeInterval(-24*60*60):due.addingTimeInterval(-60*60)
             guard reminder>now else{continue}
             let content=UNMutableNotificationContent();content.title=record.kind == "exam" ? "Test coming up":"Coming up in "+Catalog.space(record.space).name
-            content.body=record.title;content.sound = .default
+            content.body=record.title;content.sound = .default;identify(content,space:record.space)
             let trigger=UNCalendarNotificationTrigger(dateMatching:Calendar.current.dateComponents([.year,.month,.day,.hour,.minute],from:reminder),repeats:false)
             try? await center.add(UNNotificationRequest(identifier:prefix+record.id,content:content,trigger:trigger))
         }
         if UserDefaults.standard.bool(forKey:"ediz-writing-nudge"),let chapter=records.filter({$0.space == "moshia" && $0.kind == "chapter" && $0.status != "REJECTED"}).max(by:{$0.updated<$1.updated}) {
-            let content=UNMutableNotificationContent();content.title="A little time for Moshia?";content.body="Pick up \(chapter.title) when you have a moment.";content.sound = .default
+            let content=UNMutableNotificationContent();content.title="A little time for Moshia?";content.body="Pick up \(chapter.title) when you have a moment.";content.sound = .default;identify(content,space:"moshia")
             let trigger=UNCalendarNotificationTrigger(dateMatching:DateComponents(hour:18,minute:0),repeats:true)
             try? await center.add(UNNotificationRequest(identifier:prefix+"writing",content:content,trigger:trigger))
         }

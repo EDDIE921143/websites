@@ -18,11 +18,11 @@ it('uses web tools for weather and research but not private recall or planning',
 });
 it('shares earlier chats as scoped read-only memory and requests dependable structured results',async()=>{
  const token='a'.repeat(64);vi.stubEnv('GEMINI_API_KEY','test');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',token);
- const fetcher=vi.fn(async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'We planned an acoustic warm-up.',recordIds:['memory'],actions:[{type:'update',entityId:'memory',title:'Edit remembered chat',fields:{body:'Changed'}}]})}]},finishReason:'STOP'}]})));vi.stubGlobal('fetch',fetcher);
+ const fetcher=vi.fn(async(_url:any,options:any)=>{if(JSON.parse(options.body).tools?.[0]?.functionDeclarations)return new Response(JSON.stringify({candidates:[{content:{parts:[{functionCall:{name:'read_saved_context',args:{ids:['chat-memory-0']}}}]}}]}));return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'We planned an acoustic warm-up.',recordIds:['memory'],actions:[{type:'update',entityId:'memory',title:'Edit remembered chat',fields:{body:'Changed'}}]})}]},finishReason:'STOP'}]}))});vi.stubGlobal('fetch',fetcher);
  const res={statusCode:0,body:null as any,setHeader(){},status(code:number){this.statusCode=code;return this},json(body:any){this.body=body;return this}};
  await handler({method:'POST',headers:{host:'ediz-os.vercel.app',authorization:'Bearer '+token},body:{question:'What did we agree in our earlier rehearsal conversation?',scope:'band',records:[],memories:[{title:'Warm-up',space:'band',body:'Acoustic warm-up for five minutes.'},{title:'Private client',space:'ejj',body:'Business context'}]}},res);
  expect(res.statusCode).toBe(200);expect(res.body.actions).toEqual([]);expect(res.body.recordIds).toEqual([]);
- const request=JSON.parse((fetcher.mock.calls[0] as any)[1].body);const input=JSON.parse(request.contents[0].parts[0].text);
+ const request=JSON.parse((fetcher.mock.calls[1] as any)[1].body);const input=JSON.parse(request.contents[0].parts[0].text);
  expect(input.conversationMemory).toEqual([{title:'Warm-up',space:'band',body:'Acoustic warm-up for five minutes.',readOnly:true}]);expect(request.generationConfig.responseMimeType).toBe('application/json');expect(request.generationConfig.responseJsonSchema).toBeUndefined();
 });
 it('validates result cards without inventing saved links or accepting unsupported cards',()=>{
