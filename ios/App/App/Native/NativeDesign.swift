@@ -158,8 +158,9 @@ struct SpaceRoute:Hashable { let id:String;var kind:String?=nil }
 struct OSNavigation<Content:View>:View {
     @EnvironmentObject var store:NativeStore
     @ViewBuilder var content:Content
+    @State private var path=NavigationPath()
     var body:some View {
-        NavigationStack {
+        NavigationStack(path:$path) {
             content.navigationDestination(for:EdizCore.Record.self){NativeEditor(record:$0)}
                 .navigationDestination(for:SpaceRoute.self){NativeSpace(route:$0)}
                 .toolbar { ToolbarItem(placement:.topBarTrailing) { NavigationLink { NativeSettings() } label:{ Image(systemName:"slider.horizontal.3").font(.body).foregroundStyle(Design.muted).frame(minWidth:44,minHeight:44) }.accessibilityLabel("Settings and backup").walkthroughTarget("settings",session:store.walkthrough) } }

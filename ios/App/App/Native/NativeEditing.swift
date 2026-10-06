@@ -13,12 +13,14 @@ struct NativeCapture:View {
     @State private var polishBusy=false
     @State private var polishMessage:String?
     @State private var polishJob:Task<Void,Never>?
+    @State private var polishRequest=UUID()
     @State private var assistOpen=false
     @State private var voiceOpen=false
     @State private var voiceFinishing=false
     @State private var voiceStarted=Date()
     @State private var voiceJob:Task<Void,Never>?
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
+    @State private var routingOpen=false
     @State private var explicitDate=false
     @State private var date=Date()
     @StateObject private var speech=NativeThoughtRecorder()
@@ -42,7 +44,7 @@ struct NativeCapture:View {
                     VStack(alignment:.leading,spacing:6){Text("Make room for a thought.").font(.system(size:27,weight:.medium,design:.rounded));Text("Say it or write it. We’ll help put it in its place.").font(.subheadline).foregroundStyle(Design.muted)}.padding(.top,8)
                     Surface {
                         VStack(alignment:.leading,spacing:14){
-                            TextEditor(text:$draft.title).frame(height:170).scrollContentBackground(.hidden).font(.body).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
+                            TextEditor(text:$draft.title).frame(height:150).scrollContentBackground(.hidden).font(.body).focused($typing).accessibilityIdentifier("capture-text").walkthroughTarget("capture-text",session:store.walkthrough)
                             Divider().overlay(Design.muted.opacity(0.15))
                             HStack{Label("YOUR THOUGHT",systemImage:"square.and.pencil").font(.caption2.weight(.medium)).tracking(1).foregroundStyle(Design.muted);Spacer();Button{typing=false;store.walkthrough?.muteForRecording();voicePrefix=draft.title;voiceStarted=Date();voiceOpen=true;speech.toggle()}label:{Label(speech.requesting ? "Starting…":speech.listening ? "Stop":"Speak",systemImage:speech.listening ? "stop.fill":"mic")}.buttonStyle(.bordered).disabled(speech.requesting)}
                             if polishBusy {Label("Making your idea clearer…",systemImage:"sparkles").font(.footnote).foregroundStyle(Design.muted)}
@@ -55,11 +57,12 @@ struct NativeCapture:View {
                     }
                     Surface {
                         VStack(alignment:.leading,spacing:14){
-                            Label("Where it belongs",systemImage:"tray").font(.headline)
+                            DisclosureGroup(isExpanded:$routingOpen){
                             Toggle("Choose the space automatically",isOn:$automatic).font(.subheadline)
                             if !automatic{Picker("Space",selection:$draft.space){ForEach(Catalog.spaces){Text($0.name).tag($0.id)}};Picker("Type",selection:$draft.kind){ForEach(Catalog.space(draft.space).modules){Text($0.label).tag($0.kind)}}}
                             Divider()
                             DisclosureGroup("Add a date"){Toggle("Set a date",isOn:$explicitDate);if explicitDate{DatePicker("When",selection:$date)}}.font(.subheadline)
+                            }label:{Label("Save to "+Catalog.space(preview.space).name,systemImage:"tray").font(.subheadline.weight(.medium))}
                         }
                     }
                     if !draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
@@ -69,8 +72,9 @@ struct NativeCapture:View {
                     }
                 }.padding(20)
             }.scrollDismissesKeyboard(.interactively).background(AppBackdrop(scope:"capture")).navigationTitle("Capture").navigationBarTitleDisplayMode(.inline)
+                .safeAreaInset(edge:.bottom){Button{saveThought()}label:{Label("Save thought",systemImage:"tray.and.arrow.down").frame(maxWidth:.infinity,minHeight:48)}.buttonStyle(ActionStyle()).disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || voiceFinishing).accessibilityIdentifier("capture-save-primary").padding(.horizontal,20).padding(.vertical,10).background(.regularMaterial)}
                 .sheet(isPresented:$assistOpen){NativeRecordAssist(initialTool:.review,record:assistRecord){text,_ in draft.title=text}.environmentObject(store)}
-                .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);if let onFinish{onFinish()}else{dismiss()}}};ToolbarItem(placement:.confirmationAction){Button("Save"){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);store.walkthrough?.event("captured");if let onFinish{onFinish()}else{dismiss()}}}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save").walkthroughTarget("capture-save",session:store.walkthrough)}}
+                .toolbar{ToolbarItem(placement:.cancellationAction){Button("Close"){speech.stop();store.draft(draft);if let onFinish{onFinish()}else{dismiss()}}};ToolbarItem(placement:.confirmationAction){Button("Save"){saveThought()}.disabled(draft.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("capture-save").walkthroughTarget("capture-save",session:store.walkthrough)}}
                 .onAppear{speech.restore(draft.data["_captureAudio"])}
                 .onChange(of:speech.recordingURL){_,url in draft.data["_captureAudio"]=url?.path}
                 .onChange(of:draft){_,value in store.draft(value);if !value.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("capture-typed")}}
@@ -102,6 +106,7 @@ struct NativeCapture:View {
 
         }.tint(Design.accent).preferredColorScheme(.dark)
     }
+    func saveThought(){speech.stop();if store.save(preview,action:"Created"){store.draft(nil);store.walkthrough?.event("captured");if let onFinish{onFinish()}else{dismiss()}}}
     func finishCaptureVoice(){
         guard !voiceFinishing else{return};voiceFinishing=true
         voiceJob=Task{@MainActor in
@@ -114,17 +119,17 @@ struct NativeCapture:View {
 
     func polishIdea(_ original:String){
         guard let token=store.assistantToken else{polishMessage="Your original words are ready to edit. Connect your assistant to polish ideas.";return}
-        polishJob?.cancel();polishBusy=true;polishMessage=nil
+        polishJob?.cancel();polishRequest=UUID();let requestID=polishRequest;polishBusy=true;polishMessage=nil
         polishJob=Task{@MainActor in
-            defer{polishBusy=false}
+            defer{if polishRequest==requestID{polishBusy=false}}
             do{
                 let response=try await GeminiAssistant.answer(question:"Polish this dictated idea into a clear note. Remove filler words and false starts, preserve my meaning and uncertainty, and add no facts or advice. Return only the rewritten note in text, no cards or actions. Original: "+original,records:[],conversation:[],token:token,scope:"personal",requestMode:"capture-polish")
-                guard !Task.isCancelled else{return}
+                guard !Task.isCancelled,polishRequest==requestID else{return}
                 let cleaned=response.text.trimmingCharacters(in:.whitespacesAndNewlines)
                 guard !cleaned.isEmpty else{throw NSError(domain:"Capture",code:1)}
                 polishedVoice=cleaned;draft.data["dictationPolished"]=cleaned
                 if draft.title == original{draft.title=cleaned;polishMessage="Made clearer · your original is still available."}else{polishMessage="Your polished idea is ready. Your edits were kept."}
-            }catch{if !Task.isCancelled{polishMessage="Your original words were kept. The assistant couldn’t polish them right now."}}
+            }catch{if !Task.isCancelled,polishRequest==requestID{polishMessage="Your original words were kept. The assistant couldn’t polish them right now."}}
         }
     }
 
@@ -174,7 +179,7 @@ struct NativeEditor:View {
             }
             Section { Button("Delete item",role:.destructive){deletion=true} }
         }.scrollContentBackground(.hidden).background(AppBackdrop()).onAppear{store.walkthrough?.event("result-open");if startWithAI{aiOpen=true}}.navigationTitle(Catalog.space(record.space).name).navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented:$aiOpen){NativeRecordAssist(record:record){text,replace in if replace{if record.data["notesBeforeAI"] == nil{record.data["notesBeforeAI"]=record.body};record.body=text}else{record.body += (record.body.isEmpty ? "":"\n\n")+text}}}
+            .sheet(isPresented:$aiOpen){NativeRecordAssist(record:record){text,replace in if replace{if record.data["notesBeforeAI"] == nil{record.data["notesBeforeAI"]=record.body};record.body=text}else{record.body += (record.body.isEmpty ? "":"\n\n")+text}}.safeAreaInset(edge:.top){if let session=store.walkthrough{WalkthroughCoach(session:session)}}}
             .toolbar{ToolbarItem(placement:.confirmationAction){Button("Save"){if record.space == "moshia" && record.status == "CANON" && store.records.first(where:{$0.id == record.id})?.status != "CANON"{confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("record-save")}}
             .task{store.remember(record);do{if let draft=try store.database?.editDraft(recordID:record.id){record=draft};files=try store.database?.attachments(recordID:record.id) ?? []}catch{store.error=error.localizedDescription};hasDate=record.due != nil;date=Time.date(record.due) ?? Date()}
             .onChange(of:record){_,value in store.editDraft(value)}
@@ -278,7 +283,7 @@ struct NativeCreation:View {
                     if ["task","assignment","exam","event","rehearsal","lead"].contains(record.kind) {Toggle("Set a date",isOn:$scheduled);if scheduled{DatePicker("When",selection:$date)}}
                 }
             }.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Add "+noun).navigationBarTitleDisplayMode(.inline)
-                .sheet(isPresented:$aiOpen){NativeRecordAssist(record:record){text,replace in if replace{if record.data["notesBeforeAI"] == nil{record.data["notesBeforeAI"]=record.body};record.body=text}else{record.body += (record.body.isEmpty ? "":"\n\n")+text}}}
+                .sheet(isPresented:$aiOpen){NativeRecordAssist(record:record){text,replace in if replace{if record.data["notesBeforeAI"] == nil{record.data["notesBeforeAI"]=record.body};record.body=text}else{record.body += (record.body.isEmpty ? "":"\n\n")+text}}.safeAreaInset(edge:.top){if let session=store.walkthrough{WalkthroughCoach(session:session)}}}
             .toolbar {
                     ToolbarItem(placement:.cancellationAction){Button("Close"){keepDraft();dismiss()}}
                     ToolbarItem(placement:.confirmationAction){Button("Add"){if record.status == "CANON" {confirmCanon=true}else{save()}}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty).accessibilityIdentifier("creation-save").walkthroughTarget("chapter-save",session:store.walkthrough).accessibilityLabel("Add "+noun)}

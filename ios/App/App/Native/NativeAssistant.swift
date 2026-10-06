@@ -59,20 +59,20 @@ struct NativeAssistant:View {
     @EnvironmentObject var store:NativeStore
     @Environment(\.edizCompact) private var compact
     @Environment(\.dynamicTypeSize) private var textSize
-    @ScaledMetric(relativeTo:.body) private var cardHeight:CGFloat=166
-    @ScaledMetric(relativeTo:.body) private var rowHeight:CGFloat=88
+    @ScaledMetric(relativeTo:.body) private var cardHeight:CGFloat=202
+    @ScaledMetric(relativeTo:.body) private var rowHeight:CGFloat=112
     private var rows:Bool{compact || textSize >= .xxLarge}
     @State private var drafts:[String:String]=[:]
     @State private var section="chats"
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:24) {
-                VStack(alignment:.leading,spacing:10) {
+                if section == "chats"{VStack(alignment:.leading,spacing:10) {
                     Text("Here with you, Ediz.").font(Design.font(28,relativeTo:.title))
                     Text("Choose a space. Each conversation starts with your saved context.")
                         .font(Design.font(16,weight:"Regular")).foregroundStyle(Design.muted)
-                }.padding(.top,12)
-                Picker("Assistant section",selection:$section){Text("Chats").tag("chats");Text("AI notes").tag("notes")}.pickerStyle(.segmented).accessibilityIdentifier("assistant-section")
+                }.padding(.top,12)}
+                Picker("Assistant section",selection:$section){Text("Chats").tag("chats");Text("AI notes").tag("notes")}.pickerStyle(.segmented).accessibilityIdentifier("assistant-section").onChange(of:section){_,value in if value=="notes"{store.walkthrough?.event("ai-notes-open")}}
                 if section == "notes" {NativeAINotes()} else {
                 LazyVGrid(columns:rows ? [GridItem(.flexible())]:[GridItem(.flexible()),GridItem(.flexible())],spacing:compact ? 10:14) {
                     workspace("all","Everyday","bubble.left.and.bubble.right.fill")
@@ -96,16 +96,19 @@ struct NativeAssistant:View {
                 VStack(alignment:.leading,spacing:5) {
                     Text(title).font(.headline).foregroundStyle(Design.ink).lineLimit(2)
                     let count=store.records.filter{id == "all" || $0.space == id}.count
+                    Text(WorkspaceBot.purpose(id))
+                        .font(.caption).foregroundStyle(accent).lineLimit(rows ? 1:2)
                     Text(count == 0 ? "Start a conversation":"\(count) saved records")
                         .font(.caption).foregroundStyle(Design.muted).lineLimit(1)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }.padding(16).frame(maxWidth:.infinity,alignment:.leading).frame(minHeight:rows ? rowHeight:cardHeight)
-                .background(Design.surface,in:RoundedRectangle(cornerRadius:compact ? 16:22))
+                .background{WorkspacePanel(scope:id).clipShape(RoundedRectangle(cornerRadius:compact ? 16:22))}
                 .contentShape(RoundedRectangle(cornerRadius:22))
         }.buttonStyle(.plain).accessibilityIdentifier("assistant-workspace-"+id).walkthroughTarget(id == "moshia" ? "assistant-moshia":"",session:store.walkthrough)
     }
 }
 enum WorkspaceBot {
+    static func purpose(_ scope:String)->String{switch scope{case "ejj":return "Clients, websites and next steps";case "band":return "Songs, sound and rehearsal";case "moshia":return "Characters, chapters and continuity";case "school":return "Understand, practise and revise";case "personal":return "Ideas, decisions and your day";case "gym":return "Your plan and training progress";default:return "Think across your spaces"}}
     static func name(_ scope:String)->String {switch scope{case "ejj":return "EJJ Digital Bot";case "band":return "CLEARANCE 19 Bot";case "moshia":return "Moshia Bot";case "school":return "School Bot";case "gym":return "Gym Bot";case "personal":return "Personal Bot";default:return "Everyday Bot"}}
 }
 struct NativeAssistantChat:View {
@@ -188,7 +191,7 @@ struct NativeAssistantChat:View {
             .onDisappear{dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false;if !voiceOpen{activeRequest=UUID();responseTask?.cancel();responseTask=nil;busy=false;callRequest=false;voiceAuto=false;voiceWanted=false;voiceTurn?.cancel();speech.stop();speaker.stop()}}
             .onChange(of:scenePhase){_,phase in if phase == .background{activeRequest=UUID();responseTask?.cancel();responseTask=nil;busy=false;endVoice();dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":scope == "gym" ? "Gym":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
             .onAppear{withAnimation(reducedMotion ? nil:.spring(response:0.3,dampingFraction:0.85)){chatAppeared=true};if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
-            .toolbar { ToolbarItem(placement:.topBarTrailing) { HStack(spacing:6){Button{historyOpen=true}label:{Image(systemName:"bubble.left.and.bubble.right").frame(width:36,height:36)}.accessibilityLabel("Chats").accessibilityIdentifier("workspace-chats");Menu {
+            .toolbar { ToolbarItem(placement:.topBarTrailing) { HStack(spacing:0){Button{historyOpen=true}label:{Image(systemName:"bubble.left.and.bubble.right").frame(width:44,height:44)}.accessibilityLabel("Chats").accessibilityIdentifier("workspace-chats");Menu {
                 Picker("Assistant",selection:$mode) {
                     if store.assistantToken != nil { Text(WorkspaceBot.name(scope)).tag("cloud") }
                     if store.preferences.labs { Text("Local model").tag("local") }
@@ -196,7 +199,7 @@ struct NativeAssistantChat:View {
                 }
                 NavigationLink("Review saved context"){NativeAssistantContext()}
                 Text("Context: \(scopedRecords.count) saved records")
-            } label: { Image(systemName:"info.circle").frame(width:36,height:36) }.accessibilityLabel("Chat context") }.padding(.trailing,8) } }
+            } label: { Image(systemName:"info.circle").frame(width:44,height:44) }.accessibilityLabel("Chat context") }.padding(.trailing,4) } }
     }
     func scrollToBottom(_ reader:ScrollViewProxy) {
         Task{@MainActor in await Task.yield();withAnimation(reducedMotion ? nil:.easeOut(duration:0.18)){if let last=entries.last,last.role == "assistant"{reader.scrollTo(last.id,anchor:.top)}else{reader.scrollTo("conversation-bottom",anchor:.bottom)}}}
@@ -248,7 +251,7 @@ struct NativeAssistantChat:View {
                         }.buttonStyle(.plain).accessibilityLabel("Open attachment "+file.name).accessibilityIdentifier("chat-open-attachment")
                     }
                     Text(entry.text).font(Design.font(16,weight:"Regular"))
-                }.padding(14).background(accent.opacity(0.14),in:RoundedRectangle(cornerRadius:corners)).frame(maxWidth:.infinity,alignment:.trailing)
+                }.padding(14).background(accent.opacity(scope == "moshia" ? 0.10:scope == "band" ? 0.18:0.14),in:RoundedRectangle(cornerRadius:corners)).overlay{RoundedRectangle(cornerRadius:corners).strokeBorder(accent.opacity(0.16),lineWidth:0.5)}.frame(maxWidth:.infinity,alignment:.trailing)
             } else {
                 VStack(alignment:.leading,spacing:10){if let provider=entry.provider{Text(provider == "Gemini" ? WorkspaceBot.name(scope):provider).font(.caption.weight(.medium)).foregroundStyle(accent)};NativeRichText(text:entry.text)
                     if let preview=entry.musicPreview{NativeSongPreview(preview:preview,autoPlay:entry.id==latestPreviewID && !voiceWanted,playbackKey:entry.id)}
@@ -286,7 +289,7 @@ struct NativeAssistantChat:View {
             if !attachments.isEmpty {
                 ScrollView(.horizontal,showsIndicators:false){HStack(spacing:8){ForEach(attachments){file in
                     HStack(spacing:8){
-                        if file.mimeType.hasPrefix("image/"),let picture=UIImage(data:file.bytes){Image(uiImage:picture).resizable().scaledToFill().frame(width:36,height:36).clipped().clipShape(RoundedRectangle(cornerRadius:6))}else{Image(systemName:file.symbol)}
+                        if file.mimeType.hasPrefix("image/"),let picture=UIImage(data:file.bytes){Image(uiImage:picture).resizable().scaledToFill().frame(width:44,height:44).clipped().clipShape(RoundedRectangle(cornerRadius:6))}else{Image(systemName:file.symbol)}
                         if file.mimeType.hasPrefix("audio/"){Button{previewMemo(file)}label:{Label("Voice memo",systemImage:"play.circle.fill")}.font(.caption).accessibilityIdentifier("assistant-memo-preview")}else{Text(file.name).font(.caption).lineLimit(1).frame(maxWidth:140)}
                         Button{attachments.removeAll{$0.id == file.id}}label:{Image(systemName:"xmark.circle.fill").frame(width:32,height:36)}.accessibilityLabel("Remove "+file.name).disabled(busy)
                     }.padding(6).background{WorkspacePanel(scope:scope).clipShape(RoundedRectangle(cornerRadius:12))}
@@ -321,7 +324,7 @@ struct NativeAssistantChat:View {
         .onChange(of:dictation.message){_,error in if let error{mediaError=error}}
         .onChange(of:question){_,value in if !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{store.walkthrough?.event("assistant-typed")}}
             .padding(6).background(Design.raised,in:RoundedRectangle(cornerRadius:corners))
-            .padding(.horizontal,12).padding(.top,6).padding(.bottom,4)
+            .padding(.horizontal,20).padding(.top,8).padding(.bottom,10)
     }
     var recordingBar:some View {
         HStack(spacing:10){

@@ -27,7 +27,7 @@ struct NativeRoot:View {
                     OSNavigation{NativeSearch()}.tabItem{Label("Search",systemImage:"magnifyingglass")}.tag(3)
                     OSNavigation{NativeSpaces()}.tabItem{Label("Spaces",systemImage:"square.stack.3d.up.fill")}.tag(4)
                 }.tint(Design.accent)
-                    .background(NativeTabScrubber(selection:$selected))
+                    .background{if !store.isPractice{NativeTabScrubber(selection:$selected)}}
                     .onChange(of:selected){_,next in if next != 2 {previous=next};store.walkthrough?.event("tab-\(next)") }
                     .sheet(item:$store.captureRequest){seed in Group { if seed.data["_creation"] == "1" { NativeCreation(seed:seed) } else { NativeCapture(seed:seed) } }.presentationDetents([.large]).presentationDragIndicator(.visible)}
                     .fullScreenCover(item:$store.focusRequest){NativeFocus(record:$0)}
@@ -50,15 +50,15 @@ struct NativeRoot:View {
             .animation(reducedMotion ? nil:.easeInOut(duration:0.18),value:store.preferences.density)
             #if DEBUG
             .onAppear{if ProcessInfo.processInfo.arguments.contains("-ui-testing"){UIApplication.shared.isIdleTimerDisabled=true}}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-settings"))){NavigationStack{NativeSettings()}.environmentObject(store)}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-gym-video"))){if let video=GymVideo.clips.first{GymVideoPlayer(video:video)}}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-gym-change"))){GymChangeReview(action:gymChangeFixture).environmentObject(store)}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-rich-reply"))){ScrollView{NativeRichText(text:"### Rhythm and timing\n\n**Deftones** practice notes: start slowly.\n\n- Keep eighth notes even.\n- Use ×, ♭ and ♯ when useful.\n\n```tab\ne|----------------|\nB|----------------|\nG|----------------|\nD|-----2-----2----|\nA|-----2-----2----|\nE|-0-0---0-0------|\n```\n\n| Tempo | Goal |\n|---|---|\n| 80 BPM | Even timing |").padding(24)}.background(AppBackdrop(scope:"band"))}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-complete-recording"))){NativeRecordingDiagnostics()}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-reader-display"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerFixture)}.environmentObject(store)}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-reader-joined"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerJoinedFixture)}.environmentObject(store)}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-reader-audio"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerAudioFixture)}.environmentObject(store)}
-            .sheet(isPresented:.constant(ProcessInfo.processInfo.arguments.contains("-test-manuscript-clean"))){Text("Original sections: \(store.originalManuscript.count); Clean: \( (store.originalManuscript+store.records.filter{$0.data["contextType"] == "original-manuscript"}).allSatisfy{ManuscriptText.clean($0.title)==$0.title && ManuscriptText.clean($0.body)==$0.body} )").accessibilityIdentifier("manuscript-clean-status")}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-settings"))){NavigationStack{NativeSettings()}.environmentObject(store)}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-gym-video"))){if let video=GymVideo.clips.first{GymVideoPlayer(video:video)}}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-gym-change"))){GymChangeReview(action:gymChangeFixture).environmentObject(store)}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-rich-reply"))){ScrollView{NativeRichText(text:"### Rhythm and timing\n\n**Deftones** practice notes: start slowly.\n\n- Keep eighth notes even.\n- Use ×, ♭ and ♯ when useful.\n\n```tab\ne|----------------|\nB|----------------|\nG|----------------|\nD|-----2-----2----|\nA|-----2-----2----|\nE|-0-0---0-0------|\n```\n\n| Tempo | Goal |\n|---|---|\n| 80 BPM | Even timing |").padding(24)}.background(AppBackdrop(scope:"band"))}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-complete-recording"))){NativeRecordingDiagnostics()}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-reader-display"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerFixture)}.environmentObject(store)}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-reader-joined"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerJoinedFixture)}.environmentObject(store)}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-reader-audio"))){NavigationStack{NativeFullBook(chaptersOverride:Self.readerAudioFixture)}.environmentObject(store)}
+            .sheet(isPresented:.constant(!store.isPractice && ProcessInfo.processInfo.arguments.contains("-test-manuscript-clean"))){Text("Original sections: \(store.originalManuscript.count); Clean: \( (store.originalManuscript+store.records.filter{$0.data["contextType"] == "original-manuscript"}).allSatisfy{ManuscriptText.clean($0.title)==$0.title && ManuscriptText.clean($0.body)==$0.body} )").accessibilityIdentifier("manuscript-clean-status")}
             #endif
             .onChange(of:store.assistantConnected){_,connected in if connected { selected=1 } }
             .alert("Ediz OS",isPresented:Binding(get:{store.error != nil},set:{if !$0{store.error=nil}})){Button("OK"){store.error=nil}}message:{Text(store.error ?? "")}
@@ -157,15 +157,15 @@ struct NativeSpaceShortcut:View {
 struct NativeSpaces:View {
     @EnvironmentObject var store:NativeStore
     var body:some View {
-        ScrollView { VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:24) {
+        ScrollViewReader{proxy in ScrollView { VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:24) {
             Text("Your spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
             ForEach(Catalog.spaces){space in
-                VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink(value:SpaceRoute(id:space.id)){HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain).accessibilityIdentifier("space-"+space.id)
-                    HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)){Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44).walkthroughTarget(module.kind == "chapter" ? "chapters":"",session:store.walkthrough)}}}}
-                }.padding(store.preferences.density == "compact" ? 12:24).background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(space.id).opacity(0.18),lineWidth:1)}
+                VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink{NativeSpace(route:SpaceRoute(id:space.id))}label:{HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain).accessibilityIdentifier("space-"+space.id)
+                    HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink{NativeSpace(route:SpaceRoute(id:space.id,kind:module.kind))}label:{Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44).walkthroughTarget(module.kind == "chapter" ? "chapters":"",session:store.walkthrough)}}}}
+                }.padding(store.preferences.density == "compact" ? 12:24).background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(space.id).opacity(0.18),lineWidth:1)}.id(space.id)
             }
-            NavigationLink{NativeGym()}label:{HStack(spacing:15){Image(systemName:"dumbbell.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("gym")).frame(width:46,height:46).background(WorkspaceTheme.accent("gym").opacity(0.12),in:RoundedRectangle(cornerRadius:13));VStack(alignment:.leading,spacing:4){Text("Gym").font(Design.font(19,weight:"DemiBold"));Text("Your plan · Workouts · Progress").font(.subheadline).foregroundStyle(Design.muted)};Spacer();Image(systemName:"chevron.right").foregroundStyle(Design.muted)}.foregroundStyle(Design.ink).padding(20).background(Design.surface,in:RoundedRectangle(cornerRadius:22))}.buttonStyle(.plain).accessibilityIdentifier("space-gym")
-        }.padding(20) }.modifier(BrandedRefresh()).background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces")
+            NavigationLink{NativeGym()}label:{HStack(spacing:15){Image(systemName:"dumbbell.fill").font(.title2).foregroundStyle(WorkspaceTheme.accent("gym")).frame(width:46,height:46).background(WorkspaceTheme.accent("gym").opacity(0.12),in:RoundedRectangle(cornerRadius:13));VStack(alignment:.leading,spacing:4){Text("Gym").font(Design.font(19,weight:"DemiBold"));Text("Your plan · Workouts · Progress").font(.subheadline).foregroundStyle(Design.muted)};Spacer();Image(systemName:"chevron.right").foregroundStyle(Design.muted)}.foregroundStyle(Design.ink).padding(20).background(Design.surface,in:RoundedRectangle(cornerRadius:22))}.buttonStyle(.plain).accessibilityIdentifier("space-gym").id("gym")
+        }.padding(20) }.modifier(BrandedRefresh()).background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces").onAppear{if let kind=store.walkthrough?.kind{let target=kind == .gym ? "gym":kind == .rehearsal ? "band":"moshia";DispatchQueue.main.asyncAfter(deadline:.now()+0.35){proxy.scrollTo(target,anchor:.center)}}}}
     }
 }
 struct NativeSearch:View {

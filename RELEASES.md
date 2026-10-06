@@ -1,3 +1,7 @@
+# 0.3.29 — Guide, downloads and notes polish
+
+Restore the Ediz OS welcome and flowing guide transitions; add distinct AI Notes and offline-audio lessons and real-screen Gym practice. Correct toolbar, composer and coach spacing. Add resumable audio-part progress, clearer offline status, title-only AI Notes, workspace filters, easier Capture saving and subtle assistant identities. Details: docs/UPDATE-0.3.29.md.
+
 # 0.3.28 — Exact five-day Gym plan and clearer guide
 
 Apply Ediz’s corrected five-day split to existing plans, preserve workout data, and explain ten Gym features with fresh natural recordings and adjustable guide speed. Details: docs/UPDATE-0.3.28.md.

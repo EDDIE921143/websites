@@ -151,14 +151,20 @@ struct AssistantResultCard:View {
 struct NativeAINotes:View {
     @EnvironmentObject var store:NativeStore
     @State private var query=""
-    var notes:[EdizCore.Record]{store.records.filter{!$0.body.isEmpty && $0.data["contextType"] != "original-manuscript" && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.body.localizedCaseInsensitiveContains(query))}.sorted{$0.updated>$1.updated}}
+    @State private var space="all"
+    var notes:[EdizCore.Record]{store.records.filter{
+        $0.data["contextType"] == nil && (!$0.body.isEmpty || ["idea","note"].contains($0.kind)) &&
+        (space == "all" || $0.space == space) &&
+        (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.body.localizedCaseInsensitiveContains(query))
+    }.sorted{$0.updated>$1.updated}}
     var body:some View {
         VStack(alignment:.leading,spacing:16){
-            Text("Make your notes clearer.").font(.title3.weight(.medium))
-            Text("Choose saved notes to clarify, summarize, plan or ask questions. Review the result before saving.").font(.subheadline).foregroundStyle(Design.muted)
-            TextField("Find notes",text:$query).textFieldStyle(.roundedBorder).accessibilityIdentifier("ai-notes-search")
-            if notes.isEmpty{QuietEmpty(title:"A place for your thoughts.",message:"Capture a thought or add notes to a workspace to use them here.")}
-            ForEach(notes){record in NavigationLink{NativeEditor(record:record,startWithAI:true)}label:{VStack(alignment:.leading,spacing:6){Text(record.title).font(.headline);Text(Catalog.space(record.space).name).font(.caption).foregroundStyle(Design.muted);Text(record.body).font(.subheadline).foregroundStyle(Design.muted).lineLimit(2)}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(Design.surface,in:RoundedRectangle(cornerRadius:18))}.buttonStyle(.plain).accessibilityIdentifier("ai-notes-"+record.id)}
+            HStack{Text("Your notes, in one place.").font(.title3.weight(.medium));Spacer();Text("\(notes.count)").font(.caption.monospacedDigit()).foregroundStyle(Design.muted)}
+            Text("Find a thought, open it, then choose clarity, questions or next steps.").font(.subheadline).foregroundStyle(Design.muted)
+            VStack(alignment:.leading,spacing:12){TextField("Find notes",text:$query).textFieldStyle(.roundedBorder).frame(minHeight:44).accessibilityIdentifier("ai-notes-search").onChange(of:query){_,value in if value.lowercased().contains("guitar"){store.walkthrough?.event("ai-notes-searched")}};Menu{Button("All spaces"){space="all"}.accessibilityIdentifier("ai-notes-filter-all");ForEach(Catalog.spaces){item in Button(item.name){space=item.id}.accessibilityIdentifier("ai-notes-filter-"+item.id)}}label:{HStack(spacing:10){Image(systemName:"square.grid.2x2");Text(space == "all" ? "All spaces":Catalog.space(space).name);Spacer();Image(systemName:"chevron.down").font(.caption)}.padding(.horizontal,12).frame(maxWidth:.infinity,minHeight:44).background(Design.raised,in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())}.buttonStyle(.plain).accessibilityIdentifier("ai-notes-space").onChange(of:space){_,value in if value=="band"{store.walkthrough?.event("ai-notes-filter")}}}
+            Button{store.captureRequest=CaptureParser.parse("")}label:{Label("Capture a new thought",systemImage:"plus.circle").frame(minHeight:44)}.accessibilityIdentifier("ai-notes-capture")
+            if notes.isEmpty{QuietEmpty(title:query.isEmpty && space == "all" ? "A place for your thoughts.":"No notes in this view.",message:query.isEmpty && space == "all" ? "Capture a thought to start. Ideas appear here even before you add more context.":"Try another space or clear your search.")}
+            LazyVStack(spacing:12){ForEach(notes){record in NavigationLink{NativeEditor(record:record,startWithAI:true)}label:{HStack(alignment:.top,spacing:12){SpaceMark(space:Catalog.space(record.space));VStack(alignment:.leading,spacing:6){Text(record.title).font(.headline).lineLimit(2);Text(Catalog.space(record.space).name+" · "+record.kind+" · "+(Time.date(record.updated)?.formatted(date:.abbreviated,time:.omitted) ?? "")).font(.caption).foregroundStyle(Design.muted);Text(record.body.isEmpty ? "Ready to clarify or turn into next steps":record.body).font(.subheadline).foregroundStyle(Design.muted).lineLimit(2)};Spacer(minLength:0);Image(systemName:"chevron.right").font(.caption).foregroundStyle(Design.muted)}.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(Design.surface,in:RoundedRectangle(cornerRadius:18))}.buttonStyle(.plain).accessibilityIdentifier("ai-notes-"+record.id)}}
         }
     }
 }

@@ -31,6 +31,42 @@ final class EdizOSUITests:XCTestCase {
         app.buttons["rehearsal-review"].tap();XCTAssertTrue(app.buttons["record-save"].waitForExistence(timeout:5));snapshot("Song suggestions reviewed in rehearsal draft");app.buttons["record-save"].tap()
         app.navigationBars.buttons["BackButton"].tap();app.tabBars.buttons["Search"].tap();app.textFields["search-query"].tap();app.textFields["search-query"].typeText("Next rehearsal\n");XCTAssertTrue(app.staticTexts["Next rehearsal"].waitForExistence(timeout:5));app.staticTexts["Next rehearsal"].tap();app.swipeUp();XCTAssertTrue(app.textFields.containing(NSPredicate(format:"value CONTAINS %@","Everlong")).firstMatch.exists)
     }
+    func testCapturedIdeaWithoutBodyAppearsInAINotes(){
+        app.tabBars.buttons["Capture"].tap()
+        let input=app.descendants(matching:.any)["capture-text"];XCTAssertTrue(input.waitForExistence(timeout:5));input.tap();input.typeText("A quiet guitar idea")
+        let save=app.buttons["capture-save-primary"];XCTAssertTrue(save.isHittable);save.tap()
+        app.tabBars.buttons["Assistant"].tap();app.segmentedControls["assistant-section"].buttons["AI notes"].tap()
+        XCTAssertTrue(app.staticTexts["A quiet guitar idea"].waitForExistence(timeout:5));XCTAssertTrue(app.buttons["ai-notes-capture"].exists)
+        snapshot("Title-only captured ideas now appear in AI Notes with space filters")
+        app.staticTexts["A quiet guitar idea"].tap();XCTAssertTrue(app.buttons["record-ai-run"].waitForExistence(timeout:5))
+    }
+    func testNotesFilterFitsWithCoach(){
+        app.buttons["Settings and backup"].tap();let guide=app.buttons["settings-tutorial"];for _ in 0..<8{if guide.isHittable{break};app.swipeUp()};guide.tap();let spoken=app.switches["tutorial-spoken-guide"];if spoken.value as? String == "1"{spoken.tap()};let lesson=app.buttons["tutorial-start-notes"];for _ in 0..<15{if lesson.isHittable{break};app.swipeUp()};lesson.tap();app.buttons["walkthrough-lesson-continue"].tap();app.tabBars.buttons["Assistant"].tap();app.segmentedControls["assistant-section"].buttons["AI notes"].tap()
+        let filter=app.buttons["ai-notes-space"];for _ in 0..<5{if filter.frame.maxY<app.frame.height-110{break};app.swipeUp()}
+        snapshot("Notes controls with consistent margins above the tab bar")
+        for position in [0.25,0.5,0.85]{filter.coordinate(withNormalizedOffset:CGVector(dx:position,dy:0.5)).tap();XCTAssertTrue(app.buttons["CLEARANCE 19"].waitForExistence(timeout:5));app.buttons["ai-notes-filter-all"].tap()}
+        filter.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap();app.buttons["CLEARANCE 19"].tap();XCTAssertTrue(app.staticTexts["Find the thought"].waitForExistence(timeout:5));snapshot("Workspace filter opens across its full width")
+
+    }
+    func testDistinctNotesDownloadAndGymPractice(){
+        func enter(_ kind:String){
+            app.terminate();app.launchArguments=["-ui-testing","-reset-test-data"];app.launch();app.buttons["Settings and backup"].tap();let guide=app.buttons["settings-tutorial"];for _ in 0..<8{if guide.isHittable{break};app.swipeUp()};guide.tap()
+            let spoken=app.switches["tutorial-spoken-guide"];if spoken.value as? String == "1"{spoken.tap()}
+            let lesson=app.buttons["tutorial-start-"+kind];for _ in 0..<15{if lesson.isHittable{break};app.swipeUp()};XCTAssertTrue(lesson.isHittable);lesson.tap();XCTAssertTrue(app.buttons["walkthrough-lesson-continue"].waitForExistence(timeout:5));app.buttons["walkthrough-lesson-continue"].tap()
+        }
+        enter("notes");app.tabBars.buttons["Assistant"].tap();app.segmentedControls["assistant-section"].buttons["AI notes"].tap();let filter=app.buttons["ai-notes-space"];for _ in 0..<5{if filter.frame.maxY<app.frame.height-110{break};app.swipeUp()};snapshot("Notes filter positioned above the tab bar");filter.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap();app.buttons["CLEARANCE 19"].tap();app.textFields["ai-notes-search"].tap();app.textFields["ai-notes-search"].typeText("guitar\n");app.staticTexts["A guitar idea"].tap();XCTAssertTrue(app.buttons["record-ai-run"].waitForExistence(timeout:5));XCTAssertTrue(app.buttons["walkthrough-done"].exists);snapshot("Dedicated notes practice filters and opens a title-only thought")
+        enter("downloads");app.tabBars.buttons["Spaces"].tap();let chapters=app.buttons["Chapters"];for _ in 0..<8{if chapters.isHittable{break};app.swipeUp()};chapters.tap();XCTAssertTrue(app.buttons["full-book-open"].waitForExistence(timeout:5));app.buttons["full-book-open"].tap();app.buttons["Book contents"].tap();let download=app.buttons["book-audiobook-prepare"];for _ in 0..<6{if download.isHittable{break};app.swipeUp()};XCTAssertTrue(download.isEnabled);download.tap();let pause=app.buttons["book-download-pause"];XCTAssertTrue(pause.waitForExistence(timeout:5));pause.tap();XCTAssertTrue(app.staticTexts["Keep your progress"].waitForExistence(timeout:5));download.tap();let play=app.buttons["book-audiobook-start"];expectation(for:NSPredicate(format:"enabled == true"),evaluatedWith:play);waitForExpectations(timeout:40);play.tap();XCTAssertTrue(app.sliders["book-listening-seek"].waitForExistence(timeout:5));snapshot("Dedicated download practice reaches the local audio player")
+        enter("gym");app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"];for _ in 0..<12{if gym.isHittable{break};app.swipeUp()};gym.tap();XCTAssertTrue(app.buttons["gym-weekday-1"].waitForExistence(timeout:5));app.buttons["gym-weekday-1"].tap();let start=app.buttons["gym-start-1"];for _ in 0..<5{if start.isHittable{break};app.swipeUp()};start.tap();let mark=app.buttons["Complete set 1"].firstMatch;for _ in 0..<8{if mark.isHittable{break};app.swipeUp()};XCTAssertTrue(mark.isHittable);let weight=app.textFields["Set 1 weight"].firstMatch;weight.tap();weight.typeText("20");let reps=app.textFields["Set 1 reps"].firstMatch;reps.tap();reps.typeText("10");mark.tap();XCTAssertTrue(app.staticTexts["Save the session"].waitForExistence(timeout:5));app.buttons["gym-finish"].tap();XCTAssertTrue(app.staticTexts["One session stronger."].waitForExistence(timeout:5));snapshot("Gym guide uses actual workout and summary screens")
+    }
+    func testGuideKeepsEssentialsFirstAndAdditionsHavePractice(){
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-settings"];app.launch();app.buttons["settings-tutorial"].tap()
+        let capture=app.buttons["tutorial-start-capture"];XCTAssertTrue(capture.waitForExistence(timeout:5));XCTAssertTrue(capture.isHittable);XCTAssertFalse(app.buttons["tutorial-ai-lab"].isHittable)
+        snapshot("Stable guide starts with Capture and the essentials")
+        let additions=app.buttons["tutorial-new-additions"];for _ in 0..<12{if additions.isHittable{break};app.swipeUp()};additions.tap()
+        let notes=app.buttons["new-notes-lab"];for _ in 0..<5{if notes.isHittable{break};app.swipeUp()};XCTAssertTrue(notes.isHittable);notes.tap()
+        XCTAssertTrue(app.buttons["record-ai-tool-polish"].waitForExistence(timeout:5));XCTAssertTrue(app.buttons["record-ai-tool-review"].exists)
+        snapshot("New additions opens the existing hands-on notes practice")
+    }
     func testAssistantNotesOpensSelectedRecordTools(){
         capture("Notes easy to find")
         app.tabBars.buttons["Search"].tap();app.textFields["search-query"].tap();app.textFields["search-query"].typeText("Notes easy to find\n");app.staticTexts["Notes easy to find"].tap();let context=app.descendants(matching:.any).matching(identifier:"record-context").firstMatch;context.tap();context.typeText("Try a quieter intro at rehearsal.");app.buttons["record-save"].tap()
@@ -39,7 +75,7 @@ final class EdizOSUITests:XCTestCase {
     func testReadingAndRehearsalTutorialsFinishWithRealControls(){
         app.buttons["Settings and backup"].tap();let guide=app.buttons["settings-tutorial"];for _ in 0..<7{if guide.isHittable{break};app.swipeUp()};guide.tap();let spoken=app.switches["tutorial-spoken-guide"];if spoken.value as? String == "1"{spoken.tap()}
         func start(_ id:String){let lesson=app.buttons["tutorial-start-"+id];for _ in 0..<10{if lesson.isHittable{break};app.swipeUp()};XCTAssertTrue(lesson.isHittable);lesson.tap();app.buttons["walkthrough-lesson-continue"].tap()}
-        start("reader");app.tabBars.buttons["Spaces"].tap();let chapters=app.buttons["Chapters"];for _ in 0..<6{if chapters.isHittable{break};app.swipeUp()};chapters.tap();app.buttons["full-book-open"].tap();XCTAssertTrue(app.staticTexts["Turn a page"].waitForExistence(timeout:5));app.buttons["Next page"].tap();app.buttons["Book contents"].tap();app.buttons.containing(.staticText,identifier:"The rehearsal room").firstMatch.tap();XCTAssertTrue(app.buttons["walkthrough-done"].waitForExistence(timeout:5));snapshot("Reading lesson completed with sample chapters");app.buttons["walkthrough-done"].tap()
+        start("reader");app.tabBars.buttons["Spaces"].tap();let chapters=app.buttons["Chapters"];for _ in 0..<6{if chapters.isHittable{break};app.swipeUp()};chapters.tap();app.buttons["full-book-open"].tap();XCTAssertTrue(app.staticTexts["Turn a page"].waitForExistence(timeout:5));app.buttons["Next page"].tap();app.buttons["Book contents"].tap();app.buttons.containing(.staticText,identifier:"The rehearsal room").firstMatch.tap();app.buttons["Book contents"].tap();app.buttons["Done"].tap();XCTAssertTrue(app.buttons["walkthrough-done"].waitForExistence(timeout:5));snapshot("Reading lesson completed with sample chapters");app.buttons["walkthrough-done"].tap()
         start("rehearsal");app.tabBars.buttons["Spaces"].tap();let songs=app.buttons["Songs"];for _ in 0..<6{if songs.isHittable{break};app.swipeUp()};songs.tap();let rehearsal=app.buttons["Rehearsal mode"];for _ in 0..<8{if rehearsal.isHittable{break};app.swipeUp()};XCTAssertTrue(rehearsal.isHittable);rehearsal.tap();XCTAssertTrue(app.staticTexts["Find a comfortable pace"].waitForExistence(timeout:5));app.buttons["Increase tempo"].tap();app.buttons["Start metronome"].tap();XCTAssertTrue(app.staticTexts["Leave room for the music"].waitForExistence(timeout:5));app.buttons["Stop metronome"].tap();XCTAssertTrue(app.buttons["walkthrough-done"].waitForExistence(timeout:5));snapshot("Rehearsal lesson completed inside the real rehearsal view");app.buttons["walkthrough-done"].tap()
     }
     func testImportedManuscriptIsCleanWithoutExposingProse() throws {
@@ -101,11 +137,11 @@ final class EdizOSUITests:XCTestCase {
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-settings"];app.launch()
         let guide=app.buttons["settings-tutorial"];XCTAssertTrue(guide.waitForExistence(timeout:5));XCTAssertTrue(guide.isHittable);guide.tap()
         let additions=app.buttons["tutorial-new-additions"];for _ in 0..<12{if additions.isHittable{break};app.swipeUp()};XCTAssertTrue(additions.isHittable);additions.tap()
-        let music=app.buttons["new-music-tools"];XCTAssertTrue(music.waitForExistence(timeout:5));music.tap();XCTAssertTrue(app.descendants(matching:.any)["music-tab-grid"].waitForExistence(timeout:5));snapshot("Native original tab grid and visual follow-along controls")
+        let music=app.buttons["new-music-tools"];XCTAssertTrue(music.waitForExistence(timeout:5));for _ in 0..<5{if music.isHittable{break};app.swipeUp()};music.tap();XCTAssertTrue(app.descendants(matching:.any)["music-tab-grid"].waitForExistence(timeout:5));snapshot("Native original tab grid and visual follow-along controls")
         app.swipeUp();XCTAssertTrue(app.descendants(matching:.any)["music-chord-diagrams"].exists);snapshot("Drawn guitar chord shapes with open and muted strings")
     }
     func testFiveDayPlanAndTenStepGuide(){
-        app.tabBars.buttons["Spaces"].tap();let gym=app.buttons["space-gym"]
+        app.tabBars.buttons["Spaces"].firstMatch.tap();let gym=app.buttons["space-gym"]
         for _ in 0..<7{if gym.isHittable{break};app.swipeUp()};gym.tap()
         let titles=["Day 1 · Chest","Day 2 · Back","Day 3 · Legs","Day 4 · Back & chest","Day 5 · Arms"]
         let counts=[6,6,5,5,8]
@@ -120,16 +156,7 @@ final class EdizOSUITests:XCTestCase {
         for index in [2,6]{let button=app.buttons["gym-weekday-\(index)"];button.tap();XCTAssertTrue(app.staticTexts["Recovery day · or add your own exercises"].waitForExistence(timeout:5))}
         app.buttons["gym-weekday-0"].tap()
         app.buttons["gym-settings"].tap();XCTAssertTrue(app.buttons["gym-tutorial-start"].waitForExistence(timeout:5));app.buttons["gym-tutorial-start"].tap()
-        let lessons=["Your five training days","Move a training day","Find and add a movement","Watch the demonstration","Adjust sets and targets","Log a working set","Rest and supersets","Finish and check History","Ask Gym Bot for a change","Ready to train"]
-        for (index,title) in lessons.enumerated(){
-            XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout:5))
-            XCTAssertTrue(app.staticTexts["Step \(index+1) of 10 · Practice space"].exists)
-            let skip=app.buttons["gym-guide-skip"]
-            let next=index==9 ? app.buttons["Finish walkthrough"]:app.buttons["Continue"]
-            for _ in 0..<6{if skip.exists && skip.isHittable || next.exists && next.isHittable{break};app.scrollViews.firstMatch.swipeUp()}
-            if index==0{XCTAssertTrue(app.buttons["gym-guide-speed"].exists);snapshot("Shorter Gym guide with replay and adjustable natural narration speed")}
-            if skip.exists{skip.tap()}else{next.tap()}
-        }
+        XCTAssertTrue(app.buttons["walkthrough-lesson-continue"].waitForExistence(timeout:5));app.buttons["walkthrough-lesson-continue"].tap();app.tabBars.buttons["Spaces"].firstMatch.tap();let practiceGym=app.buttons["space-gym"].firstMatch;for _ in 0..<8{if practiceGym.isHittable{break};app.swipeUp()};practiceGym.tap();XCTAssertTrue(app.buttons["gym-weekday-1"].waitForExistence(timeout:5));snapshot("Gym tutorial locates real workout controls in a separate practice app");app.buttons["walkthrough-exit"].tap()
         XCTAssertTrue(app.buttons["gym-tutorial-start"].waitForExistence(timeout:5))
     }
     func testGymDemonstrationOpensRealVideo(){
@@ -169,7 +196,7 @@ final class EdizOSUITests:XCTestCase {
         for _ in 0..<5{if remove.isHittable{break};app.swipeUp()};XCTAssertTrue(remove.isHittable);snapshot("Workout editor with stable exercise sections and visible removal");remove.tap();app.buttons["Remove from this day"].tap();app.buttons["Done"].tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","5 exercises")).firstMatch.waitForExistence(timeout:5))
         app.terminate();app.launchArguments=["-ui-testing"];app.launch();app.tabBars.buttons["Spaces"].tap();let restored=app.buttons["space-gym"];for _ in 0..<7{if restored.isHittable{break};app.swipeUp()};restored.tap();XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label BEGINSWITH %@","5 exercises")).firstMatch.waitForExistence(timeout:5))
-        app.buttons["gym-settings"].tap();XCTAssertTrue(app.buttons["gym-tutorial-start"].waitForExistence(timeout:5));app.buttons["gym-tutorial-start"].tap();XCTAssertTrue(app.staticTexts["Your five training days"].waitForExistence(timeout:5));snapshot("Ten-part Gym tutorial with voice-reactive guide and safe practice controls")
+        app.buttons["gym-settings"].tap();XCTAssertTrue(app.buttons["gym-tutorial-start"].waitForExistence(timeout:5));app.buttons["gym-tutorial-start"].tap();XCTAssertTrue(app.buttons["walkthrough-lesson-continue"].waitForExistence(timeout:5));snapshot("Actual Gym tutorial with voice-reactive coach and separate practice screens")
     }
     func testRichReplyDisplaysHeadingsAndAlignedGuitarTab(){
         app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-rich-reply"];app.launch()
@@ -189,11 +216,13 @@ final class EdizOSUITests:XCTestCase {
         #if targetEnvironment(simulator)
         throw XCTSkip("This test downloads natural audio using the paired device connection.")
         #endif
-        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-reader-audio","-test-connected-assistant"];app.launch()
+        app.terminate();app.launchArguments=["-ui-testing","-reset-test-data","-test-reader-audio","-test-connected-assistant","-reset-test-audio"];app.launch()
         app.buttons["Book contents"].tap()
         let download=app.buttons["book-audiobook-prepare"]
         for _ in 0..<7{if download.isHittable{break};app.swipeUp()}
         XCTAssertTrue(download.isEnabled);download.tap()
+        let pause=app.buttons["book-download-pause"];XCTAssertTrue(pause.waitForExistence(timeout:10));pause.tap()
+        XCTAssertTrue(app.staticTexts["Paused · your completed audio is kept"].waitForExistence(timeout:5));XCTAssertTrue(download.isEnabled);download.tap()
         let play=app.buttons["book-audiobook-start"]
         let ready=NSPredicate(format:"enabled == true")
         expectation(for:ready,evaluatedWith:play);waitForExpectations(timeout:240)
