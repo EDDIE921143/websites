@@ -761,6 +761,28 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["Our fresh rehearsal discussion"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Our old rehearsal discussion"].exists)
         app.buttons["workspace-chats"].tap();XCTAssertEqual(rows.count,1)
     }
+    func testInstallationStatusAndGymCardRefresh(){
+        app.buttons["Settings and backup"].tap()
+        for _ in 0..<10{if app.staticTexts["App & updates"].isHittable{break};app.swipeUp()}
+        XCTAssertTrue(app.staticTexts["App & updates"].exists)
+        #if targetEnvironment(simulator)
+        XCTAssertTrue(app.staticTexts["Installation expiry is shown on signed iPhone builds."].exists)
+        #else
+        XCTAssertTrue(app.descendants(matching:.any).matching(identifier:"installation-status").firstMatch.exists)
+        #endif
+        snapshot("Version and signed installation expiry")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.tabBars.buttons["Spaces"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        let card=app.buttons["space-gym"];XCTAssertTrue(card.waitForExistence(timeout:5));card.tap()
+        let index=(Calendar.current.component(.weekday,from:Date())+5)%7
+        app.buttons["gym-weekday-\(index)"].tap()
+        let edit=app.buttons["gym-edit-day-\(index)"];for _ in 0..<4{if edit.isHittable{break};app.swipeUp()};edit.tap()
+        let field=app.textFields["Day name"];XCTAssertTrue(field.waitForExistence(timeout:5));field.tap()
+        let previous=field.value as? String ?? "";field.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:previous.count)+"Card refresh test")
+        app.buttons["Done"].tap();app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Card refresh test"].waitForExistence(timeout:5))
+        snapshot("Gym card reflects the edited workout immediately")
+    }
     func testSearchVoiceEntryAndGymIdentity(){
         snapshot("Warm Today with assistant entry")
         app.tabBars.buttons["Search"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()

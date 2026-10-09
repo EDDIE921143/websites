@@ -7,3 +7,6 @@ native/
 MAC-HANDOFF.md
 test-results/
 playwright-report/
+
+.native-build/
+__pycache__/

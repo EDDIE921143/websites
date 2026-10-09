@@ -89,6 +89,7 @@ struct NativeToday:View {
         ScrollView {
             VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 13:20) {
                 welcomeHero
+                if !store.isPractice,let validity=NativeInstallation.validity,validity.needsRenewal(){NavigationLink{NativeSettings()}label:{Label("Refresh your iPhone build before "+validity.expires.formatted(date:.abbreviated,time:.omitted),systemImage:"clock.badge.exclamationmark").font(.subheadline).padding(16).frame(maxWidth:.infinity,alignment:.leading).background(Design.surface,in:RoundedRectangle(cornerRadius:18))}.buttonStyle(.plain)}
 
                 if store.preferences.focus != "all" { focusedWorkspace }
                 Surface {VStack(alignment:.leading,spacing:12) {
@@ -178,7 +179,7 @@ struct GymSpaceCard:View {
             HStack(alignment:.top){VStack(alignment:.leading,spacing:7){Text("TRAINING CLUB").font(.caption2.weight(.bold)).tracking(2).foregroundStyle(WorkspaceTheme.accent("gym"));Text("Gym").font(.system(.largeTitle,design:.rounded).weight(.bold))};Spacer();Image(systemName:"dumbbell.fill").font(.system(size:32,weight:.semibold)).rotationEffect(.degrees(-20)).foregroundStyle(WorkspaceTheme.accent("gym")).padding(8)}
             HStack(alignment:.bottom){VStack(alignment:.leading,spacing:6){Text(gym.state.active != nil ? "WORKOUT IN PROGRESS":"TODAY").font(.caption2.weight(.semibold)).foregroundStyle(Design.muted);Text(gym.state.active?.title ?? day?.title ?? "Your training plan").font(.headline);Text(day?.exercises.isEmpty == false ? "\(day!.exercises.count) exercises · Your pace":"Recovery is part of the plan").font(.caption).foregroundStyle(Design.muted)};Spacer();Image(systemName:"arrow.up.right").font(.headline).frame(width:44,height:44).background(WorkspaceTheme.accent("gym").opacity(0.18),in:Circle())}
             HStack(spacing:6){ForEach(0..<7){index in Capsule().fill((gym.state.days.indices.contains(index) && gym.state.days[index].exercises.isEmpty) ? Design.muted.opacity(0.18):WorkspaceTheme.accent("gym").opacity(0.65)).frame(height:4)}}.accessibilityHidden(true)
-        }.foregroundStyle(Design.ink).padding(24).background(Color(red:0.10,green:0.12,blue:0.085),in:RoundedRectangle(cornerRadius:24)).overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent("gym").opacity(0.22),lineWidth:1)}.onAppear{gym.load(store)}
+        }.foregroundStyle(Design.ink).padding(24).background(Color(red:0.10,green:0.12,blue:0.085),in:RoundedRectangle(cornerRadius:24)).overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent("gym").opacity(0.22),lineWidth:1)}.onAppear{gym.load(store);if let text=store.preferences.assistantChats["gym-state"],let saved=try? JSONDecoder().decode(GymState.self,from:Data(text.utf8)){gym.state=saved}}
     }
 }
 struct NativeSearch:View {
@@ -186,6 +187,7 @@ struct NativeSearch:View {
     @State private var query=""
     @StateObject private var searchSpeech=NativeSpeech()
     @State private var finishingSpeech=false
+    @State private var voiceSearchJob:Task<Void,Never>?
     @State private var space="all"
     @State private var ranked:[String]?
     @State private var reasoning:String?
@@ -220,11 +222,11 @@ struct NativeSearch:View {
             }
         }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppBackdrop()).listRowSpacing(store.preferences.density == "compact" ? 4:12).modifier(BrandedRefresh()).navigationTitle("Search")
             .onChange(of:query){_,value in resetSearch();scheduleMeaningSearch();if value.localizedCaseInsensitiveContains("guitar"){store.walkthrough?.event("searched")}}
-            .onChange(of:space){_,_ in resetSearch();scheduleMeaningSearch()}.onDisappear{searchJob?.cancel();searchSpeech.stop();finding=false}
+            .onChange(of:space){_,_ in resetSearch();scheduleMeaningSearch()}.onDisappear{searchJob?.cancel();voiceSearchJob?.cancel();searchSpeech.stop();finishingSpeech=false;finding=false}
     }
     func toggleSearchSpeech(){
         searching=false
-        if searchSpeech.listening{finishingSpeech=true;Task{@MainActor in let text=await searchSpeech.finish();finishingSpeech=false;if !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{query=text}}}else{searchJob?.cancel();finding=false;searchSpeech.toggle()}
+        if searchSpeech.listening{finishingSpeech=true;voiceSearchJob=Task{@MainActor in let text=await searchSpeech.finish();guard !Task.isCancelled else{return};finishingSpeech=false;if !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{query=text}}}else{searchJob?.cancel();finding=false;searchSpeech.toggle()}
     }
     func resetSearch(){searchJob?.cancel();finding=false;ranked=nil;reasoning=nil;searchError=nil}
     func scheduleMeaningSearch(){

@@ -1,3 +1,7 @@
+# 0.3.31 — Restore signing and make updates clearer
+
+Renew the expired Personal Team profile. Show actual installation expiry and an approaching-expiry reminder in Today; validate profile age before device installation. Add one-command checks and installation health. Refresh Gym’s Spaces card after plan edits and cancel unfinished voice Search when leaving. Details: docs/UPDATE-0.3.31.md.
+
 # 0.3.30 — Context boundaries, voice search and training identity
 
 Retrieve context with a bounded Gemini tool instead of sharing every space. Enforce workspace boundaries on records, chat memories and proposed changes. Add voice search, a dedicated Gym card, quieter chat openings, a Today assistant entry, workspace reminder artwork and a Gym rest chime. Details: docs/UPDATE-0.3.30.md.

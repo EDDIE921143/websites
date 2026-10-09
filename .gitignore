@@ -27,3 +27,6 @@ native/**/.swiftpm/
 
 # Private copied manuscript: bundled locally, never uploaded to Git.
 ios/App/App/GuideAudio/PrivateContext/
+
+.native-build/
+__pycache__/

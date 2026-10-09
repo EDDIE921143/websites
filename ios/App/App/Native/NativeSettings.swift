@@ -1,6 +1,24 @@
 import SwiftUI
 import EdizCore
 
+enum NativeInstallation {
+    static let validity:InstallationValidity? = {
+        guard let url=Bundle.main.url(forResource:"embedded",withExtension:"mobileprovision"),let data=try? Data(contentsOf:url) else{return nil}
+        return InstallationValidity.read(data)
+    }()
+    static var version:String {let info=Bundle.main.infoDictionary ?? [:];return (info["CFBundleShortVersionString"] as? String ?? "—")+" · build "+(info["CFBundleVersion"] as? String ?? "—")}
+}
+struct InstallationStatus:View {
+    let validity:InstallationValidity
+    var body:some View {
+        VStack(alignment:.leading,spacing:8){
+            Label(validity.needsRenewal() ? "Refresh your installation soon":"Installation ready",systemImage:validity.needsRenewal() ? "clock.badge.exclamationmark":"checkmark.shield").font(.subheadline.weight(.semibold))
+            Text("Available until "+validity.expires.formatted(date:.abbreviated,time:.shortened)).font(.subheadline).foregroundStyle(Design.muted)
+            if validity.personalTeam{Text("This free iPhone build needs a refresh every seven days. Connect your iPhone to your Mac before this date; reinstalling the update keeps your saved work.").font(.footnote).foregroundStyle(Design.muted)}
+        }.padding(.vertical,6).accessibilityIdentifier("installation-status")
+    }
+}
+
 enum RecordedGuide {
     static var voices:[String]{["Aoede","Puck","Kore"].filter{voice in
         let clips=Set(["intro-ai-lab","welcome","complete","lab-complete"]+RecordAssistTool.allCases.map{"lab-tool-"+$0.id}+WalkthroughKind.allCases.flatMap{kind in kind.recordingKeys})
@@ -71,6 +89,7 @@ struct NativeSettings:View {
                 Picker("Recorded natural voice",selection:$tutorialVoice){ForEach(RecordedGuide.voices,id:\.self){Text($0).tag($0)}}.disabled(RecordedGuide.voices.count<2).accessibilityIdentifier("tutorial-voice-choice")
                 Text("Aoede’s complete guide plays directly from your app, including offline. More recorded narrators need provider capacity; your call offers three natural voices.").font(.footnote).foregroundStyle(Design.muted)
             }
+            Section("App & updates"){LabeledContent("Version",value:NativeInstallation.version);if let validity=NativeInstallation.validity{InstallationStatus(validity:validity)}else{Text("Installation expiry is shown on signed iPhone builds.").font(.footnote).foregroundStyle(Design.muted)}}
             Section("Advanced"){NavigationLink("System health"){NativeHealth()};Text("Native edition "+(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")+" · On-device storage, optional cloud AI.").font(.footnote).foregroundStyle(Design.muted)}
 
         }.onAppear{if !RecordedGuide.voices.contains(tutorialVoice){tutorialVoice="Aoede"};store.walkthrough?.event("settings-open")}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("Settings")
@@ -126,7 +145,7 @@ struct NativeHistory:View {
 }
 struct NativeHealth:View {
     @EnvironmentObject var store:NativeStore
-    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:"Local lexical & fuzzy");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
+    var body:some View { Form{Section("Local system"){LabeledContent("Database",value:"SQLite · WAL");LabeledContent("Records",value:String(store.records.count));LabeledContent("History",value:String(store.activity.count));LabeledContent("Storage",value:"App sandbox");LabeledContent("Offline",value:"Core always available");LabeledContent("Search",value:store.assistantConnected ? "Local + AI meaning search":"Local & fuzzy search");LabeledContent("AI",value:store.assistantConnected ? "Gemini connected":"Saved context");LabeledContent("Version",value:Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—");Text("Records are stored on this device. AI requests share the selected context with that provider. Speech requires on-device recognition. No analytics are collected.").font(.footnote).foregroundStyle(Design.muted)}}.scrollContentBackground(.hidden).background(AppBackdrop()).navigationTitle("System health") }
 }
 
 struct NativeFocusChoice:View {

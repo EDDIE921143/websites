@@ -7,7 +7,7 @@ if [[ "$(uname -s)" != Darwin ]]; then
 fi
 xcodebuild -version >/dev/null
 EDIZ_PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-EDIZ_DEVICE_BUILD="${TMPDIR:-/tmp}/ediz-device-build"
+EDIZ_DEVICE_BUILD="${EDIZ_BUILD_PATH:-$EDIZ_PROJECT_ROOT/.native-build}"
 EDIZ_DEVICE_LIST="$(mktemp)"
 trap 'rm -f "$EDIZ_DEVICE_LIST"' EXIT
 if [[ -z "${EDIZ_TEAM_ID:-}" ]]; then
@@ -48,5 +48,6 @@ xcodebuild -project "$EDIZ_PROJECT_ROOT/ios/App/App.xcodeproj" -scheme App \
   -derivedDataPath "$EDIZ_DEVICE_BUILD" -allowProvisioningUpdates \
   -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM="$EDIZ_TEAM_ID" \
   CODE_SIGN_STYLE=Automatic build
+python3 "$EDIZ_PROJECT_ROOT/scripts/native-health.py" --app "$EDIZ_DEVICE_BUILD/Build/Products/Release-iphoneos/App.app" --minimum-hours 24
 xcrun devicectl device install app --device "$EDIZ_DEVICE_ID" "$EDIZ_DEVICE_BUILD/Build/Products/Release-iphoneos/App.app"
 xcrun devicectl device process launch --device "$EDIZ_DEVICE_ID" com.ediz.os
