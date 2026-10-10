@@ -1,3 +1,7 @@
+# 0.3.32 — Mentor your students
+
+Add Mentor Desk: student profiles, quick bilingual session notes, photo text recognition, their tests and learning goals, a shared calendar and local reminders. Isolate each student’s assistant records, conversations and proposed changes. Use teal workspace styling consistent with the app and a prerecorded natural-voice practice guide. Change CLEARANCE 19’s accent to red. Details: docs/UPDATE-0.3.32.md.
+
 # 0.3.31 — Restore signing and make updates clearer
 
 Renew the expired Personal Team profile. Show actual installation expiry and an approaching-expiry reminder in Today; validate profile age before device installation. Add one-command checks and installation health. Refresh Gym’s Spaces card after plan edits and cancel unfinished voice Search when leaving. Details: docs/UPDATE-0.3.31.md.

@@ -55,6 +55,15 @@ extension NativeStore {
                 item.body=String(thread.entries.map{($0.role == "user" ? "Ediz: ":"Assistant: ")+$0.contextText}.joined(separator:"\n").suffix(12000));item.data["_chatScope"]=scope;item.data["_chatID"]=thread.id.uuidString;corpus.append(item)
             }
         }
+        for key in preferences.assistantChats.keys where key.hasPrefix("history:tutoring:") {
+            let shelfScope=String(key.dropFirst("history:".count)),studentID=String(key.dropFirst("history:tutoring:".count))
+            for thread in chatShelf(shelfScope).threads where !thread.entries.isEmpty {
+                var item=EdizCore.Record(space:"tutoring",kind:"note",title:thread.title)
+                item.id="chat:"+shelfScope+":"+thread.id.uuidString;item.updated=Time.string(thread.updated)
+                item.body=String(thread.entries.map{($0.role == "user" ? "Ediz: ":"Mentor: ")+$0.contextText}.joined(separator:"\n").suffix(12000))
+                item.data=["studentID":studentID,"_chatID":thread.id.uuidString,"_chatScope":shelfScope];corpus.append(item)
+            }
+        }
         return corpus.sorted{$0.updated>$1.updated}
     }
 }

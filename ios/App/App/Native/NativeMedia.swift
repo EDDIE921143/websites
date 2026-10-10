@@ -43,6 +43,7 @@ private final class RecognitionFeed: @unchecked Sendable {
     @Published var level:CGFloat=0
     @Published var levels:[CGFloat]=[]
     @Published var message:String?
+    var localeIdentifier="en-US"
     private let audioID=UUID()
     private var recognitionID=UUID()
     private let engine=AVAudioEngine()
@@ -77,7 +78,7 @@ private final class RecognitionFeed: @unchecked Sendable {
         }}
     }
     private func start(){
-        guard let recognizer=SFSpeechRecognizer(locale:Locale(identifier:"en-US")),recognizer.isAvailable,recognizer.supportsOnDeviceRecognition else{requesting=false;message="On-device transcription isn’t available for this language. Use the keyboard or change your speech language.";return}
+        guard let recognizer=SFSpeechRecognizer(locale:Locale(identifier:localeIdentifier)),recognizer.isAvailable,recognizer.supportsOnDeviceRecognition else{requesting=false;message="On-device transcription isn’t available for this language. Use the keyboard or change your speech language.";return}
         do{
             stop();transcript="";accumulated=DictationTranscript();levels=[];finishing=false;failures=0;sessionID=UUID()
             try NativeAudioSession.activate(audioID,category:.record,mode:.measurement,onReplacement:{[weak self] in self?.stop()})
@@ -829,6 +830,7 @@ struct SongPreviewTransport:View {
 
 /// Capture records the complete thought before transcription; recognition hypotheses never replace its audio.
 @MainActor final class NativeThoughtRecorder:ObservableObject {
+    var localeIdentifier="en-US"
     @Published var listening=false
     @Published var requesting=false
     @Published var transcript=""
@@ -873,7 +875,7 @@ struct SongPreviewTransport:View {
         do{
             if #available(iOS 26.0,*){
                 message="Transcribing your complete thought…"
-                transcript=try await ThoughtTranscription.read(url)
+                transcript=try await ThoughtTranscription.read(url,localeIdentifier:localeIdentifier)
                 message=transcript.isEmpty ? "No speech was detected. Your recording is kept so you can listen or try again.":nil
             }else{message="Complete thought transcription needs iOS 26 or later. Your recording is kept."}
             if !transcript.isEmpty{try? FileManager.default.removeItem(at:url);recordingURL=nil}
@@ -882,8 +884,8 @@ struct SongPreviewTransport:View {
     }
 }
 @available(iOS 26.0,*) enum ThoughtTranscription {
-    static func read(_ url:URL) async throws -> String {
-        guard SpeechTranscriber.isAvailable,let locale=await SpeechTranscriber.supportedLocale(equivalentTo:Locale(identifier:"en-US")) else{throw URLError(.resourceUnavailable)}
+    static func read(_ url:URL,localeIdentifier:String="en-US") async throws -> String {
+        guard SpeechTranscriber.isAvailable,let locale=await SpeechTranscriber.supportedLocale(equivalentTo:Locale(identifier:localeIdentifier)) else{throw URLError(.resourceUnavailable)}
         let transcriber=SpeechTranscriber(locale:locale,preset:.transcription)
         if let assets=try await AssetInventory.assetInstallationRequest(supporting:[transcriber]){try await assets.downloadAndInstall()}
         let analyzer=SpeechAnalyzer(modules:[transcriber])

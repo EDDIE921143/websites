@@ -132,12 +132,14 @@ struct NativeToday:View {
             Text(space.name).font(.largeTitle.weight(.semibold)).foregroundStyle(Design.ink)
             Text(space.summary+" · \(count) saved items").font(.subheadline).foregroundStyle(Design.muted)
             LazyVGrid(columns:[GridItem(.flexible()),GridItem(.flexible())],spacing:12) {
+                if space.id == "tutoring"{NavigationLink{NativeMentorDesk()}label:{Label("Open Mentor Desk",systemImage:"person.2.fill").frame(maxWidth:.infinity,minHeight:50)}.buttonStyle(.bordered)}else{
                 ForEach(Array(space.modules.prefix(4))) { module in
                     NavigationLink(value:SpaceRoute(id:space.id,kind:module.kind)) {
                         Text(module.label).font(.body.weight(.medium)).frame(maxWidth:.infinity,minHeight:50)
                             .background(WorkspaceTheme.accent(space.id).opacity(0.15),in:RoundedRectangle(cornerRadius:16))
                     }.buttonStyle(.plain)
-                }
+                    }
+            }
             }
         }.padding(store.preferences.density == "compact" ? 18:26)
             .frame(maxWidth:.infinity,minHeight:store.preferences.density == "compact" ? 240:300,alignment:.topLeading)
@@ -163,11 +165,13 @@ struct NativeSpaces:View {
             Text("Your spaces. A place for everything.").font(Design.font(15,weight:"Regular")).foregroundStyle(Design.muted).padding(.bottom,4)
             NavigationLink{NativeGym()}label:{GymSpaceCard()}.buttonStyle(.plain).accessibilityIdentifier("space-gym").id("gym")
             ForEach(Catalog.spaces){space in
+                if space.id == "tutoring"{MentorSpaceCard().id(space.id)}else{
                 VStack(alignment:.leading,spacing:store.preferences.density == "compact" ? 10:22){NavigationLink{NativeSpace(route:SpaceRoute(id:space.id))}label:{HStack(spacing:12){SpaceMark(space:space);VStack(alignment:.leading,spacing:4){Text(space.name).font(Design.font(19,weight:"DemiBold"));if store.preferences.density != "compact" {Text(space.summary).font(Design.font(13,weight:"Regular")).foregroundStyle(Design.muted)}};Spacer()}}.buttonStyle(.plain).accessibilityIdentifier("space-"+space.id)
                     HStack(spacing:8){ForEach(Catalog.quickModules(for:space.id)){module in GlassAction{NavigationLink{NativeSpace(route:SpaceRoute(id:space.id,kind:module.kind))}label:{Text(module.label).font(Design.font(13)).frame(maxWidth:.infinity,minHeight:44).walkthroughTarget(module.kind == "chapter" ? "chapters":"",session:store.walkthrough)}}}}
                 }.padding(store.preferences.density == "compact" ? 12:24).background{WorkspacePanel(scope:space.id).clipShape(RoundedRectangle(cornerRadius:24))}.overlay{RoundedRectangle(cornerRadius:24).strokeBorder(WorkspaceTheme.accent(space.id).opacity(0.18),lineWidth:1)}.id(space.id)
+                }
             }
-        }.padding(20) }.modifier(BrandedRefresh()).background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces").onAppear{if let kind=store.walkthrough?.kind{let target=kind == .gym ? "gym":kind == .rehearsal ? "band":"moshia";DispatchQueue.main.asyncAfter(deadline:.now()+0.35){proxy.scrollTo(target,anchor:.center)}}}}
+        }.padding(20) }.modifier(BrandedRefresh()).background(AppBackdrop(scope:"spaces")).navigationTitle("Spaces").onAppear{if let kind=store.walkthrough?.kind{let target=kind == .mentor ? "tutoring":kind == .gym ? "gym":kind == .rehearsal ? "band":"moshia";DispatchQueue.main.asyncAfter(deadline:.now()+0.35){proxy.scrollTo(target,anchor:.center)}}}}
     }
 }
 struct GymSpaceCard:View {

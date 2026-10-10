@@ -108,14 +108,16 @@ struct NativeAssistant:View {
     }
 }
 enum WorkspaceBot {
-    static func purpose(_ scope:String)->String{switch scope{case "ejj":return "Clients, websites and next steps";case "band":return "Songs, sound and rehearsal";case "moshia":return "Characters, chapters and continuity";case "school":return "Understand, practise and revise";case "personal":return "Ideas, decisions and your day";case "gym":return "Your plan and training progress";default:return "Think across your spaces"}}
-    static func name(_ scope:String)->String {switch scope{case "ejj":return "EJJ Digital Bot";case "band":return "CLEARANCE 19 Bot";case "moshia":return "Moshia Bot";case "school":return "School Bot";case "gym":return "Gym Bot";case "personal":return "Personal Bot";default:return "Everyday Bot"}}
+    static func purpose(_ scope:String)->String{switch scope{case "tutoring":return "Your students and their next steps";case "ejj":return "Clients, websites and next steps";case "band":return "Songs, sound and rehearsal";case "moshia":return "Characters, chapters and continuity";case "school":return "Understand, practise and revise";case "personal":return "Ideas, decisions and your day";case "gym":return "Your plan and training progress";default:return "Think across your spaces"}}
+    static func name(_ scope:String)->String {switch scope{case "tutoring":return "Mentor Bot";case "ejj":return "EJJ Digital Bot";case "band":return "CLEARANCE 19 Bot";case "moshia":return "Moshia Bot";case "school":return "School Bot";case "gym":return "Gym Bot";case "personal":return "Personal Bot";default:return "Everyday Bot"}}
 }
 struct NativeAssistantChat:View {
     @EnvironmentObject var store:NativeStore
     @Binding var entries:[ConversationEntry]
     @Binding var question:String
     let scope:String
+    var studentID:String?=nil
+    var historyScope:String?=nil
     var threadID:UUID?=nil
     var selectThread:((UUID)->Void)?=nil
     @State private var historyOpen=false
@@ -152,9 +154,9 @@ struct NativeAssistantChat:View {
     @State private var mode="cloud"
     var accent:Color {WorkspaceTheme.accent(scope)}
     var corners:CGFloat {scope == "moshia" ? 12:scope == "ejj" || scope == "school" ? 16:24}
-    var contextTitle:String {switch scope{case "ejj":return "Business context";case "band":return "Band notes";case "moshia":return "Story context";case "school":return "Study notes";case "gym":return "Your training plan";case "personal":return "Your saved notes";default:return "Across your spaces"}}
-    var opening:String {switch scope{case "ejj":return "What are we building?";case "band":return "What are we rehearsing?";case "moshia":return "Where does the story go next?";case "school":return "What needs your attention?";case "gym":return "What are we training today?";case "personal":return "What would you like to keep?";default:return "What’s on your mind, Ediz?"}}
-    var scopedRecords:[EdizCore.Record]{if scope == "gym"{return store.gymContext};return store.records.filter{scope == "all" || $0.space == scope}}
+    var contextTitle:String {switch scope{case "tutoring":return "Student learning context";case "ejj":return "Business context";case "band":return "Band notes";case "moshia":return "Story context";case "school":return "Study notes";case "gym":return "Your training plan";case "personal":return "Your saved notes";default:return "Across your spaces"}}
+    var opening:String {switch scope{case "tutoring":return "What will you work on together?";case "ejj":return "What are we building?";case "band":return "What are we rehearsing?";case "moshia":return "Where does the story go next?";case "school":return "What needs your attention?";case "gym":return "What are we training today?";case "personal":return "What would you like to keep?";default:return "What’s on your mind, Ediz?"}}
+    var scopedRecords:[EdizCore.Record]{if scope == "gym"{return store.gymContext};if let studentID,scope == "tutoring"{return MentorDesk.context(for:studentID,in:store.records)};return store.records.filter{scope == "all" || $0.space == scope}}
     @State private var readingEntry:UUID?
     @State private var copiedEntry:UUID?
     @State private var latestPreviewID:UUID?
@@ -172,7 +174,7 @@ struct NativeAssistantChat:View {
                 .onChange(of:busy){_,_ in scrollToBottom(reader)}
                 .safeAreaInset(edge:.bottom,spacing:0){composer.background(Design.background)}
         }.sheet(item:$proposal){action in if action.type == "gym"{GymChangeReview(action:action)}else{NativeAssistantReview(action:action)}}
-            .sheet(isPresented:$historyOpen){NavigationStack{NativeChatHistory(scope:scope,current:threadID,select:{id in endVoice();historyOpen=false;selectThread?(id)})}}
+            .sheet(isPresented:$historyOpen){NavigationStack{NativeChatHistory(scope:historyScope ?? scope,current:threadID,select:{id in endVoice();historyOpen=false;selectThread?(id)})}}
             .sheet(isPresented:$attachmentOptions,onDismiss:{let choice=attachmentChoice;attachmentChoice=nil;mediaError=nil;if choice == "media"{choosingMedia=true}else if choice == "file"{importingFiles=true}}){
                 VStack(alignment:.leading,spacing:18){
                     Text("Add to your message").font(.title3.weight(.semibold))
@@ -189,15 +191,16 @@ struct NativeAssistantChat:View {
             .onChange(of:speech.transcript){_,value in scheduleVoice(value)}
             .onChange(of:entries.count){_,_ in if voiceWanted && voiceAuto,let last=entries.last,last.role == "assistant"{if last.musicPreview != nil{pauseVoice();return};speech.stop();speaker.say(last.spokenText ?? last.text,token:store.assistantToken,natural:true,voice:NativeVoicePreferences.defaults.string(forKey:"assistant-natural-voice-name") ?? "Aoede")}}
             .onDisappear{dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false;if !voiceOpen{activeRequest=UUID();responseTask?.cancel();responseTask=nil;busy=false;callRequest=false;voiceAuto=false;voiceWanted=false;voiceTurn?.cancel();speech.stop();speaker.stop()}}
-            .onChange(of:scenePhase){_,phase in if phase == .background{activeRequest=UUID();responseTask?.cancel();responseTask=nil;busy=false;endVoice();dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(scope == "all" ? "Everyday":scope == "gym" ? "Gym":Catalog.space(scope).name).navigationBarTitleDisplayMode(.inline)
-            .onAppear{withAnimation(reducedMotion ? nil:.spring(response:0.3,dampingFraction:0.85)){chatAppeared=true};if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
+            .onChange(of:scenePhase){_,phase in if phase == .background{activeRequest=UUID();responseTask?.cancel();responseTask=nil;busy=false;endVoice();dictationJob?.cancel();dictation.stop();dictating=false;transcribing=false}}.background(AppBackdrop(scope:scope)).tint(accent).navigationTitle(studentID.flatMap{id in store.records.first{$0.id == id}?.title} ?? (scope == "all" ? "Everyday":scope == "gym" ? "Gym":Catalog.space(scope).name)).navigationBarTitleDisplayMode(.inline)
+            .onAppear{if scope == "tutoring"{speech.localeIdentifier="de-DE";dictation.localeIdentifier="de-DE"};withAnimation(reducedMotion ? nil:.spring(response:0.3,dampingFraction:0.85)){chatAppeared=true};if scope == "moshia"{store.walkthrough?.event("chat-open")};if store.assistantToken == nil && mode == "cloud"{mode="saved"}}
             .toolbar { ToolbarItem(placement:.topBarTrailing) { HStack(spacing:0){Button{historyOpen=true}label:{Image(systemName:"bubble.left.and.bubble.right").frame(width:44,height:44)}.accessibilityLabel("Chats").accessibilityIdentifier("workspace-chats");Menu {
+                if let historyScope{Button("New conversation"){endVoice();selectThread?(store.openThread(scope:historyScope,new:true))}}
                 Picker("Assistant",selection:$mode) {
                     if store.assistantToken != nil { Text(WorkspaceBot.name(scope)).tag("cloud") }
                     if store.preferences.labs { Text("Local model").tag("local") }
                     Text("Saved context").tag("saved")
                 }
-                NavigationLink("Review saved context"){NativeAssistantContext(scope:scope)}
+                NavigationLink("Review saved context"){if let studentID{MentorStudentPage(studentID:studentID)}else{NativeAssistantContext(scope:scope)}}
                 Text(scope == "all" ? "Relevant context is retrieved when you ask":"Context stays within this workspace")
             } label: { Image(systemName:"info.circle").frame(width:44,height:44) }.accessibilityLabel("Chat context") }.padding(.trailing,4) } }
     }
@@ -401,10 +404,10 @@ struct NativeAssistantChat:View {
             responseTask=Task{@MainActor in
                 defer{if activeRequest==requestID{busy=false;callRequest=false}}
                 do{
-                    let memories=store.searchableMemories().filter{$0.data["_chatID"] != nil && $0.data["_chatID"] != threadID?.uuidString && (scope == "all" || $0.space == scope)}
+                    let memories=store.searchableMemories().filter{$0.data["_chatID"] != nil && $0.data["_chatID"] != threadID?.uuidString && (scope == "all" || $0.space == scope) && (studentID == nil || $0.data["studentID"] == studentID)}
                     let earlier=outgoing.isEmpty ? earlierMedia(for:q,in:conversation):(requested:false,files:[])
                     if earlier.requested && earlier.files.isEmpty {throw NSError(domain:"EdizAssistant",code:2,userInfo:[NSLocalizedDescriptionKey:"I can’t reopen that earlier attachment. Please attach it again so I can answer without guessing."])}
-                    let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing+earlier.files,voiceMode:inCall,memories:needsContext ? Array(memories.prefix(12)):[],earlierMedia:earlier.files.map(\.name))
+                    let answer=try await GeminiAssistant.answer(question:q,records:context,conversation:conversation,token:token,scope:scope,attachments:outgoing+earlier.files,voiceMode:inCall,memories:needsContext ? Array(memories.prefix(12)):[],earlierMedia:earlier.files.map(\.name),studentID:studentID)
                     guard !Task.isCancelled,activeRequest==requestID,(!inCall || voiceWanted) else{return}
                     attachments.removeAll{file in outgoing.contains{$0.id == file.id}}
                     let newReply=ConversationEntry(role:"assistant",text:answer.text,records:answer.recordIds.compactMap{id in context.first{$0.id == id}},actions:answer.actions,sources:answer.sources ?? [],searchSuggestions:answer.searchSuggestions,provider:WorkspaceBot.name(scope),cards:answer.cards,spokenText:answer.spokenText,musicPreview:answer.musicPreview,presentResults:answer.presentResults);latestPreviewID=newReply.id;entries.append(newReply)
@@ -523,10 +526,10 @@ struct NativeSearchSuggestions:UIViewRepresentable {
     }
 }
 enum GeminiAssistant {
-    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String,attachments:[AssistantAttachment]=[],voiceMode:Bool=false,requestMode:String="chat",memories:[EdizCore.Record]=[],earlierMedia:[String]=[]) async throws -> GeminiResponse {
+    static func answer(question:String,records:[EdizCore.Record],conversation:[ConversationEntry],token:String,scope:String,attachments:[AssistantAttachment]=[],voiceMode:Bool=false,requestMode:String="chat",memories:[EdizCore.Record]=[],earlierMedia:[String]=[],studentID:String?=nil) async throws -> GeminiResponse {
         var request=URLRequest(url:URL(string:"https://ediz-os.vercel.app/api/assistant")!);request.httpMethod="POST";request.timeoutInterval=90;request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.setValue("Bearer "+token,forHTTPHeaderField:"Authorization")
         let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(Array(records.prefix(requestMode == "exercise-search" ? 1200:500))))
-        request.httpBody=try JSONSerialization.data(withJSONObject:["mode":requestMode,"voiceMode":voiceMode,"question":question,"scope":scope,"records":encoded,"memories":memories.prefix(12).map{["title":$0.title,"space":$0.space,"id":$0.id,"body":String($0.body.suffix(6000))]},"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.contextText]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"earlierMedia":earlierMedia,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
+        request.httpBody=try JSONSerialization.data(withJSONObject:["studentId":studentID ?? "","mode":requestMode,"voiceMode":voiceMode,"question":question,"scope":scope,"records":encoded,"memories":memories.prefix(12).map{["title":$0.title,"space":$0.space,"id":$0.id,"body":String($0.body.suffix(6000)),"data":["studentID":$0.data["studentID"] ?? ""]]},"conversation":conversation.suffix(8).map{["role":$0.role,"text":$0.contextText]},"localDate":ISO8601DateFormatter().string(from:Date()),"timeZone":TimeZone.current.identifier,"earlierMedia":earlierMedia,"attachments":attachments.map{["name":$0.name,"mimeType":$0.mimeType,"data":$0.bytes.base64EncodedString()]}])
         for attempt in 0...1 {
             try Task.checkCancellation()
             let data:Data,response:URLResponse

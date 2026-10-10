@@ -22,7 +22,8 @@ export default async function handler(req,res) {
  if(count>=30)return res.status(429).json({error:'A few too many requests at once. Try again in a minute.'});
  if(body?.mode==='speech-stream'){
   if(typeof body.text!=='string'||!body.text.trim()||body.text.length>2000)return res.status(400).json({error:'Use a shorter reply for speech.'});
-  const controller=new AbortController();res.on('close',()=>{if(!res.writableEnded)controller.abort()});
+  if(body.scope==='tutoring'&&body.studentId)body.memories=body.memories.filter(m=>m.data.studentID===body.studentId);
+ const controller=new AbortController();res.on('close',()=>{if(!res.writableEnded)controller.abort()});
   res.status(200);res.setHeader('Content-Type','application/x-ndjson');res.setHeader('Cache-Control','no-store, no-transform');
   try{let speechModel;for await(const bytes of speechChunks(body.text,apiKey,body.voice,controller.signal,body.speechModel,model=>{speechModel=model})){if(controller.signal.aborted)break;res.write(JSON.stringify({audio:bytes.toString('base64'),rate:24000,model:speechModel})+'\n')};if(!controller.signal.aborted)res.write(JSON.stringify({done:true})+'\n')}
   catch(error){if(!controller.signal.aborted)res.write(JSON.stringify({error:error.message})+'\n')}
@@ -31,10 +32,11 @@ export default async function handler(req,res) {
  if(body?.mode==='speech'){try{return res.status(200).json(await generatedSpeech(body.text,apiKey,body.voice))}catch(error){return res.status(error.status===429?429:503).json({error:error.message,...(error.quota?{quota:error.quota}:{})})}}
  if(body?.mode==='image'){if(typeof body.question!=='string'||!body.question.trim()||body.question.length>4000)return res.status(400).json({error:'Describe the image in a shorter message.'});try{return res.status(200).json(await generateImage(apiKey,body.question))}catch(error){return res.status(error.status||503).json({error:error.message})}}
  if(!body||typeof body.question!=='string'||!body.question.trim()||body.question.length>(body.mode==='capture-polish'?32000:8000)||!Array.isArray(body.records)||body.records.some(record=>!record||typeof record!=='object'||typeof record.id!=='string')||body.records.length>(body.mode==='exercise-search'?1200:500)||(body.conversation!=null&&!Array.isArray(body.conversation))||JSON.stringify(body).length>4100000)return res.status(400).json({error:'Share up to 500 records and a shorter question.'});
- if(body.scope!=null&&!['all','ejj','band','moshia','school','personal','gym'].includes(body.scope))return res.status(400).json({error:'Choose a valid workspace.'});
+ if(body.scope!=null&&!['all','ejj','band','moshia','school','personal','gym','tutoring'].includes(body.scope))return res.status(400).json({error:'Choose a valid workspace.'});
  body.scope ||= 'all';
  body.records=scopedItems(body.records,body.scope);
- body.memories=scopedItems((Array.isArray(body.memories)?body.memories:[]).map((item,index)=>({...item,id:'chat-memory-'+index,data:{readOnly:'true'}})),body.scope);
+ if(body.scope==='tutoring'&&body.studentId){if(typeof body.studentId!=='string'||body.studentId.length>100)return res.status(400).json({error:'Choose one student.'});body.records=body.records.filter(r=>r.id===body.studentId||r.data?.studentID===body.studentId);}
+ body.memories=scopedItems((Array.isArray(body.memories)?body.memories:[]).map((item,index)=>({...item,id:'chat-memory-'+index,data:{readOnly:'true',studentID:typeof item.data?.studentID==='string'?item.data.studentID:''}})),body.scope);
  const controller=new AbortController();res.on?.('close',()=>{if(!res.writableEnded)controller.abort()});
  let media;try{media=attachmentParts(body.attachments)}catch(error){return res.status(400).json({error:error.message})}
  if(body.mode?.startsWith('record-')&&(body.records.length!==1||media.length))return res.status(400).json({error:'Choose one item without attachments for these writing tools.'});
@@ -86,6 +88,7 @@ export default async function handler(req,res) {
   const metadata=result.candidates?.[0]?.groundingMetadata;
   const reply=validated;
   if(body.scope!=='all')reply.actions=reply.actions.filter(action=>action.type==='gym'?body.scope==='gym':(!action.fields?.space||action.fields.space===body.scope));
+  if(body.scope==='tutoring'&&body.studentId){reply.actions=reply.actions.filter(a=>a.type==='create'||body.records.some(r=>r.id===a.entityId&&r.data?.studentID===body.studentId)).map(a=>({...a,fields:{...a.fields,space:'tutoring',data:{...a.fields?.data,studentID:body.studentId,studentName:body.records.find(r=>r.id===body.studentId)?.title||''}}}));}
   if(body.mode==='song-recommendations'){reply.actions=[];}
   if(body.mode==='song-recommendations')reply.songSuggestions=(Array.isArray(parsed.songSuggestions)?parsed.songSuggestions:[]).filter(item=>item&&typeof item.title==='string'&&typeof item.artist==='string'&&typeof item.reason==='string').slice(0,20).map(item=>({title:item.title.slice(0,160),artist:item.artist.slice(0,160),reason:item.reason.slice(0,400)}));if(special){reply.actions=[];delete reply.cards;}
   if(greeting||readOnlyRequest(body.question))reply.actions=[];

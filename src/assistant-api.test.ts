@@ -100,3 +100,18 @@ it('blocks foreign records and cross-workspace creations at the API boundary',as
  expect(res.statusCode).toBe(200);expect((res.body as any).actions).toEqual([]);
  expect((fetcher.mock.calls[0] as any)[1].body).not.toContain('BUSINESS SECRET');expect((fetcher.mock.calls[0] as any)[1].body).not.toContain('PRIVATE CLIENT');
 });
+
+it('confines Mentor Desk to the selected student and preserves student ownership on proposed edits',async()=>{
+ vi.stubEnv('GEMINI_API_KEY','test-key');vi.stubEnv('EDIZ_ASSISTANT_TOKEN',credential);
+ const student={id:'student-a',space:'tutoring',kind:'note',title:'Alex Example',body:'',data:{mentorType:'student'}};
+ const note={id:'note-a',space:'tutoring',kind:'note',title:'Fractions',body:'STUDENT_A_ONLY',data:{studentID:'student-a',mentorType:'session'}};
+ const other={id:'note-b',space:'tutoring',kind:'note',title:'Private',body:'STUDENT_B_SECRET',data:{studentID:'student-b'}};
+ const fetcher=vi.fn(async(_url:string,options:any)=>{
+  const payload=JSON.parse(options.body);
+  if(payload.toolConfig)return new Response(JSON.stringify({candidates:[{content:{parts:[{functionCall:{name:'read_saved_context',args:{ids:['student-a','note-a','note-b','school-note']}}}]}}]}));
+  return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({text:'Here is a next step to review.',actions:[{type:'update',entityId:'note-b',title:'Unsafe edit',fields:{body:'Changed'}},{type:'create',title:'Next lesson',fields:{space:'tutoring',kind:'task',title:'Practise fractions',data:{studentID:'student-b'}}}]})}]},finishReason:'STOP'}]}));
+ });vi.stubGlobal('fetch',fetcher);
+ const res=response();await handler(request({question:'Plan the next lesson from my saved notes',scope:'tutoring',studentId:'student-a',records:[student,note,other,{id:'school-note',space:'school',kind:'note',body:'EDIZ_SCHOOL_SECRET'}],memories:[{id:'other-memory',title:'Other student chat',space:'tutoring',body:'OTHER_STUDENT_CHAT_SECRET',data:{studentID:'student-b'}}]}),res);
+ expect(res.statusCode).toBe(200);expect(JSON.stringify(fetcher.mock.calls)).not.toContain('STUDENT_B_SECRET');expect(JSON.stringify(fetcher.mock.calls)).not.toContain('EDIZ_SCHOOL_SECRET');expect(JSON.stringify(fetcher.mock.calls)).not.toContain('OTHER_STUDENT_CHAT_SECRET');
+ expect((res.body as any).actions).toHaveLength(1);expect((res.body as any).actions[0].fields.data.studentID).toBe('student-a');
+});

@@ -761,6 +761,80 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["Our fresh rehearsal discussion"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Our old rehearsal discussion"].exists)
         app.buttons["workspace-chats"].tap();XCTAssertEqual(rows.count,1)
     }
+    func testMentorStudentSessionAndCalendar(){
+        app.tabBars.buttons["Spaces"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        let mentor=app.buttons["space-tutoring"]
+        for _ in 0..<8{if mentor.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(mentor.isHittable);mentor.tap()
+        app.buttons["mentor-add-student"].tap()
+        let first=app.textFields["mentor-first-name"];XCTAssertTrue(first.waitForExistence(timeout:5));first.tap();first.typeText("Alex")
+        app.textFields["mentor-last-name"].tap();app.textFields["mentor-last-name"].typeText("Example")
+        app.textFields["mentor-subjects"].tap();app.textFields["mentor-subjects"].typeText("Maths, English")
+        app.buttons["mentor-save-student"].tap()
+        XCTAssertTrue(app.staticTexts["Alex Example"].waitForExistence(timeout:5));snapshot("Mentor Desk student overview")
+        app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","mentor-student-")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["mentor-log-session"].waitForExistence(timeout:5));app.buttons["mentor-log-session"].tap()
+        let title=app.textFields["mentor-item-title"];XCTAssertTrue(title.waitForExistence(timeout:5));title.tap();title.typeText("Fractions together")
+        let note=app.textViews["mentor-item-body"];note.tap();note.typeText("Heute haben wir Brueche geuebt. Naechstes Mal kuerzen.")
+        app.buttons["mentor-save-item"].tap();XCTAssertTrue(app.staticTexts["Fractions together"].waitForExistence(timeout:5));snapshot("Student session journal")
+        app.buttons["Their test"].tap();app.textFields["mentor-item-title"].tap();app.textFields["mentor-item-title"].typeText("Fractions test")
+        app.buttons["mentor-save-item"].tap();XCTAssertTrue(app.staticTexts["Fractions test"].waitForExistence(timeout:5));snapshot("Their test linked to the student")
+        app.coordinate(withNormalizedOffset:CGVector(dx:0.01,dy:0.67)).press(forDuration:0.1,thenDragTo:app.coordinate(withNormalizedOffset:CGVector(dx:0.9,dy:0.67)))
+        app.buttons["Calendar"].tap();XCTAssertTrue(app.staticTexts["Fractions test"].waitForExistence(timeout:5));snapshot("Mentor Desk calendar")
+        app.terminate();app.launchArguments=["-ui-testing"];app.launch()
+        app.tabBars.buttons["Spaces"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        for _ in 0..<8{if mentor.isHittable{break};app.swipeUp()};mentor.tap()
+        XCTAssertTrue(app.staticTexts["Alex Example"].waitForExistence(timeout:5))
+    }
+    func testMentorStudentSessionOnDevice(){
+        app.tabBars.buttons["Spaces"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        let mentor=app.buttons["space-tutoring"]
+        for _ in 0..<8{if mentor.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(mentor.isHittable);mentor.tap()
+        app.buttons["mentor-add-student"].tap()
+        let first=app.textFields["mentor-first-name"];XCTAssertTrue(first.waitForExistence(timeout:5));first.tap();first.typeText("Alex")
+        app.textFields["mentor-last-name"].tap();app.textFields["mentor-last-name"].typeText("Example")
+        app.textFields["mentor-subjects"].tap();app.textFields["mentor-subjects"].typeText("Maths, English")
+        app.buttons["mentor-save-student"].tap()
+        XCTAssertTrue(app.staticTexts["Alex Example"].waitForExistence(timeout:5));snapshot("Mentor Desk student overview")
+        app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","mentor-student-")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["mentor-log-session"].waitForExistence(timeout:5));app.buttons["mentor-log-session"].tap()
+        let title=app.textFields["mentor-item-title"];XCTAssertTrue(title.waitForExistence(timeout:5));title.tap();title.typeText("Fractions together")
+        let note=app.textViews["mentor-item-body"];note.tap();note.typeText("Heute haben wir Brueche geuebt. Naechstes Mal kuerzen.")
+        app.buttons["mentor-save-item"].tap();XCTAssertTrue(app.staticTexts["Fractions together"].waitForExistence(timeout:5));snapshot("Student session journal")
+        app.buttons["Their test"].tap();app.textFields["mentor-item-title"].tap();app.textFields["mentor-item-title"].typeText("Fractions test")
+        app.buttons["mentor-save-item"].tap();XCTAssertTrue(app.staticTexts["Fractions test"].waitForExistence(timeout:5));snapshot("Their test linked to the student")
+        app.terminate();app.launchArguments=["-ui-testing"];app.launch()
+        app.tabBars.buttons["Spaces"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        for _ in 0..<8{if mentor.isHittable{break};app.swipeUp()};mentor.tap()
+        XCTAssertTrue(app.staticTexts["Alex Example"].waitForExistence(timeout:5))
+    }
+    func testMentorInteractiveGuide(){
+        app.buttons["Settings and backup"].tap();app.buttons["settings-tutorial"].tap()
+        let lesson=app.buttons["tutorial-start-mentor"];for _ in 0..<16{if lesson.isHittable{break};app.swipeUp()};XCTAssertTrue(lesson.isHittable);lesson.tap()
+        XCTAssertTrue(app.buttons["walkthrough-lesson-continue"].waitForExistence(timeout:5));snapshot("Mentor Desk spoken introduction");app.buttons["walkthrough-lesson-continue"].tap()
+        app.tabBars.buttons["Spaces"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        let mentor=app.buttons["space-tutoring"]
+        for _ in 0..<8{if mentor.isHittable{break};app.swipeUp()}
+        XCTAssertTrue(mentor.isHittable);mentor.tap()
+        app.buttons["mentor-add-student"].tap()
+        let first=app.textFields["mentor-first-name"];XCTAssertTrue(first.waitForExistence(timeout:5));first.tap();first.typeText("Alex")
+        app.textFields["mentor-last-name"].tap();app.textFields["mentor-last-name"].typeText("Example")
+        app.textFields["mentor-subjects"].tap();app.textFields["mentor-subjects"].typeText("Maths, English")
+        snapshot("Mentor practice student form with coach");app.buttons["mentor-save-student"].tap()
+        XCTAssertTrue(app.staticTexts["Alex Example"].waitForExistence(timeout:5));snapshot("Mentor Desk student overview")
+        app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","mentor-student-")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["mentor-log-session"].waitForExistence(timeout:5));app.buttons["mentor-log-session"].tap()
+        let title=app.textFields["mentor-item-title"];XCTAssertTrue(title.waitForExistence(timeout:5));title.tap();title.typeText("Fractions together")
+        let note=app.textViews["mentor-item-body"];note.tap();note.typeText("Heute haben wir Brueche geuebt. Naechstes Mal kuerzen.")
+        app.buttons["mentor-save-item"].tap();XCTAssertTrue(app.staticTexts["Fractions together"].waitForExistence(timeout:5));snapshot("Student session journal")
+        app.buttons["Their test"].tap();app.textFields["mentor-item-title"].tap();app.textFields["mentor-item-title"].typeText("Fractions test")
+        app.buttons["mentor-save-item"].tap();XCTAssertTrue(app.staticTexts["Fractions test"].waitForExistence(timeout:5));snapshot("Their test linked to the student")
+        app.coordinate(withNormalizedOffset:CGVector(dx:0.01,dy:0.67)).press(forDuration:0.1,thenDragTo:app.coordinate(withNormalizedOffset:CGVector(dx:0.9,dy:0.67)))
+        app.buttons["Calendar"].tap();XCTAssertTrue(app.staticTexts["Fractions test"].waitForExistence(timeout:5));snapshot("Mentor Desk calendar")
+        XCTAssertTrue(app.buttons["walkthrough-done"].waitForExistence(timeout:5));snapshot("Mentor Desk guided practice complete")
+        app.buttons["walkthrough-done"].tap()
+    }
     func testInstallationStatusAndGymCardRefresh(){
         app.buttons["Settings and backup"].tap()
         for _ in 0..<10{if app.staticTexts["App & updates"].isHittable{break};app.swipeUp()}

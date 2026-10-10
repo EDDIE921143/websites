@@ -20,8 +20,9 @@ enum WorkspaceTheme {
     static func base(_ scope:String)->Color {
         switch scope {
         case "ejj":return Color(red:0.055,green:0.070,blue:0.085)
-        case "band":return Color(red:0.105,green:0.060,blue:0.050)
+        case "band":return Color(red:0.13,green:0.045,blue:0.045)
         case "moshia":return Color(red:0.14,green:0.105,blue:0.065)
+        case "tutoring":return Color(red:0.035,green:0.105,blue:0.10)
         case "school":return Color(red:0.025,green:0.105,blue:0.09)
         case "personal":return Color(red:0.115,green:0.075,blue:0.12)
         case "gym":return Color(red:0.075,green:0.090,blue:0.065)
@@ -33,8 +34,9 @@ enum WorkspaceTheme {
     static func accent(_ scope:String)->Color {
         switch scope {
         case "ejj":return Color(red:0.64,green:0.72,blue:0.77)
-        case "band":return Color(red:0.78,green:0.49,blue:0.38)
+        case "band":return Color(red:0.91,green:0.36,blue:0.34)
         case "moshia":return Color(red:0.89,green:0.72,blue:0.43)
+        case "tutoring":return Color(red:0.38,green:0.81,blue:0.73)
         case "school":return Color(red:0.40,green:0.85,blue:0.67)
         case "gym":return Color(red:0.70,green:0.78,blue:0.52)
         case "personal":return Color(red:0.78,green:0.65,blue:0.95)
@@ -89,6 +91,10 @@ struct AppBackdrop:View {
                     pattern.addRoundedRect(in:CGRect(x:21,y:31,width:max(0,size.width-42),height:max(0,size.height-62)),cornerSize:CGSize(width:2,height:2))
                     for row in 0..<5 {let y=size.height*0.68+CGFloat(row)*30;pattern.move(to:CGPoint(x:20,y:y));pattern.addCurve(to:CGPoint(x:size.width-20,y:y+90),control1:CGPoint(x:size.width*0.35,y:y-80),control2:CGPoint(x:size.width*0.68,y:y+150))}
                     context.stroke(pattern,with:.color(accent.opacity(0.16)),lineWidth:0.8)
+                case "tutoring":
+                    // Open notebook folds: a quiet identity for shared learning.
+                    for row in 0..<3 {let y=size.height*0.22+CGFloat(row)*220;pattern.move(to:CGPoint(x:24,y:y+26));pattern.addQuadCurve(to:CGPoint(x:size.width/2,y:y+50),control:CGPoint(x:size.width*0.27,y:y-12));pattern.addQuadCurve(to:CGPoint(x:size.width-24,y:y+26),control:CGPoint(x:size.width*0.73,y:y-12));pattern.move(to:CGPoint(x:size.width/2,y:y+50));pattern.addLine(to:CGPoint(x:size.width/2,y:y+145))}
+                    context.stroke(pattern,with:.color(accent.opacity(0.12)),lineWidth:1)
                 case "school":
                     for y in stride(from:CGFloat(40),through:size.height,by:38){pattern.move(to:CGPoint(x:0,y:y));pattern.addLine(to:CGPoint(x:size.width,y:y))}
                     context.stroke(pattern,with:.color(accent.opacity(0.13)),lineWidth:0.7)
@@ -116,7 +122,7 @@ struct WorkspacePanel:View {
 }
 struct SpaceMark: View {
     var space:SpaceDefinition
-    var symbol:String { switch space.id { case "ejj":return "rectangle.3.group.fill";case "band":return "waveform";case "moshia":return "book.closed.fill";case "school":return "graduationcap.fill";default:return "person.fill" } }
+    var symbol:String { switch space.id { case "ejj":return "rectangle.3.group.fill";case "band":return "waveform";case "moshia":return "book.closed.fill";case "tutoring":return "person.2.fill";case "school":return "graduationcap.fill";default:return "person.fill" } }
     var body:some View { Image(systemName:symbol).font(.system(size:21,weight:.medium)).foregroundStyle(WorkspaceTheme.accent(space.id)).frame(width:36,height:40).accessibilityHidden(true) }
 }
 struct GlassAction<Content:View>:View {
@@ -162,7 +168,7 @@ struct OSNavigation<Content:View>:View {
     var body:some View {
         NavigationStack(path:$path) {
             content.navigationDestination(for:EdizCore.Record.self){NativeEditor(record:$0)}
-                .navigationDestination(for:SpaceRoute.self){NativeSpace(route:$0)}
+                .navigationDestination(for:SpaceRoute.self){route in Group{if route.id == "tutoring"{NativeMentorDesk()}else{NativeSpace(route:route)}}}
                 .toolbar { ToolbarItem(placement:.topBarTrailing) { NavigationLink { NativeSettings() } label:{ Image(systemName:"slider.horizontal.3").font(.body).foregroundStyle(Design.muted).frame(minWidth:44,minHeight:44) }.accessibilityLabel("Settings and backup").walkthroughTarget("settings",session:store.walkthrough) } }
         }.tint(Design.accent)
     }

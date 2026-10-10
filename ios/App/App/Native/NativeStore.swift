@@ -119,12 +119,12 @@ import EdizCore
         records = try database.records(); activity = try database.history(); preferences = try database.preferences()
     }
     @discardableResult func save(_ record: EdizCore.Record, action: String = "Updated") -> Bool {
-        do { guard let database else{throw CoreError.database("unavailable")};var copy=record;copy.updated=Time.string(Date());try database.save(copy,action:action);try reload();if !isPractice && UserDefaults.standard.bool(forKey:"ediz-reminders-enabled"){Task{await NativeReminderScheduler.refresh(records:records)}};if action == "Created"{lastCreatedRecordID=copy.id};UISelectionFeedbackGenerator().selectionChanged();walkthrough?.event("saved-"+copy.kind);return true }
+        do { guard let database else{throw CoreError.database("unavailable")};var copy=record;copy.updated=Time.string(Date());try database.save(copy,action:action);try reload();if !isPractice && copy.space == "tutoring"{Task{await MentorNotifications.refresh(records:records)}};if !isPractice && UserDefaults.standard.bool(forKey:"ediz-reminders-enabled"){Task{await NativeReminderScheduler.refresh(records:records)}};if action == "Created"{lastCreatedRecordID=copy.id};UISelectionFeedbackGenerator().selectionChanged();walkthrough?.event("saved-"+copy.kind);return true }
         catch { self.error=error.localizedDescription;return false }
     }
     func complete(_ record: EdizCore.Record) { var copy=record;copy.status="done";if save(copy,action:"Completed"){completionDismissal?.cancel();undoRecord=record;UINotificationFeedbackGenerator().notificationOccurred(.success);completionDismissal=Task{@MainActor in try? await Task.sleep(for:.seconds(5));guard !Task.isCancelled,self.undoRecord?.id == record.id else{return};self.undoRecord=nil}} }
     func undo() { guard let record=undoRecord else{return};completionDismissal?.cancel();if save(record,action:"Reopened"){undoRecord=nil} }
-    @discardableResult func remove(_ record: EdizCore.Record) -> Bool { do { guard let database else{throw CoreError.database("unavailable")};try database.delete(record);try reload();if !isPractice && UserDefaults.standard.bool(forKey:"ediz-reminders-enabled"){Task{await NativeReminderScheduler.refresh(records:records)}};return true }catch{self.error=error.localizedDescription;return false} }
+    @discardableResult func remove(_ record: EdizCore.Record) -> Bool { do { guard let database else{throw CoreError.database("unavailable")};try database.delete(record);try reload();if !isPractice && record.space == "tutoring"{Task{await MentorNotifications.refresh(records:records)}};if !isPractice && UserDefaults.standard.bool(forKey:"ediz-reminders-enabled"){Task{await NativeReminderScheduler.refresh(records:records)}};return true }catch{self.error=error.localizedDescription;return false} }
     func capture(space: String? = nil, kind: String? = nil) {
         do {
             if space == nil && kind == nil, let draft=try database?.draft() { captureRequest=draft;return }
@@ -227,7 +227,7 @@ import EdizCore
         content.threadIdentifier="edizos-"+space
         content.userInfo=["workspace":space]
         content.subtitle=space == "gym" ? "Gym":Catalog.space(space).name
-        let symbol=space == "moshia" ? "moon.stars.fill":space == "gym" ? "dumbbell.fill":space == "band" ? "music.note":space == "school" ? "graduationcap.fill":space == "ejj" ? "briefcase.fill":"sparkles"
+        let symbol=space == "tutoring" ? "person.2.fill":space == "moshia" ? "moon.stars.fill":space == "gym" ? "dumbbell.fill":space == "band" ? "music.note":space == "school" ? "graduationcap.fill":space == "ejj" ? "briefcase.fill":"sparkles"
         let renderer=UIGraphicsImageRenderer(size:CGSize(width:160,height:160))
         let image=renderer.image{context in
             UIColor(WorkspaceTheme.base(space)).setFill();context.fill(CGRect(x:0,y:0,width:160,height:160))
@@ -261,7 +261,7 @@ import EdizCore
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else{return}
         await clear()
         let now=Date()
-        for record in records where record.status != "done" && record.status != "archived" {
+        for record in records where record.space != "tutoring" && record.status != "done" && record.status != "archived" {
             guard let due=Time.date(record.due),due>now,due<now.addingTimeInterval(60*60*24*30) else{continue}
             let reminder=record.kind == "exam" ? due.addingTimeInterval(-24*60*60):due.addingTimeInterval(-60*60)
             guard reminder>now else{continue}
