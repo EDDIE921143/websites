@@ -140,7 +140,7 @@ struct MentorItemEditor:View {
         if hasDate{DatePicker(type == "exam" ? "Their test date":"When",selection:$date);Picker("Remind me",selection:$reminder){Text("At the time").tag("0");Text("30 minutes before").tag("30");Text("1 hour before").tag("60");Text("1 day before").tag("1440")}}
         if speech.listening{HStack{Image(systemName:"mic.fill").foregroundStyle(WorkspaceTheme.accent("tutoring"));Text("Listening to your session note…");Spacer();Button{finishSpeech()}label:{Image(systemName:"stop.fill").frame(width:44,height:44)}.accessibilityLabel("Stop recording")};ProgressView(value:Double(speech.level),total:1).tint(WorkspaceTheme.accent("tutoring"))}else{
             TextEditor(text:$bodyText).frame(minHeight:170).padding(8).scrollContentBackground(.hidden).background(MentorStyle.surface,in:RoundedRectangle(cornerRadius:16)).accessibilityIdentifier("mentor-item-body")
-            HStack{Picker("Speech language",selection:$language){Text("German").tag("de-DE");Text("English").tag("en-US")}.pickerStyle(.menu);Spacer();Button{speech.localeIdentifier=language;speech.toggle()}label:{Label("Speak",systemImage:"mic.fill")}.disabled(busy || finishing || speech.requesting)}
+            HStack{Picker("Speech language",selection:$language){Text("German").tag("de-DE");Text("English").tag("en-US")}.pickerStyle(.menu);Spacer();Button{store.walkthrough?.muteForRecording();speech.localeIdentifier=language;speech.toggle()}label:{Label("Speak",systemImage:"mic.fill")}.disabled(busy || finishing || speech.requesting)}
         }
         if finishing{ProgressView("Finishing your recording…")}
         if let warning=speech.message{Text(warning).font(.caption).foregroundStyle(Design.muted)}
