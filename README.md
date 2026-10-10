@@ -1,12 +1,14 @@
-# Ediz OS 0.3.0
+# Ediz OS 0.3.21
 
 An owner-specific personal operating system, primarily a genuine SwiftUI iPhone app. The web companion is available at https://ediz-os.vercel.app. Both editions work locally without paid APIs, analytics or a server database.
+
+Current native source update: [0.3.21 reading, questions and spacing](docs/UPDATE-0.3.21.md). Version 0.3.21 build 20 is signed, installed and launched on the connected iPhone.
 
 ## Native iPhone edition
 
 `ios/` contains a real SwiftUI application with no WebView or Capacitor runtime. It uses iOS TabView, NavigationStack, sheets, file pickers, sharing, Quick Look, on-device speech and AVFoundation. The iPhone 17 Pro is the primary test device. iOS 26 supplies native liquid-glass controls; older supported versions use material controls. Content remains on stable warm charcoal surfaces, with Avenir Next typography, neutral space rows and restrained identity colors. No personal images or fabricated data are included.
 
-The floating system tab bar supports horizontal scrubbing through Today, Capture, Spaces, Search and Assistant. Capture is a real tab; contextual capture remains available as a dismissible sheet. Native swipe-back and sheet dismissal are preserved.
+The floating system tab bar supports horizontal scrubbing through Today, Assistant, Capture, Search and Spaces. Capture is a real tab; contextual capture remains available as a dismissible sheet. Native swipe-back and sheet dismissal are preserved.
 
 The local `native/Core` Swift package uses durable SQLite with WAL, foreign keys, transactions, history, recoverable capture/edit drafts and seven daily safety snapshots. Attachments and structured data are separate. Full JSON backups, readable Markdown and profile exports support migration and recovery. Daily snapshots protect recent edits; external exports are still needed for device loss.
 
@@ -18,7 +20,7 @@ Implemented modules include EJJ leads/pipeline and websites; band songs, rehears
 
 GitHub Actions run https://github.com/EDDIE921143/websites/actions/runs/36847582563 compiled the app and UI tests with Xcode 26.3 on macOS 15. All 18 Swift core tests and seven XCUITests passed on an iPhone 17 Pro simulator. Tests cover capture/reload/completion/undo, edge swipe-back, sheet dismissal/draft recovery, real space destinations and creative states, assistant follow-ups and reminder preview, focus controls, and sliding across the tab bar. Actual screenshots and test evidence are archived by the workflow. An unsigned physical-iPhone Release archive also built successfully.
 
-**Installation remains blocked by Apple signing access.** An unsigned archive or simulator build is not an installable iPhone app. No signing identity, owner-authorized Mac/device access or distribution credentials are available in this workspace. No Apple membership or paid service was purchased. Physical-device testing has not been performed.
+**Current physical-device status:** 0.3.21 build 20 was signed, installed and launched on the owner’s paired iPhone. The current focused tests passed Capture’s question-and-answer clarification, the AI notes lab, natural audiobook playback with pause/resume/speed/voice switching, the reading and rehearsal lessons, and spoken tutorial mute/replay. The earlier broad 0.3.19 sweep remains historical evidence. Human audibility and real-room interruption remain separate from signal measurements.
 
 ## Web companion
 
@@ -36,6 +38,6 @@ Bundled Lato font subsets are self-hosted; iOS uses its installed Avenir Next fo
 
 Approved source branch: https://github.com/EDDIE921143/websites/tree/ediz-os-native. Vercel hosts the static web build at the existing origin. The native build does not depend on Vercel.
 
-Not implemented: signed native distribution, cross-device sync, reliable scheduled background notifications, authenticated third-party sync, semantic embeddings, automated continuity reasoning, secure app lock, remote backups, waveform decoding or fully normalized creative relationship editing. Website deployment information is saved metadata, not a live integration. Grade estimates are unofficial. The local assistant is a transparent rules-based helper; optional local models expand its language capabilities.
+Not implemented: App Store distribution, cross-device sync, reliable scheduled background notifications, authenticated third-party sync, semantic embeddings, automated continuity reasoning, secure app lock, remote backups, fully normalized creative relationship editing. Website deployment information is saved metadata, not a live integration. Grade estimates are unofficial. The local assistant is a transparent rules-based helper; optional local models expand its language capabilities.
 
 Core source: `native/Core/Sources/EdizCore`; native UI: `ios/App/App/Native`; native gesture tests: `ios/App/EdizOSUITests`. Web domain/storage: `src/core.ts`, `src/db.ts`; shell: `src/main.tsx`; design/navigation: `src/Today.tsx`, `src/Dock.tsx`, `src/primitives.tsx`, `src/style.css`; assistant: `src/assistant.ts`, `src/ConversationAssistant.tsx`.

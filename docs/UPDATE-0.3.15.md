@@ -1,0 +1,23 @@
+# Ediz OS 0.3.15
+
+The native tutorial now welcomes Ediz and explains each feature in a conversational natural voice. Spoken scripts are separate from the precise on-screen instructions. Narration starts by default when a tutorial opens, uses the selected natural voice even when chats use device speech, and offers mute and replay. Without a connection, an explicitly labeled offline voice remains available. Exiting or backgrounding the tutorial stops audio. Starting a Capture or Assistant recording mutes the guide for that session, preventing narration from entering the microphone; Read aloud restarts it afterward. Practice material stays separate from personal records; cloud speech receives only the guide script.
+
+Workspace pages have distinct headings, themed panels and a brief entrance animation. Their module and state selectors share a pinned control bar. Newly created records scroll into view, including schoolwork beneath the workload summary. Completing work shows a short animated check ring and keeps Undo available. Pull-to-refresh shows the Ediz logo and a real refresh result; a timestamp confirms a successful refresh. Failed context requests report an error instead of claiming success. New motion respects Reduce Motion. Browser workspace headings and completion notices also animate briefly.
+
+The Xcode 26 compiler timeout in the voice visual was repaired by breaking the drawing calculation into smaller expressions. GitHub verified that repair compiles. The dependency lockfile now preserves the actual third-party package version independently of the app release number.
+
+## Verification
+
+- 27 SQLite/core checks passed.
+- 48 web/backend checks passed.
+- 31 browser scenarios passed; the published site's focus, logo and density flow also passed.
+- Physical iPhone verified natural cloud narration with a measured nonzero playback signal, mute/replay/exit, all six hands-on tutorials, completion and Undo, pull-to-refresh, and workspace identities.
+- An expanded module check exposed schoolwork below the fold. Pinned selectors and automatic saved-item reveal were implemented; all 28 modules now pass create, save, reopen and edit checks on the phone.
+- Signed 0.3.15 build 13 is installed on the paired iPhone and launched in its normal personal workspace. Nine distinct phone regression scenarios passed across the final runs, including all 28 module workflows and all six tutorials. A final two-scenario phone run verified inline recording and tutorial recording/mute/restart with zero failures. The signed release was rebuilt, installed and launched after that fix. The chapter spacing and three-chapter creation check also passed on the phone; its assertions allow for offscreen rows in the lazy list.
+- The file picker dismiss control was verified from accessibility data as a generic element labeled Cancel; the simulator selector now matches its actual element type. The corrected picker and spoken-reply scenario passed locally. The private installed-context check remains verified on the paired phone and is explicitly skipped on CI, which has no device credential. The complete local sweep plus focused reruns verified 25 simulator scenarios. Live on-device transcription is checked on the real iPhone; the microphone-backed memo test and that part of the spoken tutorial are explicitly assigned to physical-device runs. Three private-credential checks also stay on the phone. The initial full local run had two microphone-backed failures; both corresponding flows passed on the phone, and the separated simulator narration rerun passed. A fresh full local run is in progress. GitHub's repaired full simulator run remains in progress; its native compilation has passed on Xcode 26. The prior full run reached its time limit, so the job now allows 45 minutes and avoids duplicate branch/PR runs.
+
+## Implementation references
+
+The existing streaming speech service is reused. The offline fallback uses [Apple's speech buffers](https://developer.apple.com/documentation/avfaudio/avspeechsynthesizer/write%28_%3Atobuffercallback%3A%29); on-device recognition follows [Apple's capability requirement](https://developer.apple.com/documentation/speech/sfspeechrecognizer/supportsondevicerecognition); motion follows [Reduce Motion](https://developer.apple.com/documentation/swiftui/environmentvalues/accessibilityreducemotion). No additional audio framework or paid service was introduced.
+
+Cloud requests remain subject to connection and provider quota. This release does not add a local model, simultaneous bidirectional voice calls, or exact audio-only music transcription.

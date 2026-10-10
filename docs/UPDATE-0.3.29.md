@@ -1,0 +1,27 @@
+# 0.3.29 — One guide, clearer downloads and easier notes
+
+The guide starts with a welcome to Ediz OS in Capture. Its original essentials retain their order and recorded explanations, with newly recorded introductions and endings that connect each lesson naturally. New additions no longer sends multiple feature names into the same Explore a chat or reader lesson. Two distinct additions teach AI Notes organization and offline audio using real controls and isolated practice data. The download lesson explicitly uses a bundled natural-voice sample, not generated manuscript narration. Gym now opens the real practice app: locate Gym in Spaces, select Tuesday, start a workout, log a set and finish. The prior text-and-mock-control Gym guide has been replaced. Reading and rehearsal remain their own real-screen lessons. Forty-two new natural Aoede recordings cover the transitions and new lessons.
+
+Spacing changes align the tutorial coach and chat composer with a consistent twenty-point outer inset, give chat/book toolbar icons forty-four-point targets in a compact group, add breathing room above and below the composer, and keep download guidance visible inside Contents. Practice scrolls the relevant workspace into view so its controls do not sit behind the glass navigation bar. AI Notes puts search and its full-width workspace menu on separate rows and removes the chat-only introduction. The notes tool sheet also keeps guidance visible. Practice does not write the real audiobook narrator preference; its custom tab gestures cannot affect the real app.
+
+AI Notes now includes saved ideas and notes with no body text, excludes private/internal context records, and provides a result count, search, workspace filter, last-updated date and a Capture shortcut. Cards give a short preview and open the selected record’s AI tools. Capture has a persistent Save thought button; optional routing/date controls are folded into a single disclosure. Saving still uses the same parser and review preview. Stale polishing requests cannot clear a newer request’s busy state.
+
+Assistant chooser cards now use each workspace’s pattern and short purpose, while keeping consistent sizing. User message surfaces have small differences in tint, border and corner shape. Existing distinct chat headers, backgrounds and workspace instructions remain in place; this does not change model weights or claim an intelligence benchmark.
+
+Audiobook preparation reports audio-part progress within chapters, not only completed chapter count. Pause cancels the current run while retaining successful segments, current source and progress. Resume reuses completed audio. A generation guard prevents a canceled run from changing a newer run’s status. Separate temporary filenames prevent a canceled download from deleting the resumed request’s audio. Contents marks ready chapter audio and shows actual local storage size and downloaded duration. Full-book playback remains enabled only when every current chapter is ready for the selected narrator. Larger segments and concurrent preparation from the prior release remain unchanged. Initial generation is still provider-dependent; this is not a measured speed improvement for the private book. Keep the book open while downloading.
+
+| Before | After | Why |
+|---|---|---|
+| AI Notes Lab and Gym preceded the essentials | Existing essentials first, then additional practice | Keeps the guide predictable |
+| Different additions reused the same lessons | Dedicated notes and audio practice, actual Gym screens | Teaches each feature on its own controls |
+| Every lesson began with the same phrase | Ediz OS welcome and varied connecting introductions and endings | Restores a flowing guide |
+| Narrow toolbar targets and composer edges | Consistent margins and grouped 44-point targets | Improves touch and visual spacing |
+| Progress appeared to stop during a chapter | Completed audio-part percentage and current chapter | Shows work as it happens |
+| Pause used the general Stop reset | Dedicated pause state and resumable progress | Keeps the download understandable |
+| Title-only ideas were absent from AI Notes | Ideas and notes are visible before adding context | Captured thoughts are easier to find |
+| Capture routing competed with writing | Optional controls folded away and visible Save thought | Reduces steps for quick capture |
+| Uniform assistant chooser surfaces | Workspace patterns and role captions | Makes each bot easier to recognize |
+
+## Verification
+
+41 Swift core tests, 89 JavaScript/API tests, web build and signed Release build pass. Simulator checks verify the original hands-on guide, distinct notes/download/Gym practice, reading and rehearsal actions, natural guide playback, equal assistant cards and one-tap typing. Gym settings opens the real practice guide. A physical iPhone check verifies fresh cloud narration download, pause/resume and playback after reopening without the assistant credential. The full-width Notes menu also passes visible taps on its left, middle and right. Final physical Notes-flow verification remains pending because the iPhone was locked; the install and launch outcome is recorded separately in the delivery report. Initial menu and nested-selector failures prompted corrections rather than being counted as passes. This update changes native source only; the production assistant backend does not require deployment. Private manuscript, original Scrivener project and connection credentials are excluded from source upload.

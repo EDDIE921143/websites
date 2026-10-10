@@ -17,12 +17,13 @@ public struct SpaceDefinition: Identifiable, Hashable, Sendable {
 public enum Catalog {
     public static let spaces: [SpaceDefinition] = [
         .init(id:"ejj", name:"EJJ Digital", summary:"Leads · Websites", mark:"EJJ", color:0x7199BF, modules:[.init("lead","Leads"),.init("website","Websites"),.init("task","Tasks"),.init("note","Notes"),.init("idea","Ideas")]),
-        .init(id:"band", name:"CLEARANCE 19", summary:"Songs · Rehearsals", mark:"19", color:0xBF7777, modules:[.init("song","Songs"),.init("rehearsal","Rehearsals"),.init("task","Practice"),.init("note","Notes"),.init("idea","Ideas")]),
+        .init(id:"band", name:"CLEARANCE 19", summary:"Songs · Rehearsals", mark:"19", color:0xE85C57, modules:[.init("song","Songs"),.init("rehearsal","Rehearsals"),.init("task","Practice"),.init("note","Notes"),.init("idea","Ideas")]),
         .init(id:"moshia", name:"Moshia", summary:"Chapters · Story world", mark:"M", color:0xC5B89B, modules:[.init("chapter","Chapters"),.init("character","Characters"),.init("thread","Plot threads"),.init("location","Locations"),.init("organization","Organizations"),.init("event","Timeline"),.init("note","Research"),.init("idea","Ideas")]),
         .init(id:"school", name:"School", summary:"Homework · Tests", mark:"S", color:0xC3A46B, modules:[.init("assignment","Homework"),.init("exam","Tests"),.init("subject","Subjects"),.init("grade","Grades"),.init("event","Timetable"),.init("note","Materials")]),
+        .init(id:"tutoring", name:"Mentor Desk", summary:"Students · Sessions · Learning", mark:"MD", color:0x61CFBA, modules:[.init("note","Students"),.init("event","Sessions"),.init("exam","Their tests"),.init("task","Learning goals")]),
         .init(id:"personal", name:"Personal", summary:"Tasks · Notes", mark:"P", color:0x93936F, modules:[.init("task","Tasks"),.init("event","Appointments"),.init("note","Notes"),.init("idea","Ideas")])
     ]
-    public static func space(_ id: String) -> SpaceDefinition { spaces.first { $0.id == id } ?? spaces[4] }
+    public static func space(_ id: String) -> SpaceDefinition { spaces.first { $0.id == id } ?? spaces.first { $0.id == "personal" }! }
     public static func quickModules(for id:String)->[Module] {
         let kinds=id == "school" ? ["assignment","exam","grade"]:id == "personal" ? ["task","note","idea"]:Array(space(id).modules.prefix(3)).map(\.kind)
         return kinds.compactMap{kind in space(id).modules.first{$0.kind == kind}}
@@ -87,7 +88,7 @@ public struct Record: Codable, Identifiable, Hashable, Sendable {
         ["task","assignment","exam","lead"].contains(kind) && !["done","Lost","Client","archived","waiting","blocked","REJECTED"].contains(status) && blocked != true
     }
     public var valid: Bool {
-        Catalog.spaces.contains { $0.id == space } && Catalog.kinds.contains(kind) && !id.isEmpty && !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && Time.date(created) != nil && Time.date(updated) != nil && (due == nil || Time.date(due) != nil)
+        Catalog.spaces.contains { $0.id == space } && Catalog.kinds.contains(kind) && !id.isEmpty && !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && Time.date(created) != nil && Time.date(updated) != nil && (due == nil || Time.date(due) != nil) && (duration == nil || (1...1440).contains(duration!))
     }
 }
 public struct Activity: Codable, Identifiable, Hashable, Sendable {
@@ -107,8 +108,9 @@ public struct Preferences: Codable, Sendable {
     public var recentId: String?
     public var labs: Bool = false
     public var localEndpoint: String?
+    public var assistantChats: [String:String] = [:]
     public init() {}
-    enum CodingKeys:String,CodingKey { case theme,density,focus,lastVisit,lastBackup,recentId,labs,localEndpoint }
+    enum CodingKeys:String,CodingKey { case theme,density,focus,lastVisit,lastBackup,recentId,labs,localEndpoint,assistantChats }
     public init(from decoder:Decoder) throws {
         let c=try decoder.container(keyedBy:CodingKeys.self)
         theme=try c.decodeIfPresent(String.self,forKey:.theme) ?? "dark"
@@ -119,6 +121,17 @@ public struct Preferences: Codable, Sendable {
         recentId=try c.decodeIfPresent(String.self,forKey:.recentId)
         labs=try c.decodeIfPresent(Bool.self,forKey:.labs) ?? false
         localEndpoint=try c.decodeIfPresent(String.self,forKey:.localEndpoint)
+        assistantChats=try c.decodeIfPresent([String:String].self,forKey:.assistantChats) ?? [:]
+    }
+}
+public struct Profile:Codable,Sendable {
+    public var format="ediz-profile"
+    public var version=1
+    public var settings:Preferences
+    public init(settings:Preferences){self.settings=settings}
+    public func validatedPreferences() throws -> Preferences {
+        guard format == "ediz-profile",version == 1,["light","dark","system"].contains(settings.theme),["comfortable","compact"].contains(settings.density),settings.focus == "all" || Catalog.spaces.contains(where:{$0.id == settings.focus}) else{throw CoreError.invalidBackup}
+        return settings
     }
 }
 public struct Attachment: Codable, Identifiable, Sendable {
@@ -148,5 +161,5 @@ public struct Backup: Codable, Sendable {
 }
 public enum CoreError: Error, LocalizedError {
     case invalidBackup, database(String), invalidRecord
-    public var errorDescription: String? { switch self { case .invalidBackup:return "This backup could not be validated. Your current records are unchanged.";case .database:return "Ediz OS couldn’t save that change. Your previous version is safe.";case .invalidRecord:return "Add a title and check the date before saving." } }
+    public var errorDescription: String? { switch self { case .invalidBackup:return "This backup could not be validated. Your current records are unchanged.";case .database:return "Ediz OS couldn’t save that change. Your previous version is safe.";case .invalidRecord:return "Add a title, check the date, and use 1–1440 minutes before saving." } }
 }

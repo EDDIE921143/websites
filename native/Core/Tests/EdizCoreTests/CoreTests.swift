@@ -1,7 +1,76 @@
 import XCTest
 @testable import EdizCore
 final class CoreTests: XCTestCase {
+    func testManuscriptStyleCleanupPreservesProseAndOtherPlaceholders(){
+        let original="<$ScrKeepWithNext><$Scr_H::1>Chapter one<!$Scr_H::1>\n\n<$Scr_Ps::0>The price is $20. Café 🎸 stays. <story> stays. <$name> stays.<!$Scr_Ps::0>"
+        XCTAssertEqual(ManuscriptText.clean(original),"Chapter one\n\nThe price is $20. Café 🎸 stays. <story> stays. <$name> stays.")
+        XCTAssertEqual(ManuscriptText.clean("No formatting here.\n\nSecond paragraph."),"No formatting here.\n\nSecond paragraph.")
+    }
+    func testNaturalVoiceChunksKeepEveryCharacterOfLongReplies() {
+        let text=String(repeating:"A plan with café, 日本語, 🎸 and a conditional step.\n",count:90)
+        let parts=SpeechText.chunks(text)
+        XCTAssertGreaterThan(parts.count,1)
+        XCTAssertEqual(parts.joined(),text)
+        XCTAssertTrue(parts.allSatisfy{$0.count<=700 && !$0.isEmpty})
+        XCTAssertEqual(SpeechText.chunks(String(repeating:"🎸",count:1600)).joined(),String(repeating:"🎸",count:1600))
+    }
+    func testSpokenReplyRemovesFormattingWithoutDroppingContent(){
+        let reply="## Study plan\n**First**, solve x².\n- Check your answer."
+        XCTAssertEqual(SpeechText.spoken(reply),"Study plan\nFirst, solve x².\nCheck your answer.")
+        XCTAssertEqual(SpeechText.chunks(SpeechText.spoken(reply)).joined(),SpeechText.spoken(reply))
+    }
+    func testAudioMeterMakesQuietSpeechVisibleWithoutAnimatingSilence() {
+        XCTAssertEqual(AudioMeter.level(rms:0),0)
+        XCTAssertEqual(AudioMeter.level(rms:0.00001),0)
+        XCTAssertGreaterThan(AudioMeter.level(rms:0.01),0.25)
+        XCTAssertGreaterThan(AudioMeter.level(rms:0.05),AudioMeter.level(rms:0.01))
+        XCTAssertEqual(AudioMeter.level(decibels:0),1)
+        XCTAssertEqual(AudioMeter.level(decibels:.nan),0)
+        XCTAssertEqual(AudioMeter.level(rms:.infinity),0)
+        XCTAssertGreaterThan(AudioMeter.smooth(previous:0,target:1),0.6)
+        XCTAssertGreaterThan(AudioMeter.smooth(previous:1,target:0),0.6)
+    }
+    func testProfileRoundTripRejectsUnknownFocusAndLayout() throws {
+        var preferences=Preferences();preferences.density="compact";preferences.focus="moshia"
+        let data=try JSONEncoder().encode(Profile(settings:preferences))
+        let imported=try JSONDecoder().decode(Profile.self,from:data).validatedPreferences()
+        XCTAssertEqual(imported.density,"compact");XCTAssertEqual(imported.focus,"moshia")
+        preferences.focus="unknown";XCTAssertThrowsError(try Profile(settings:preferences).validatedPreferences())
+        preferences.focus="all";preferences.density="unknown";XCTAssertThrowsError(try Profile(settings:preferences).validatedPreferences())
+    }
+    func testInvalidDurationCannotOverwriteASavedRecord() throws {
+        let db=try database();var record=Record(title:"Saved work");try db.save(record)
+        for duration in [-1,0,1441]{record.duration=duration;XCTAssertThrowsError(try db.save(record));XCTAssertNil(try db.records().first?.duration)}
+        record.duration=20;try db.save(record);XCTAssertEqual(try db.records().first?.duration,20)
+    }
     let now=Time.date("2026-10-01T10:00:00Z")!
+    func testConversationSettingsSurviveDatabaseAndFullBackup() throws {
+        let db=try database();var preferences=try db.preferences()
+        preferences.assistantChats=["ejj":"A saved conversation","moshia":"A different conversation"]
+        try db.setPreferences(preferences)
+        XCTAssertEqual(try db.preferences().assistantChats,preferences.assistantChats)
+        let backup=try JSONDecoder().decode(Backup.self,from:db.backupData())
+        XCTAssertEqual(backup.settings.assistantChats,preferences.assistantChats)
+        let legacy=try JSONDecoder().decode(Preferences.self,from:Data("{}".utf8))
+        XCTAssertTrue(legacy.assistantChats.isEmpty)
+    }
+    func testWorkspaceImportKeepsEditsAndExistingChapterSummaries() {
+        var brief=Record(space:"ejj",kind:"note",title:"Workspace brief",now:now)
+        brief.id="ediz-context-ejj";brief.body="Previous brief"
+        var incoming=brief;incoming.body="Expanded brief";incoming.updated="2026-10-02T10:00:00Z";incoming.data["previousUpdated"]=brief.updated
+        XCTAssertEqual(WorkspaceContext.changes(incoming:[incoming],existing:[brief]).first?.body,"Expanded brief")
+        var edited=brief;edited.updated="2026-10-02T09:00:00Z";edited.body="My changes"
+        XCTAssertTrue(WorkspaceContext.changes(incoming:[incoming],existing:[edited]).isEmpty)
+        XCTAssertTrue(WorkspaceContext.changes(incoming:[incoming],existing:[incoming]).isEmpty)
+        let existing=Record(space:"moshia",kind:"chapter",title:"Chapter 2: The warehouse ")
+        var chapter=Record(space:"moshia",kind:"chapter",title:"The Warehouse")
+        chapter.id="ediz-context-moshia-chapter-02";chapter.data["chapterNumber"]="2"
+        XCTAssertTrue(WorkspaceContext.changes(incoming:[chapter],existing:[existing]).isEmpty)
+        var next=chapter;next.id="ediz-context-moshia-chapter-03";next.title="The Slip-Up";next.data["chapterNumber"]="3"
+        XCTAssertEqual(WorkspaceContext.changes(incoming:[chapter,next,next],existing:[existing]).map(\.title),["The Slip-Up"])
+        XCTAssertEqual(WorkspaceContext.chapterNumber(existing),2)
+        XCTAssertEqual(WorkspaceContext.chapterNumber(Record(space:"moshia",kind:"chapter",title:"Prologue ")),0)
+    }
     func database() throws -> Database { let url=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("test.sqlite");return try Database(url:url) }
     func testMetronomeBeatHasAudibleSamplesAndTempoSizedSilence(){
         let beat=BeatAudio.samples(bpm:120);XCTAssertEqual(beat.count,22050);XCTAssertGreaterThan(beat.prefix(2205).map{abs($0)}.max() ?? 0,0.2);XCTAssertTrue(beat.dropFirst(2205).allSatisfy{$0 == 0});XCTAssertEqual(BeatAudio.samples(bpm:60).count,44100)

@@ -1,3 +1,61 @@
+# 0.3.33 — Context that helps a tutor
+
+Add four editable learning-context fields and a student overview. Improve Mentor Bot instructions for classroom-linked sessions, checked practice questions and next-session briefs, with explicit uncertainty and student boundaries. Details: docs/UPDATE-0.3.33.md.
+
+# 0.3.32 — Mentor your students
+
+Add Mentor Desk: student profiles, quick bilingual session notes, photo text recognition, their tests and learning goals, a shared calendar and local reminders. Isolate each student’s assistant records, conversations and proposed changes. Use teal workspace styling consistent with the app and a prerecorded natural-voice practice guide. Change CLEARANCE 19’s accent to red. Details: docs/UPDATE-0.3.32.md.
+
+# 0.3.31 — Restore signing and make updates clearer
+
+Renew the expired Personal Team profile. Show actual installation expiry and an approaching-expiry reminder in Today; validate profile age before device installation. Add one-command checks and installation health. Refresh Gym’s Spaces card after plan edits and cancel unfinished voice Search when leaving. Details: docs/UPDATE-0.3.31.md.
+
+# 0.3.30 — Context boundaries, voice search and training identity
+
+Retrieve context with a bounded Gemini tool instead of sharing every space. Enforce workspace boundaries on records, chat memories and proposed changes. Add voice search, a dedicated Gym card, quieter chat openings, a Today assistant entry, workspace reminder artwork and a Gym rest chime. Details: docs/UPDATE-0.3.30.md.
+
+# 0.3.29 — Guide, downloads and notes polish
+
+Restore the Ediz OS welcome and flowing guide transitions; add distinct AI Notes and offline-audio lessons and real-screen Gym practice. Correct toolbar, composer and coach spacing. Add resumable audio-part progress, clearer offline status, title-only AI Notes, workspace filters, easier Capture saving and subtle assistant identities. Details: docs/UPDATE-0.3.29.md.
+
+# 0.3.28 — Exact five-day Gym plan and clearer guide
+
+Apply Ediz’s corrected five-day split to existing plans, preserve workout data, and explain ten Gym features with fresh natural recordings and adjustable guide speed. Details: docs/UPDATE-0.3.28.md.
+
+# 0.3.27 — Request recovery and offline audiobook
+
+Recover malformed model replies and temporary failures, reduce context waiting, and download reusable audiobook recordings with full-book offline playback, total duration and seeking. Details: docs/UPDATE-0.3.27.md.
+
+# 0.3.26 — Safer, clearer assistant follow-ups
+
+Request validation, summary/greeting action guards, saved-context search routing, honest missing-attachment handling and stale-error protection. The main guide describes these changes under New additions. Details: docs/UPDATE-0.3.26.md.
+
+# 0.3.25 — Assistant tools, real demonstrations and New additions
+
+Native tablature/chord cards, clearer bot personalities, live Gym plan actions, five cached video demonstrations, calmer Gym styling and a main-guide New additions section with natural narration. See docs/UPDATE-0.3.25.md for checks and limits.
+
+# 0.3.24 — Gym editing and spoken walkthrough
+
+Visual exercise selection, stable exercise editing/removal, reviewed Gym Bot schedule/exercise changes, and eight prerecorded natural Gym lessons with practice controls. Backend rollout and device checks are tracked in docs/UPDATE-0.3.24.md.
+
+# 0.3.23
+
+Gym now has Ediz’s editable four-day plan, searchable exercises, workout logging, previous sets and rest timers. CLEARANCE 19 uses in-app Apple previews; assistant replies render headings and guitar tabs; background requests cancel. See docs/UPDATE-0.3.23.md for validation and limits.
+
+## Ediz OS 0.3.22
+
+Saved conversations rotate after five minutes idle, with older chats still available. Moshia's audiobook gains a separate listening screen and reusable chapter recordings; attachments remain openable in chats. Clarification answers accept speech, school replies use readable math, and reminders can be enabled in Settings. See [changes and limits](docs/UPDATE-0.3.22.md).
+
+## Ediz OS 0.3.15
+
+Conversational natural voice tutorials with mute/replay, distinct workspace headers, pinned module controls and saved-item reveal, animated completion feedback, and branded pull-to-refresh. Xcode 26 voice drawing compilation and dependency lock metadata were repaired. See [verification and practical limits](docs/UPDATE-0.3.15.md).
+
+## Ediz OS 0.3.14
+
+Full native/browser regression sweep, streaming natural speech with audible device fallback, measured waveforms, stable voice settings and explicit destructive/canon confirmations. Assistant now sits beside Today. Focus changes background and logo accent; rehearsal adds direct BPM entry, ± controls and tap tempo. Moshia adds a continuity desk and CLEARANCE 19 a rehearsal readiness summary. Common audio/video attachments, profile restore, browser preferences and audio seeking were repaired.
+
+Verification and practical limits are recorded in [the sweep report](docs/SWEEP-0.3.14.md).
+
 ## Ediz OS 0.3.7
 
 Centered Capture, numbered chapters, separated creation fields, workspace assistant perspectives, and private Gemini connection with reviewable record actions. Native Today isolates its selected workspace; native assistant connection is stored in Keychain.

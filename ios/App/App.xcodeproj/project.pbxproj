@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        ED1300000000000000000032 = {isa = PBXBuildFile; fileRef = ED1200000000000000000032; };
+        ED3300000000000000000001 = {isa = PBXBuildFile; fileRef = ED3300000000000000000002; };
+        ED1600000000000000000003 = {isa = PBXBuildFile; fileRef = ED1600000000000000000004; };
+		ED1300000000000000000014 = {isa = PBXBuildFile; fileRef = ED1200000000000000000014; };
+		ED1300000000000000000013 = {isa = PBXBuildFile; fileRef = ED1200000000000000000013; };
+		ED1300000000000000000012 /* NativeRecordAssist.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED1200000000000000000012 /* NativeRecordAssist.swift */; };
+		ED1300000000000000000011 /* NativeAssistantPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED1200000000000000000011 /* NativeAssistantPresence.swift */; };
+        ED1600000000000000000001 /* GuideAudio in Resources */ = {isa = PBXBuildFile; fileRef = ED1600000000000000000002; };
+		ED1300000000000000000010 /* NativeConversations.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED1200000000000000000010 /* NativeConversations.swift */; };
 		4D22ABE92AF431CB00220026 /* EdizCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* EdizCore */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
@@ -24,6 +33,15 @@ ED1500000000000000000001 /* NativeAssistant.swift in Sources */ = {isa = PBXBuil
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        ED1200000000000000000032 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Native/NativeMentor.swift; sourceTree = "<group>"; };
+        ED3300000000000000000002 = {isa = PBXFileReference; lastKnownFileType = file; path = "gym-rest.caf"; sourceTree = "<group>"; };
+        ED1600000000000000000004 = {isa = PBXFileReference; lastKnownFileType = folder; path = GymResources; sourceTree = "<group>"; };
+		ED1200000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Native/NativeRichText.swift; sourceTree = "<group>"; };
+		ED1200000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Native/NativeGym.swift; sourceTree = "<group>"; };
+		ED1200000000000000000012 /* NativeRecordAssist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Native/NativeRecordAssist.swift; sourceTree = "<group>"; };
+		ED1200000000000000000011 /* NativeAssistantPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Native/NativeAssistantPresence.swift; sourceTree = "<group>"; };
+        ED1600000000000000000002 /* GuideAudio */ = {isa = PBXFileReference; lastKnownFileType = folder; path = GuideAudio; sourceTree = "<group>"; };
+		ED1200000000000000000010 /* NativeConversations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Native/NativeConversations.swift; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -82,13 +100,22 @@ ED1500000000000000000002 /* NativeAssistant.swift */ = {isa = PBXFileReference; 
 				ED1500000000000000000002 /* NativeAssistant.swift */,
                 ED1200000000000000000001 /* NativeDesign.swift */,
 				ED1200000000000000000002 /* NativeEditing.swift */,
+				ED1200000000000000000012 /* NativeRecordAssist.swift */,
+                ED1200000000000000000032,
+                ED1200000000000000000014,
+                ED1200000000000000000013,
 				ED1200000000000000000003 /* NativeMedia.swift */,
+				ED1200000000000000000010 /* NativeConversations.swift */,
+				ED1200000000000000000011 /* NativeAssistantPresence.swift */,
 				ED1200000000000000000004 /* NativeModules.swift */,
 				ED1200000000000000000005 /* NativeRoot.swift */,
 				ED1200000000000000000006 /* NativeSettings.swift */,
 				ED1200000000000000000007 /* NativeStore.swift */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
+                ED3300000000000000000002,
+                ED1600000000000000000002 /* GuideAudio */,
+                ED1600000000000000000004,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
 			);
@@ -164,6 +191,9 @@ ED1500000000000000000002 /* NativeAssistant.swift */ = {isa = PBXFileReference; 
 			files = (
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
+                ED3300000000000000000001,
+                ED1600000000000000000001 /* GuideAudio in Resources */,
+                ED1600000000000000000003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -180,7 +210,13 @@ ED1500000000000000000002 /* NativeAssistant.swift */ = {isa = PBXFileReference; 
 				ED1500000000000000000001 /* NativeAssistant.swift in Sources */,
                 ED1300000000000000000001 /* NativeDesign.swift in Sources */,
 				ED1300000000000000000002 /* NativeEditing.swift in Sources */,
+				ED1300000000000000000012 /* NativeRecordAssist.swift in Sources */,
+                ED1300000000000000000032,
+                ED1300000000000000000014,
+                ED1300000000000000000013,
 				ED1300000000000000000003 /* NativeMedia.swift in Sources */,
+				ED1300000000000000000010 /* NativeConversations.swift in Sources */,
+				ED1300000000000000000011 /* NativeAssistantPresence.swift in Sources */,
 				ED1300000000000000000004 /* NativeModules.swift in Sources */,
 				ED1300000000000000000005 /* NativeRoot.swift in Sources */,
 				ED1300000000000000000006 /* NativeSettings.swift in Sources */,
@@ -325,14 +361,14 @@ ED1500000000000000000002 /* NativeAssistant.swift */ = {isa = PBXFileReference; 
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 32;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.7;
+				MARKETING_VERSION = 0.3.33;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DDEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ediz.os;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -347,14 +383,14 @@ ED1500000000000000000002 /* NativeAssistant.swift */ = {isa = PBXFileReference; 
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 32;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.7;
+				MARKETING_VERSION = 0.3.33;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ediz.os;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";

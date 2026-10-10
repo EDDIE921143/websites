@@ -1,7 +1,7 @@
 {
   "name": "ediz-os",
   "private": true,
-  "version": "0.3.7",
+  "version": "0.3.33",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -11,7 +11,10 @@
     "preview": "vite preview --host 0.0.0.0",
     "ios:open": "open ios/App/App.xcodeproj",
     "native:test": "swift test --package-path native/Core",
-    "ios:build": "xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator -destination \"generic/platform=iOS Simulator\" CODE_SIGNING_ALLOWED=NO build"
+    "ios:build": "xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator -destination \"generic/platform=iOS Simulator\" CODE_SIGNING_ALLOWED=NO build",
+    "ios:install": "bash scripts/install-native-device.sh",
+    "ios:health": "python3 scripts/native-health.py --app \"${EDIZ_BUILD_PATH:-.native-build}/Build/Products/Release-iphoneos/App.app\"",
+    "check": "npm test && npm run native:test && python3 -m unittest discover -s scripts -p \"*_test.py\" && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-switch": "^1.3.7",

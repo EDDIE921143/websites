@@ -7,11 +7,29 @@ if [[ "$(uname -s)" != Darwin ]]; then
 fi
 xcodebuild -version >/dev/null
 EDIZ_PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-EDIZ_DEVICE_BUILD="${TMPDIR:-/tmp}/ediz-device-build"
+EDIZ_DEVICE_BUILD="${EDIZ_BUILD_PATH:-$EDIZ_PROJECT_ROOT/.native-build}"
 EDIZ_DEVICE_LIST="$(mktemp)"
 trap 'rm -f "$EDIZ_DEVICE_LIST"' EXIT
 if [[ -z "${EDIZ_TEAM_ID:-}" ]]; then
-  EDIZ_TEAM_ID="$(security find-identity -v -p codesigning | python3 -c 'import re,sys; teams=sorted(set(re.findall(r"Apple Development:.*?\(([A-Z0-9]{10})\)",sys.stdin.read()))); print(teams[0] if len(teams)==1 else "")')"
+  # The suffix in an identity's display name identifies the certificate, not
+  # the development team. The actual team is its subject Organizational Unit.
+  EDIZ_TEAM_ID="$(python3 - <<'PY'
+import re, subprocess
+identities = subprocess.check_output(['security', 'find-identity', '-v', '-p', 'codesigning'], text=True)
+teams = set()
+for name in re.findall(r'"(Apple Development:[^"]+)"', identities):
+    certificate = subprocess.run(['security', 'find-certificate', '-c', name, '-p'], capture_output=True)
+    if certificate.returncode:
+        continue
+    subject = subprocess.run(['openssl', 'x509', '-noout', '-subject', '-nameopt', 'sep_multiline'], input=certificate.stdout, capture_output=True)
+    if subject.returncode:
+        continue
+    team = re.search(r'^\s*OU\s*=\s*([A-Z0-9]{10})\s*$', subject.stdout.decode(), re.M)
+    if team:
+        teams.add(team.group(1))
+print(next(iter(teams)) if len(teams) == 1 else '')
+PY
+)"
 fi
 if [[ -z "$EDIZ_TEAM_ID" ]]; then
   echo 'Authorize the owner Apple ID in Xcode first. An existing development identity is needed; no password is stored by this script.' >&2
@@ -30,5 +48,6 @@ xcodebuild -project "$EDIZ_PROJECT_ROOT/ios/App/App.xcodeproj" -scheme App \
   -derivedDataPath "$EDIZ_DEVICE_BUILD" -allowProvisioningUpdates \
   -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM="$EDIZ_TEAM_ID" \
   CODE_SIGN_STYLE=Automatic build
+python3 "$EDIZ_PROJECT_ROOT/scripts/native-health.py" --app "$EDIZ_DEVICE_BUILD/Build/Products/Release-iphoneos/App.app" --minimum-hours 24
 xcrun devicectl device install app --device "$EDIZ_DEVICE_ID" "$EDIZ_DEVICE_BUILD/Build/Products/Release-iphoneos/App.app"
 xcrun devicectl device process launch --device "$EDIZ_DEVICE_ID" com.ediz.os
