@@ -1,3 +1,7 @@
+# 0.3.33 — Context that helps a tutor
+
+Add four editable learning-context fields and a student overview. Improve Mentor Bot instructions for classroom-linked sessions, checked practice questions and next-session briefs, with explicit uncertainty and student boundaries. Details: docs/UPDATE-0.3.33.md.
+
 # 0.3.32 — Mentor your students
 
 Add Mentor Desk: student profiles, quick bilingual session notes, photo text recognition, their tests and learning goals, a shared calendar and local reminders. Isolate each student’s assistant records, conversations and proposed changes. Use teal workspace styling consistent with the app and a prerecorded natural-voice practice guide. Change CLEARANCE 19’s accent to red. Details: docs/UPDATE-0.3.32.md.

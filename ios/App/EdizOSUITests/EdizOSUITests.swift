@@ -761,6 +761,15 @@ final class EdizOSUITests:XCTestCase {
         XCTAssertTrue(app.staticTexts["Our fresh rehearsal discussion"].waitForExistence(timeout:5));XCTAssertFalse(app.staticTexts["Our old rehearsal discussion"].exists)
         app.buttons["workspace-chats"].tap();XCTAssertEqual(rows.count,1)
     }
+    func testMentorLearningContext(){
+        app.tabBars.buttons["Spaces"].tap();let mentor=app.buttons["space-tutoring"];for _ in 0..<8{if mentor.isHittable{break};app.swipeUp()};mentor.tap();app.buttons["mentor-add-student"].tap()
+        let name=app.textFields["mentor-first-name"];name.tap();name.typeText("Alex")
+        let topic=app.descendants(matching:.any).matching(identifier:"mentor-current-topic").firstMatch;for _ in 0..<6{if topic.isHittable{break};app.swipeUp()};topic.tap();topic.typeText("Adding fractions")
+        let next=app.descendants(matching:.any).matching(identifier:"mentor-next-step").firstMatch;for _ in 0..<6{if next.isHittable{break};app.swipeUp()};next.tap();next.typeText("Try one problem independently");snapshot("Editable learning context")
+        app.buttons["mentor-save-student"].tap();app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","mentor-student-")).firstMatch.tap()
+        for _ in 0..<5{if app.staticTexts["Adding fractions"].isHittable{break};app.swipeUp()}
+        XCTAssertTrue(app.staticTexts["Adding fractions"].exists);XCTAssertTrue(app.staticTexts["Try one problem independently"].exists);snapshot("Student learning context overview")
+    }
     func testMentorStudentSessionAndCalendar(){
         app.tabBars.buttons["Spaces"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         let mentor=app.buttons["space-tutoring"]
